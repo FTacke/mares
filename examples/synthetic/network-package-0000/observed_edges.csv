@@ -1,0 +1,10 @@
+﻿source_id;target_id;relation;evidence;group_ids;status
+A01;A02;know_each_other;synthetic;G01;inferred_from_confirmed_circle
+A01;A03;know_each_other;synthetic;G01;inferred_from_confirmed_circle
+A01;A04;know_each_other;synthetic;G01;inferred_from_confirmed_circle
+A02;A03;know_each_other;synthetic;G01;inferred_from_confirmed_circle
+A02;A04;know_each_other;synthetic;G01;inferred_from_confirmed_circle
+A03;A04;know_each_other;synthetic;G01|G02;inferred_from_confirmed_circle
+A03;A05;know_each_other;synthetic;G02;inferred_from_confirmed_circle
+A04;A05;know_each_other;synthetic;G02;inferred_from_confirmed_circle
+A10;A11;know_each_other;synthetic;G04;inferred_from_confirmed_circle

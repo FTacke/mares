@@ -1,0 +1,55 @@
+# MARES -- benannte Storage-Roots.
+#
+# Diese Datei nennt logische Rollen und die Umgebungsvariable, aus der ihr physischer Ort kommt.
+# Sie enthält NIE einen Pfad: der Wert steht in der gitignorierten `.env` der Maschine oder in der
+# Prozessumgebung. Gelesen wird sie ausschließlich von src/mares/core/roots.py.
+# Vertrag: docs/architecture/storage-contract.md.
+#
+#   required = true   ohne diesen Root wird nicht gearbeitet; fehlt er, ist das ein Fehler
+#   required = false  darf unkonfiguriert bleiben; das ist dann ein expliziter Zustand, kein Fallback
+#   authoritative     genau ein Root ist die Autorität für erhaltene Forschungsdaten
+#   read_only         in diesen Root wird nie geschrieben
+
+schema = "mares-storage-roots/v1"
+
+[roots.WORKSPACE]
+env = "MARES_WORKSPACE_ROOT"
+required = true
+authoritative = false
+read_only = false
+purpose = "Regenerierbare Laufzeitdaten: Verarbeitungsläufe, Caches, temporäre Dateien. Kein Archiv, kein Backup."
+
+[roots.INTAKE]
+env = "MARES_INTAKE_ROOT"
+required = true
+authoritative = false
+read_only = false
+purpose = "Lokaler Eingangs- und Staging-Bereich vor PRIMARY: inbox, staging, quarantine, reports. Puffer, kein Archiv."
+
+[roots.PRIMARY]
+env = "MARES_PRIMARY_ROOT"
+required = true
+authoritative = true
+read_only = false
+purpose = "Autoritativer Forschungsdatenbestand: preservation, derived, registry, restricted, releases."
+
+[roots.BACKUP]
+env = "MARES_BACKUP_ROOT"
+required = false
+authoritative = false
+read_only = false
+purpose = "Unabhängige, separat verifizierte Zweitkopie von PRIMARY auf einem anderen Volume. Nie Arbeitsquelle, nie Fallback."
+
+[roots.EXCHANGE]
+env = "MARES_EXCHANGE_ROOT"
+required = false
+authoritative = false
+read_only = false
+purpose = "Kontrollierter Dateiaustausch (Seminare, Forschungsaustausch). Weder Primärarchiv noch Backup."
+
+[roots.LEGACY_IMPORT]
+env = "MARES_LEGACY_IMPORT_ROOT"
+required = false
+authoritative = false
+read_only = true
+purpose = "Provisorischer Altbestand als Quelle eines späteren kontrollierten Imports. Nur lesend."

@@ -1,0 +1,23 @@
+{
+  "schema": "mares-case/v0-draft",
+  "synthetic": true,
+  "case_id": "MARES-0000-001",
+  "provenance": {
+    "origin": "TEACHING",
+    "cohort": "WS2026-27",
+    "context": "SYNTHETIC-SEMINAR",
+    "collector": "COL-SYN01",
+    "instrument": "INS-network-sheet@v0"
+  },
+  "status": {
+    "preservation": "NOT_PRESERVED",
+    "backup": "NO_COPY",
+    "quality": "UNREVIEWED",
+    "release": "NOT_DECIDED",
+    "permitted_uses": []
+  },
+  "files": [
+    {"role": "contacts", "ref": {"root": "INTAKE", "rel": "staging/MARES-0000-001/contacts.csv"}},
+    {"role": "ties", "ref": {"root": "INTAKE", "rel": "staging/MARES-0000-001/ties.csv"}}
+  ]
+}

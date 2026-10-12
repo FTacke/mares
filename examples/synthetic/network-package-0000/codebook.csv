@@ -1,0 +1,39 @@
+﻿field;code;meaning_de
+relation;1;Familie
+relation;2;Partner:in
+relation;3;Freundschaft
+relation;4;bekannt
+relation;5;Arbeit
+relation;6;Studium
+contact_frequency;1;selten
+contact_frequency;2;monatlich
+contact_frequency;3;mehrmals im Monat
+contact_frequency;4;wöchentlich
+contact_frequency;5;täglich
+closeness_1_5;1;überhaupt nicht nah
+closeness_1_5;2;eher wenig nah
+closeness_1_5;3;mittel
+closeness_1_5;4;nah
+closeness_1_5;5;sehr nah
+media;1;persönlich
+media;2;Chat
+media;3;Sprachnachricht
+media;4;Telefon
+media;5;Video
+language;1;Spanisch
+language;2;Deutsch
+language;3;Englisch
+language;4;Portugiesisch
+language;5;andere Sprache
+language_mode;1;überwiegend Spanisch
+language_mode;2;überwiegend Deutsch
+language_mode;3;überwiegend Englisch
+language_mode;4;Mischung
+language_mode;5;abhängig
+language_mode;6;anderer Modus
+function;1;emotional
+function;2;Familie
+function;3;Alltag
+function;4;praktisch
+name_generator;G1;Alltag
+name_generator;G2;wichtig

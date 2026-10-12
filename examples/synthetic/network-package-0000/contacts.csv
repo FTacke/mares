@@ -1,0 +1,13 @@
+﻿source_case_label;contact_id;source_block;source_local_id;relation_codes;birth_country_iso3;birth_country_source;residence_city;residence_country_iso3;contact_frequency_code;table_ring_near_value;media_codes;language_codes;language_mode_code;function_codes;name_generator_codes;review_flags
+0000-1;A01;1;A01;1;COL;Kolumbien;Marburg;DEU;1;1;1|2;1;1;1|2;G1;
+0000-1;A02;1;A02;3;DEU;Deutschland;Berlin;DEU;2;2;2;1|2;4;3;;
+0000-1;A03;1;A03;3|6;PER;Peru;Lima;PER;3;3;1|2|3;2;2;;G2|G1;TEST_FLAG
+0000-1;A04;1;A04;4;;;Bogotá;COL;4;4;4|5;1|4;1;4;;
+0000-1;A05;1;A05;1;COL;Kolumbien;Marburg;DEU;5;5;1|2;1;1;1|2;G1;
+0000-1;A06;1;A06;3;DEU;Deutschland;Marburg;DEU;1;1;2;1|2;4;3;;
+0000-1;A07;1;A07;3|6;PER;Peru;Berlin;DEU;2;2;1|2|3;2;2;;G2|G1;
+0000-1;A08;1;A08;4;;;Lima;PER;3;3;4|5;1|4;1;4;;
+0000-1;A09;2;A01;1;COL;Kolumbien;Bogotá;COL;4;4;1|2;1;1;1|2;G1;
+0000-1;A10;2;A02;3;DEU;Deutschland;Marburg;DEU;5;5;2;1|2;4;3;;
+0000-1;A11;2;A03;3|6;PER;Peru;Marburg;DEU;1;1;1|2|3;2;2;;G2|G1;
+0000-1;A12;2;A04;4;;;Berlin;DEU;2;2;4|5;1|4;1;4;;

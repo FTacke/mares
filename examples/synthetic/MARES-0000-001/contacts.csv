@@ -1,0 +1,6 @@
+contact_id,relation,residence,main_language
+A01,family,same_city,es
+A02,friend,same_city,es
+A03,colleague,same_city,de
+A04,family,country_of_origin,es
+A05,neighbour,same_city,unknown

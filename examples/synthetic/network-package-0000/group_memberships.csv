@@ -1,0 +1,13 @@
+﻿group_id;contact_id;status;derivable_edge;source
+G01;A01;confirmed;yes;synthetic
+G01;A02;confirmed;yes;synthetic
+G01;A03;confirmed;yes;synthetic
+G01;A04;confirmed;yes;synthetic
+G02;A03;confirmed;yes;synthetic
+G02;A04;confirmed;yes;synthetic
+G02;A05;confirmed;yes;synthetic
+G03;A06;candidate;no;synthetic
+G03;A07;candidate;no;synthetic
+G03;A08;candidate;no;synthetic
+G04;A10;confirmed;yes;synthetic
+G04;A11;confirmed;yes;synthetic

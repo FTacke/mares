@@ -1,0 +1,11 @@
+contact_a,contact_b,tie
+A01,A02,yes
+A01,A03,no
+A01,A04,yes
+A01,A05,no
+A02,A03,yes
+A02,A04,unknown
+A02,A05,no
+A03,A04,no
+A03,A05,
+A04,A05,no

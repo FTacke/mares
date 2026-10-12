@@ -1,0 +1,3 @@
+﻿review_id;priority;reference;field;description;recommended_action
+RT01;high;A03;language_mode;synthetic open question;source_check
+RT02;medium;all;rule;synthetic decided rule;rule_confirmed

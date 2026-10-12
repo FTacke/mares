@@ -1,0 +1,21 @@
+# MARES -- Zeilenenden und Bytetreue.
+#
+# Vor dem ersten Commit festgelegt: jede Textdatei ist LF, im Repository und im Arbeitsverzeichnis,
+# auf jeder Plattform. Fixtures werden gehasht; `core.autocrlf` darf ihre Bytes nicht verändern.
+* text=auto eol=lf
+
+# Windows-Skripte behalten das Zeilenende, das ihr Interpreter erwartet.
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binärformate (nur als leere Vorlagen oder kleine synthetische Fixtures versioniert, siehe .gitignore).
+*.xlsx binary
+*.xlsm binary
+*.docx binary
+*.pdf binary
+*.png binary
+*.jpg binary
+*.wav binary
+*.flac binary
+*.sqlite binary

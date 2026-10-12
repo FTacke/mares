@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mares"
+# Version des Codes. Nicht die Version eines Datensatzes, eines Erhebungsinstruments oder eines
+# Schemas: docs/architecture/data-contract.md.
+version = "0.1.0"
+description = "MARES -- Marburgo: Archivo de Redes y Experiencias Sociolingüísticas. Forschungsdaten-Infrastruktur."
+readme = "README.md"
+requires-python = ">=3.11"
+# Eine Abhängigkeit kommt mit dem Code, der sie benutzt. Das Netzwerkmodul (mares.networks) braucht
+# NetworkX (Graph, Layout) und Matplotlib (Grafiken, zieht NumPy nach); pandas bewusst nicht
+# (docs/decisions/ADR-0002_2026-10-12_netzwerkmodul.md). openpyxl kommt mit dem Sheet-Import.
+dependencies = ["networkx>=3.2", "matplotlib>=3.8"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+mares-networks = "mares.networks.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-ra"

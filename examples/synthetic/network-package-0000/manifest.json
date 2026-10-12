@@ -1,0 +1,11 @@
+{
+  "package_version": "0.0-synthetic",
+  "project": "MARES",
+  "synthetic": true,
+  "source_case_label": "0000-1",
+  "source_date": "0000-01-01",
+  "source_interview_type": "synthetic test collection",
+  "contact_count": 12,
+  "canonical_case_id": "not assigned",
+  "edge_count_from_unambiguous_groups": 9
+}

@@ -1,0 +1,129 @@
+# MARES -- Ignore-Regeln.
+#
+# Grundsatz (AGENTS.md): Forschungsdaten, Laufzeitdaten und Datenbanken liegen nie im Checkout,
+# sondern unter den konfigurierten Storage-Roots. Die Regeln hier sind nur die zweite
+# Verteidigungslinie für eine Datei, die trotzdem hier landet.
+#   * Jede Regel ist verankert oder endungsspezifisch und nennt ihren Grund.
+#   * Keine Pauschalregel auf strukturierte Textformate: *.json, *.csv, *.toml, *.md bleiben
+#     versionierbar (Konfiguration, Verträge, synthetische Fixtures).
+#   * Ausnahmen für Vorlagen und synthetische Beispiele stehen im letzten Block.
+
+# --- Python-Umgebungen, Caches, Build-Produkte (regenerierbar) -----------------------------------
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.ipynb_checkpoints/
+
+# --- Secrets und maschinenspezifische Konfiguration (nie versioniert) -----------------------------
+.env
+.env.*
+!.env.example
+*.local.toml
+*.local.json
+*.local.yml
+*.pem
+*.key
+
+# --- Editor-, Agenten- und Betriebssystemzustand --------------------------------------------------
+.vscode/
+.idea/
+.claude/settings.local.json
+.DS_Store
+Thumbs.db
+desktop.ini
+# Sperrdateien geöffneter Office-Dokumente
+~$*
+
+# --- Logs und temporäre Dateien -------------------------------------------------------------------
+*.log
+*.tmp
+*.bak
+/tmp/
+/scratch/
+
+# --- Datenbanken und Laufzeitzustand (gehören in WORKSPACE bzw. PRIMARY/registry) -----------------
+*.sqlite
+*.sqlite3
+*.db
+*.duckdb
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite3-wal
+*.sqlite3-shm
+*.db-journal
+/runs/
+/cache/
+
+# --- Forschungsdaten: Audio und Video (immer personenbezogen) -------------------------------------
+*.wav
+*.flac
+*.mp3
+*.m4a
+*.aac
+*.ogg
+*.opus
+*.wma
+*.aiff
+*.mp4
+*.mov
+*.mkv
+*.webm
+
+# --- Forschungsdaten: Erhebungsbögen, Einwilligungen, Dokumente -----------------------------------
+# Ausgefüllte Erhebungssheets, Einwilligungen und Transkripte sind Forschungsdaten. Leere Vorlagen
+# und synthetische Beispiele sind es nicht (Ausnahmen unten).
+*.xlsx
+*.xlsm
+*.xls
+*.ods
+*.docx
+*.doc
+*.odt
+*.pdf
+*.eaf
+*.TextGrid
+
+# --- Forschungsdaten: Verzeichnisse, die den Storage-Layouts entsprechen --------------------------
+# Wer einen Root versehentlich auf den Checkout zeigt, bekommt vom Resolver eine Ablehnung; diese
+# Regeln fangen manuell hierher kopierte Bäume ab.
+/data/
+/inbox/
+/staging/
+/quarantine/
+/reports/
+/preservation/
+/derived/
+/registry/
+/restricted/
+/releases/
+/outputs/
+
+# --- Modelle und Archive --------------------------------------------------------------------------
+/models/
+*.pt
+*.safetensors
+*.zip
+*.7z
+*.tar
+*.tar.gz
+
+# --- Ausnahmen: Vorlagen und synthetische Beispiele bleiben versionierbar -------------------------
+# Nur leere Erhebungsinstrumente (templates/) und erfundene Daten (examples/synthetic/,
+# tests/fixtures/). Dieser Block muss der letzte bleiben.
+!/templates/**/*.xlsx
+!/templates/**/*.docx
+!/templates/**/*.pdf
+!/examples/synthetic/**/*.xlsx
+!/examples/synthetic/**/*.wav
+!/tests/fixtures/**/*.xlsx
+!/tests/fixtures/**/*.wav
