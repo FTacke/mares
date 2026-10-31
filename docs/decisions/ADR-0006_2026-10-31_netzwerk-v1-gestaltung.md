@@ -1,6 +1,7 @@
 # ADR-0006 – `network_v1`: finale Erhebungsvorlage, gemeinsames Grafikdesign, einteiliges G3
 
-**Datum:** 2026-10-31 · **Status:** in Kraft
+**Datum:** 2026-10-31 · **Status:** in Kraft; Entscheidung 7 (Zugehörigkeit als Umrandungsstärke) und die Darstellung unbekannter
+Wohnorte in G2 (Teil von Entscheidung 5) sind durch [`ADR-0007`](ADR-0007_2026-10-31_netzwerk-v1-g1-g3.md) abgelöst
 
 Aktuelle Regeln: [`network-v1.md`](../architecture/network-v1.md) §2 und §5–§6. Ergänzt [`ADR-0005`](ADR-0005_2026-10-31_netzwerk-v0-v1.md);
 ADR-0005 bleibt in Kraft, nur die dort beschriebene Gestaltung der Grafiken (§6 der damaligen Fassung) ist abgelöst.
