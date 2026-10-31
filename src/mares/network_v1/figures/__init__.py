@@ -38,7 +38,7 @@ def _all_unresolved(ctx: Context) -> bool:
 
 
 FIGURES: tuple[FigureSpec, ...] = (
-    FigureSpec("G1", "persoenliches_netz", "Persönliches Beziehungsnetz", ("A: Nähe", "A: Beziehungstyp", "C: bestätigte Verbindungen"), g1,
+    FigureSpec("G1", "persoenliches_netz", "Persönliches Beziehungsnetz", ("A: Nähe", "A: Beziehungstyp"), g1,
                lambda ctx: _no(ctx, lambda c: c.closeness.recorded, "keine erhobene persönliche Nähe")),
     FigureSpec("G2", "geografisches_netz", "Geografisches Beziehungsnetz", ("A: Wohnort, Wohnland", "C: bestätigte Verbindungen"), g2,
                lambda ctx: "kein Wohnort zuordenbar" if _all_unresolved(ctx) else None),

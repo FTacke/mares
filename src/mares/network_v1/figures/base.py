@@ -179,15 +179,20 @@ def text_width(text: str, size: float, *, bold: bool = False) -> float:
 #   ("area", label, style)          a background area or outline; style = patch keyword arguments
 #   ("ring", label, colors)         a node with ring segments (several group memberships)
 #   ("ramp", label, None)           the blue share scale of P3/P4
+#   ("scale", label, value)         the five-dot scale of an ordinal answer (value '1'..'5', or None: no answer)
 #   ("text", label, None)           a short explanation
 SWATCH_W = 0.26
 ENTRY_GAP = 0.2
 SECTION_GAP = 0.42
 
 
+def _swatch_width(kind: str) -> float:
+    return {"ramp": 5 * 0.2 + 0.08, "text": 0.0, "scale": scale_width() + 0.04}.get(kind, SWATCH_W)
+
+
 def _entry_width(entry: tuple) -> float:
     kind, label, _ = entry
-    swatch = {"ramp": 5 * 0.2 + 0.08, "text": 0.0}.get(kind, SWATCH_W)
+    swatch = _swatch_width(kind)
     return swatch + (0.06 if swatch else 0) + text_width(label, LEGEND_PT)
 
 
@@ -239,6 +244,8 @@ def _swatch(ax: Axes, kind: str, x: float, y: float, payload) -> None:
         for i, color in enumerate(payload):
             ax.add_patch(Wedge((cx, y), 0.085, 90 + 360 * i / n, 90 + 360 * (i + 1) / n, width=0.025, facecolor=color,
                                edgecolor="none", clip_on=False, zorder=4))
+    elif kind == "scale":
+        ordinal_dots(ax, x + 0.02, y, payload, clip=False)
     elif kind == "ramp":
         for i, share in enumerate((0.0, 0.25, 0.5, 0.75, 1.0)):
             ax.add_patch(Rectangle((x + i * 0.2, y - 0.075), 0.18, 0.15, facecolor=heat_fill(share), edgecolor=CELL_RIM,
@@ -256,7 +263,7 @@ def draw_legend(ax: Axes, sections, mode: str) -> None:
                 if what == "title":
                     ax.text(x, y, label, fontsize=LEGEND_PT, fontweight="bold", color=INK, va="center", ha="left")
                     continue
-                swatch = {"ramp": 5 * 0.2 + 0.08, "text": 0.0}.get(kind, SWATCH_W)
+                swatch = _swatch_width(kind)
                 _swatch(ax, kind, x, y, payload)
                 ax.text(x + swatch + (0.06 if swatch else 0), y, label, fontsize=LEGEND_PT, color=MUTED if kind == "text" else INK,
                         va="center", ha="left")
@@ -274,7 +281,7 @@ def draw_legend(ax: Axes, sections, mode: str) -> None:
             lines = label.count("\n") + 1
             block = LEGEND_ROW_H + (lines - 1) * 0.16
             centre = y - block / 2
-            swatch = {"ramp": 5 * 0.2 + 0.08, "text": 0.0}.get(kind, SWATCH_W)
+            swatch = _swatch_width(kind)
             _swatch(ax, kind, 0.0, centre, payload)
             ax.text(swatch + (0.06 if swatch else 0), centre, label, fontsize=LEGEND_PT, color=MUTED if kind == "text" else INK,
                     va="center", ha="left", linespacing=1.25)
@@ -358,6 +365,30 @@ def draw_nodes(ax: Axes, positions: dict[str, tuple[float, float]], fills: dict[
         ax.scatter([x], [y], s=node_size(), zorder=zorder, **scatter_kwargs(style))
         ax.text(x, y, cid, fontsize=NODE_ID_PT, color=label_color(style["facecolor"]), ha="center", va="center",
                 zorder=zorder + 1, fontweight="bold")
+
+
+SCALE_STEP = 0.13  # inches between the dots of an ordinal scale
+SCALE_DOT = 0.085  # dot diameter in inches
+SCALE_ON = "#2E3640"  # the recorded answer: one neutral dark dot
+SCALE_OFF = "#A7B0B9"  # the other answers: outlined only
+
+
+def scale_width(n: int = 5) -> float:
+    return (n - 1) * SCALE_STEP + SCALE_DOT
+
+
+def ordinal_dots(ax: Axes, x: float, y: float, value: str | None, n: int = 5, *, zorder: int = 7, clip: bool = True) -> float:
+    """A row of ``n`` dots for one ordinal answer (1 left ... n right), starting at ``x`` (inches), centred on ``y``.
+    Exactly the recorded answer is filled; without an answer none is. No fill level, no colour intensity -- a single
+    self-assessment, not a measure. Returns the width."""
+    for i in range(n):
+        on = value == str(i + 1)
+        dot = Circle((x + SCALE_DOT / 2 + i * SCALE_STEP, y), SCALE_DOT / 2 * (1.0 if on else 0.82),
+                     facecolor=SCALE_ON if on else "#FFFFFF", edgecolor=SCALE_ON if on else SCALE_OFF, linewidth=0.8, zorder=zorder,
+                     clip_on=clip)
+        dot.set_gid("scale-on" if on else "scale-off")
+        ax.add_patch(dot)
+    return scale_width(n)
 
 
 def ring_segments(ax: Axes, centre: tuple[float, float], colors: Sequence[str], radius: float, *, zorder: int = 5) -> None:

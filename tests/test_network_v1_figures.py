@@ -96,7 +96,7 @@ def test_no_labels_of_persons_in_any_figure(tmp_path):
 
 def test_coverage_is_stated_on_network_figures(ctx):
     for spec in FIGURES:
-        if spec.code.startswith("G"):
+        if spec.code in ("G2", "G3"):  # G1 shows no ties, so it states no coverage
             with rc():
                 texts = " ".join(t.get_text() for t in spec.draw(ctx).findobj(Text))
             assert "unbekannt 454" in texts, spec.code
