@@ -10,7 +10,9 @@ import pytest
 from matplotlib.collections import PathCollection
 from matplotlib.colors import to_hex
 from matplotlib.patches import PathPatch, Polygon
+from matplotlib.path import Path as MplPath
 from matplotlib.text import Text
+from matplotlib.transforms import Bbox
 
 from mares.network_v0.figures.style import rc
 from mares.network_v1 import codes
@@ -22,8 +24,8 @@ from mares.network_v1.figures.base import (
 )
 from mares.network_v1.figures.matrices import COMMUNICATION_SECTIONS, _matrix_counts, language_rows
 from mares.network_v1.figures.networks import (
-    G1_SIZE, NODE_R_IN, OUTLINE_W, g1, g1_layout, g2, g2_layout, g3, g3_layout, loose_contacts, membership_marked, nested_groups,
-    subgroups,
+    G1_SIZE, LABEL_HALF_WIDTH, LEADER_GAP, MISSING_RADIUS, NODE_R_IN, OUTLINE_W, SECTOR_ORDER, display_name, g1, g1_layout, g1_sectors,
+    g2, g2_layout, g3, g3_layout, g3_positions, loose_contacts, membership_marked, nested_groups, relation_code, subgroups,
 )
 from mares.network_v1.places import Area
 from mares.network_v1.testcases import synthetic_source
@@ -170,24 +172,63 @@ def test_g1_shows_no_contact_contact_ties(ctx):
     assert not [p for p in ax.patches if isinstance(p, PathPatch)] and not ax.lines
     texts = " ".join(t.get_text() for t in figure.findobj(Text))
     assert "Verbindung" not in texts and "Kontaktpaare" not in texts
-    assert "die Position entlang eines Rings hat keine weitere Bedeutung" in texts
+    assert "Winkelbereiche ordnen die Kontakte nach Beziehungstyp" in texts
+    assert "Die genaue Position innerhalb eines Sektors hat keine zusätzliche inhaltliche Bedeutung." in texts
+    assert not [p for p in ax.patches if type(p).__name__ in ("Wedge", "Rectangle", "Polygon")]  # no sector lines or areas
 
 
-def test_g1_spreads_the_contacts_of_a_ring_evenly_without_overlap(ctx):
+def _angle_share(x: float, y: float) -> float:
+    """Position along the ring as a share of the usable arc (0 = just left of the ring numbers, counter-clockwise)."""
+    r = math.hypot(x, y)
+    wedge = math.atan2(LABEL_HALF_WIDTH, r)
+    return ((math.atan2(y, x) - math.pi / 2 - wedge) % (2 * math.pi)) / (2 * math.pi - 2 * wedge)
+
+
+def test_g1_radius_is_exactly_the_recorded_closeness(ctx):
+    for cid, (x, y) in g1_layout(ctx).items():
+        value = codes.closeness_value(ctx.case.contact(cid).closeness)
+        assert math.hypot(x, y) == pytest.approx(value if value is not None else MISSING_RADIUS), cid
+
+
+def test_g1_sectors_follow_the_fixed_relation_order(ctx):
+    sectors = g1_sectors(ctx)
+    assert list(sectors) == list(SECTOR_ORDER)  # all six types (and 'keine Angabe'), also when absent
+    bounds = [b for code in SECTOR_ORDER for b in sectors[code]]
+    assert bounds == sorted(bounds) and 0 <= bounds[0] and bounds[-1] <= 1
+    assert sectors["2"][1] > sectors["2"][0] and sectors["6"][1] == sectors["6"][0]  # 002: one partner, no 'Sonstige'
+
+
+def test_g1_groups_contacts_of_one_relation_type_on_every_ring(ctx):
     positions = g1_layout(ctx)
-    by_radius: dict = {}
+    by_ring: dict = {}
     for cid, (x, y) in positions.items():
-        by_radius.setdefault(round(math.hypot(x, y), 6), []).append((math.atan2(y, x) - math.pi / 2) % (2 * math.pi))
-    for radius, angles in by_radius.items():
-        angles = sorted(angles)
-        if len(angles) > 2:
-            steps = [b - a for a, b in zip(angles, angles[1:])]
-            assert max(steps) - min(steps) < 1e-6, radius  # even spacing (counted from the ring number at the top)
-    span = 2 * (max(codes.CLOSENESS_LEVELS) + 0.45)  # inches per layout unit: G1_SIZE / span
-    points = list(positions.values())
+        by_ring.setdefault(round(math.hypot(x, y), 6), []).append((_angle_share(x, y), SECTOR_ORDER.index(relation_code(ctx, cid))))
+    for ring, items in by_ring.items():
+        order = [code for _, code in sorted(items)]
+        assert order == sorted(order), ring  # along each ring the types follow the sector order, never interleaved
+    sectors = g1_sectors(ctx)
+    for cid, xy in positions.items():
+        f0, f1 = sectors[relation_code(ctx, cid)]
+        assert f0 - 0.06 <= _angle_share(*xy) <= f1 + 0.06, cid  # in (or right beside) the sector of its type
+
+
+def test_g1_layout_does_not_depend_on_the_row_order(ctx, tmp_path):
+    folder = copy_002(tmp_path)
+    write_rows(folder, "contacts.csv", list(reversed(read_rows(folder, "contacts.csv"))))
+    shuffled = g1_layout(context(folder))
+    for cid, xy in g1_layout(ctx).items():
+        assert shuffled[cid] == pytest.approx(xy), cid
+
+
+def test_g1_nodes_do_not_overlap_and_leave_the_ring_numbers_free(ctx):
+    points = list(g1_layout(ctx).values())
+    scale = G1_SIZE / (2 * (MISSING_RADIUS + 0.45))  # inches per layout unit (002 shows the outer arc)
     for i, (x0, y0) in enumerate(points):
         for x1, y1 in points[i + 1:]:
-            assert math.hypot(x1 - x0, y1 - y0) * G1_SIZE / span >= 2 * NODE_R_IN  # nodes never overlap
+            assert math.hypot(x1 - x0, y1 - y0) * scale >= 2 * NODE_R_IN  # nodes (and their IDs) never overlap
+    for value in (1, 2, 3, 4):
+        for x, y in points:
+            assert math.hypot(x, y - value) * scale > NODE_R_IN + 0.08  # the ring number at (0, value) stays free
 
 
 # ------------------------------------------------------------------------------------------------------- G2 ---
@@ -290,14 +331,72 @@ def test_g3_is_one_map_with_one_outline_width(ctx):
     assert all(w == pytest.approx(OUTLINE_W) for w in outlines.values())  # the width carries no meaning
 
 
-def test_g3_labels_carry_name_size_and_belonging(ctx):
+def test_g3_labels_are_id_name_count_and_the_number(ctx):
     with rc():
         figure = g3(ctx)
     texts = [t.get_text() for t in figure.axes[0].findobj(Text)]
-    assert "C01 · Familie in Kolumbien und Spanien · 4 Kontakte" in texts
-    assert "1 · Sehr stark" in texts and "5 · Überhaupt nicht" in texts and texts.count("Zugehörigkeit") == len(ctx.case.groups)
+    assert "C01 · Familie in Kolumbien und Spanien (4)" in texts and "C05 · Sprachtandems (3)" in texts
+    assert sorted(t for t in texts if t in {"1", "2", "3", "4", "5"}) == sorted(g.belonging.value for g in ctx.case.groups)
+    joined = " ".join(texts)
+    for word in ("Zugehörigkeit", "Kontakte", "Sehr stark", "Stark", "Mittel", "Wenig", "Überhaupt nicht"):
+        assert word not in joined  # no repeated words in the map
     legend = " ".join(t.get_text() for t in figure.findobj(Text))
-    assert "Umrandung" not in legend and "Umrandungsstärke" not in legend
+    assert "1 = sehr stark bis 5 = überhaupt nicht; der markierte Punkt zeigt den erhobenen Wert" in legend
+    assert "Umrandung" not in legend
+
+
+def test_group_names_drop_test_suffixes_and_long_names_are_shortened_for_display_only():
+    assert display_name("Kreis 4 (fiktive Bezeichnung)") == "Kreis 4"
+    assert display_name("Tandem (synthetisch)") == "Tandem"
+    assert display_name("Verein (Marburg)") == "Verein (Marburg)"  # a real addition stays
+    long = "Sehr lange Bezeichnung einer Gruppe mit vielen Wörtern"
+    assert display_name(long).endswith("…") and len(display_name(long)) <= 34
+    assert display_name("") == "ohne Bezeichnung"
+
+
+def _label_geometry(ctx_):
+    with rc():
+        figure = g3(ctx_)
+    ax = figure.axes[0]
+    figure.canvas.draw()
+    boxes = {p.get_gid()[6:]: p.get_extents().transformed(ax.transData.inverted()) for p in ax.patches
+             if (p.get_gid() or "").startswith("label-")}
+    hulls = {p.get_gid()[6:]: p.get_xy() for p in ax.patches if isinstance(p, Polygon) and (p.get_gid() or "").startswith("group-")}
+    leaders = {line.get_gid()[7:]: line.get_xydata() for line in ax.lines if (line.get_gid() or "").startswith("leader-")}
+    return boxes, hulls, leaders
+
+
+def _box_gap(box, hull) -> float:
+    return min(math.hypot(x - min(max(x, box.x0), box.x1), y - min(max(y, box.y0), box.y1)) for x, y in hull)
+
+
+@pytest.mark.parametrize("nested", [False, True])
+def test_g3_labels_sit_at_their_group_off_nodes_ties_and_other_labels(ctx, tmp_path, nested):
+    ctx_ = ctx
+    if nested:  # a group inside another one (as C04 inside C05 and C06 in the fictionalised case)
+        folder = copy_002(tmp_path)
+        rows = read_rows(folder, "group_memberships.csv")
+        write_rows(folder, "group_memberships.csv", rows + [{"group_id": "C06", "contact_id": "A27"}, {"group_id": "C06", "contact_id": "A28"}])
+        groups = read_rows(folder, "groups.csv")
+        write_rows(folder, "groups.csv", groups + [{**groups[-1], "group_id": "C06", "label": "Tandem (synthetisch)", "belonging": "4"}])
+        ctx_ = context(folder)
+    boxes, hulls, leaders = _label_geometry(ctx_)
+    assert set(boxes) == {g.id for g in ctx_.case.groups}
+    positions, _ = g3_positions(ctx_)
+    for gid, box in boxes.items():
+        inner = Bbox.from_extents(box.x0 + 0.03, box.y0 + 0.03, box.x1 - 0.03, box.y1 - 0.03)  # without the rounded padding
+        for x, y in positions.values():
+            assert not inner.overlaps(Bbox.from_extents(x - NODE_R_IN, y - NODE_R_IN, x + NODE_R_IN, y + NODE_R_IN)), gid
+        for a, b in ctx_.derived.confirmed_edges:
+            assert not MplPath([positions[a], positions[b]]).intersects_bbox(inner, filled=False), (gid, a, b)
+        for other, obox in boxes.items():
+            assert other == gid or not inner.overlaps(obox), (gid, other)
+        assert _box_gap(box, hulls[gid]) <= LEADER_GAP + 0.05 or gid in leaders, gid  # at its outline, or tied to it
+        if gid in leaders:
+            (x0, y0), (x1, y1) = leaders[gid]
+            assert math.hypot(x1 - x0, y1 - y0) < 1.0, gid  # a short leader, never across the figure
+    close = sum(_box_gap(box, hulls[gid]) <= LEADER_GAP + 0.05 for gid, box in boxes.items())
+    assert close >= len(boxes) - 1 - len(nested_groups(ctx_))  # a nested group may need a leader (no free edge)
 
 
 def test_g3_belonging_scale_marks_exactly_the_recorded_answer(ctx):
@@ -331,10 +430,10 @@ def test_g3_missing_belonging_is_named_and_marks_no_dot(tmp_path):
         figure = g3(ctx_)
     ax = figure.axes[0]
     texts = [t.get_text() for t in ax.findobj(Text)]
-    assert "keine Antwort (KA)" in texts and "5 · Überhaupt nicht" not in texts
+    assert "KA" in texts and "5" not in texts  # the kind of missing answer, never a value
     filled = [d for d in _scale_dots(ax) if d.get_gid() == "scale-on"]
     assert len(filled) == len(ctx_.case.groups) - 1
-    assert "keine Antwort: kein Punkt markiert" in " ".join(t.get_text() for t in figure.findobj(Text))
+    assert "kein Wert (KA = keine Antwort): kein Punkt markiert" in " ".join(t.get_text() for t in figure.findobj(Text))
 
 
 def test_g3_ties_are_confirmed_pairs_only(ctx):

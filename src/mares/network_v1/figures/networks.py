@@ -8,6 +8,7 @@ a line. Node colour = relation type, in all three figures.
 from __future__ import annotations
 
 import math
+import re
 from collections import defaultdict
 from dataclasses import dataclass, field
 
@@ -17,6 +18,7 @@ from matplotlib.path import Path as MplPath
 from matplotlib.transforms import Bbox
 
 from .. import codes
+from ..codes import Missing
 from ..places import AREA_LABELS, AREA_ORDER, Area, norm
 from .base import (
     AREA_TINTS, GROUP_COLORS, INK, LABEL_PT, LEGEND_PT, MUTED, NODE_PT, TIE, TIE_BETWEEN, Context, draw_nodes, force_layout,
@@ -49,27 +51,82 @@ def _straight(p1, p2) -> MplPath:
 MISSING_RADIUS = 4.75
 LABEL_HALF_WIDTH = 0.42  # half the width kept free for the ring numbers at the top, in ring units
 G1_SIZE = 8.4  # inches, square main area
+SECTOR_ORDER = tuple(codes.RELATION_TYPE) + ("",)  # the six relation types, then 'keine Angabe' -- in every case
+SECTOR_GAP = 0.6  # free share between two neighbouring sectors, in contacts
+NODE_GAP_IN = 0.08  # free space between two nodes on one ring (inches)
+
+
+def relation_code(ctx: Context, cid: str) -> str:
+    cell = ctx.case.contact(cid).relation_type
+    return cell.value if cell.recorded and cell.value in codes.RELATION_TYPE else ""
+
+
+def g1_sectors(ctx: Context) -> dict[str, tuple[float, float]]:
+    """Angular sector per relation type as a share (0 ... 1) of the circle, in the fixed order of SECTOR_ORDER,
+    counter-clockwise from the ring numbers at the top. Width ∝ number of contacts; absent types get no width but keep
+    their place in the order."""
+    counts = {code: 0 for code in SECTOR_ORDER}
+    for cid in ctx.case.contact_ids:
+        counts[relation_code(ctx, cid)] += 1
+    present = [code for code in SECTOR_ORDER if counts[code]]
+    total = sum(counts.values()) + SECTOR_GAP * len(present)
+    sectors, f = {}, 0.0
+    for code in SECTOR_ORDER:
+        w = counts[code] / total if total else 0.0
+        if counts[code]:
+            f += SECTOR_GAP / 2 / total
+        sectors[code] = (f, f + w)
+        f += w + (SECTOR_GAP / 2 / total if counts[code] else 0.0)
+    return sectors
+
+
+def _spread(wanted: list[float], gap: float, lo: float, hi: float) -> list[float]:
+    """Positions closest to ``wanted`` (sorted) with at least ``gap`` between neighbours, inside [lo, hi]
+    (pool adjacent violators on wanted[i] - i·gap). Order is kept."""
+    n = len(wanted)
+    gap = min(gap, (hi - lo) / max(n - 1, 1))
+    shifted = [w - i * gap for i, w in enumerate(wanted)]
+    blocks: list[list[float]] = []  # [mean, count]
+    for v in shifted:
+        blocks.append([v, 1])
+        while len(blocks) > 1 and blocks[-2][0] > blocks[-1][0]:
+            m2, c2 = blocks.pop()
+            m1, c1 = blocks.pop()
+            blocks.append([(m1 * c1 + m2 * c2) / (c1 + c2), c1 + c2])
+    flat = [m for m, c in blocks for _ in range(c)]
+    top = hi - (n - 1) * gap
+    return [min(max(v, lo), top) + i * gap for i, v in enumerate(flat)]
 
 
 def g1_layout(ctx: Context) -> dict[str, tuple[float, float]]:
-    """Radius = recorded closeness (1 ... 4, half steps between); contacts without closeness on an outer arc.
-    The contacts of one radius are spread evenly over their ring (in ID order), leaving the ring numbers at the top
-    free; half-step rings are turned by a quarter step, so neighbouring rings do not line up. Only the angle is layout;
-    no contact is ever moved to another radius. Deterministic."""
+    """Radius = recorded closeness (1 ... 4, half steps between); contacts without closeness on an outer arc. The angle
+    groups the contacts by relation type: each type has a fixed sector (:func:`g1_sectors`); on each ring the contacts of
+    a type are spread over their sector (in ID order) and then pushed apart just enough that no two nodes overlap; the
+    ring numbers at the top stay free. Only the angle is layout; no contact is ever moved to another radius.
+    Deterministic."""
     radius = {}
     for c in ctx.case.contacts:
         value = codes.closeness_value(c.closeness)
         radius[c.id] = value if value is not None else MISSING_RADIUS
-    by_radius: dict[float, list[str]] = defaultdict(list)
+    sectors = g1_sectors(ctx)
+    lim = (MISSING_RADIUS if MISSING_RADIUS in radius.values() else max(codes.CLOSENESS_LEVELS)) + 0.45
+    node = (2 * NODE_R_IN + NODE_GAP_IN) * 2 * lim / G1_SIZE  # node diameter plus gap, in ring units
+    by_ring: dict[float, dict[str, list[str]]] = defaultdict(lambda: defaultdict(list))
     for cid in ctx.case.contact_ids:
-        by_radius[radius[cid]].append(cid)
+        by_ring[radius[cid]][relation_code(ctx, cid)].append(cid)
     positions = {}
-    for r, ids in by_radius.items():
+    for r, by_type in by_ring.items():
         wedge = math.atan2(LABEL_HALF_WIDTH, r)  # wider on inner rings
         start, span = math.pi / 2 + wedge, 2 * math.pi - 2 * wedge
-        offset = 0.5 if r == int(r) else 0.25
-        for i, cid in enumerate(sorted(ids)):
-            angle = start + span * (i + offset) / len(ids)
+        ids, wanted = [], []
+        for code in SECTOR_ORDER:
+            f0, f1 = sectors[code]
+            members = sorted(by_type.get(code, []))
+            for i, cid in enumerate(members):
+                ids.append(cid)
+                wanted.append(start + span * (f0 + (f1 - f0) * (i + 0.5) / len(members)))
+        gap = 2 * math.asin(min(node / (2 * r), 1.0))
+        for cid, angle in zip(ids, _spread(wanted, gap, start + gap / 2, start + span - gap / 2)):
             positions[cid] = (r * math.cos(angle), r * math.sin(angle))
     return {cid: positions[cid] for cid in ctx.case.contact_ids}
 
@@ -83,7 +140,8 @@ def g1(ctx: Context):
             ("line", "Zwischenwerte 1,5 · 2,5 · 3,5", {"color": "#C3CAD1", "linewidth": 0.7, "linestyle": (0, (2, 3))}),
         ]),
     ]
-    notes = ["Abstand zu Ego = persönliche Nähe; die Position entlang eines Rings hat keine weitere Bedeutung."]
+    notes = ["Abstand zu Ego = persönliche Nähe; Winkelbereiche ordnen die Kontakte nach Beziehungstyp. "
+             "Die genaue Position innerhalb eines Sektors hat keine zusätzliche inhaltliche Bedeutung."]
     p = page(ctx, "G1 · Persönliches Beziehungsnetz", "Kontakte nach persönlicher Nähe und Beziehungstyp",
              main_w=G1_SIZE, main_h=G1_SIZE, legend="side", sections=sections, notes=notes)
     ax = p.main
@@ -593,32 +651,40 @@ def intruders(ctx: Context, positions: dict[str, tuple[float, float]]) -> list[t
 
 OUTLINE_W = 1.8  # one outline width for every group: the width carries no meaning
 G3_W, G3_H = 12.0, 8.6
-G3_MARGIN = 0.8  # inches around the layout, room for group labels
+G3_MARGIN = 0.8  # inches above and below the layout, room for group labels
+G3_MARGIN_X = 1.5  # inches left and right: a label block beside a group at the edge still fits on the page
 LOOSE_H = 0.5  # the row of contacts without group and tie, at the bottom of the main area
 MAX_STRETCH = 1.45  # the group map may be wider than high, but not distorted beyond this
 LABEL_H = 0.38
-SCALE_PREFIX = "Zugehörigkeit"
 LOOSE_LABEL = "keiner Gruppe zugeordnet, keine bestätigte Verbindung:"
+NAME_MAX = 34  # characters of a group name shown in its label; longer names are shortened in the figure only
+# explanatory suffixes of test data, e.g. 'Kreis 1 (fiktive Bezeichnung)': the case badge already says so
+TEST_SUFFIX = re.compile(r"\s*\((?:fiktiv\w*|synthetisch\w*)(?:\s+\w+)?\)\s*$", re.IGNORECASE)
+MISSING_SHORT = {Missing.UNKNOWN: "NS", Missing.NO_ANSWER: "KA", Missing.NOT_APPLICABLE: "NA", Missing.NOT_COLLECTED: "n. e."}
 
 
 def belonging_text(group) -> str:
-    """The recorded answer as number and label, or the kind of missing answer -- never a guessed value."""
+    """The recorded answer as its number, or the short code of the missing answer -- never a guessed value."""
     value = group.belonging.value
     if value:
-        return f"{value} · {codes.BELONGING[value]}"
-    return codes.MISSING_LABELS.get(group.belonging.missing, "keine Angabe")
+        return value
+    return MISSING_SHORT.get(group.belonging.missing, "–")
+
+
+def display_name(label: str) -> str:
+    """The group name as shown: without a test-data suffix, shortened if very long. The data are not changed."""
+    name = TEST_SUFFIX.sub("", label or "").strip() or "ohne Bezeichnung"
+    return name if len(name) <= NAME_MAX else name[: NAME_MAX - 1].rstrip() + "…"
 
 
 def group_label_lines(ctx: Context, group) -> tuple[str, str]:
-    """First line of a group label, and the text after the belonging dots."""
-    members = ctx.case.members(group.id)
-    name = group.label or "ohne Bezeichnung"
-    return f"{group.id} · {name} · {len(members)} Kontakt{'e' if len(members) != 1 else ''}", belonging_text(group)
+    """First line of a group label ('C04 · name (3)'), and the text after the belonging dots."""
+    return f"{group.id} · {display_name(group.label)} ({len(ctx.case.members(group.id))})", belonging_text(group)
 
 
 def _label_width(ctx: Context, group) -> float:
     first, second = group_label_lines(ctx, group)
-    line2 = text_width(SCALE_PREFIX, LEGEND_PT - 0.6) + 0.08 + scale_width() + 0.08 + text_width(second, LEGEND_PT - 0.6)
+    line2 = scale_width() + 0.08 + text_width(second, LEGEND_PT - 0.6, bold=True)
     return max(text_width(first, LEGEND_PT, bold=True), line2) + 0.1
 
 
@@ -645,48 +711,76 @@ def label_gap(box, hull: np.ndarray) -> tuple[float, tuple[float, float], tuple[
 LEADER_GAP = 0.12  # a label further than this from its outline gets a fine leader line
 
 
+def _containers(ctx: Context) -> dict[str, set[str]]:
+    """Per group, the other groups that contain all its members (a label of the inner group may lie on their areas)."""
+    members = {g.id: set(ctx.case.members(g.id)) for g in ctx.case.groups}
+    return {g: {h for h, hs in members.items() if h != g and ms and ms <= hs} for g, ms in members.items()}
+
+
+LABEL_DIRECTIONS = 32  # candidate directions around an outline
+LABEL_GAPS = (0.08, 0.2, 0.36, 0.6, 0.9)  # inches between outline and label block (the far ones need a leader line)
+LABEL_CLEAR = 0.05  # margin around a label block in the collision test (its white background reaches a little further)
+
+
+def label_candidates(hull: np.ndarray, w: float, h: float) -> list[tuple[tuple[float, float, float, float], int]]:
+    """Label boxes (x0, y0, x1, y1) right outside an outline: in each of LABEL_DIRECTIONS directions the box is moved
+    out from the centre until it clears the outline's supporting line, plus boxes flush above and below the outline,
+    slid along it. Second value: rank of the gap (0 = closest)."""
+    c = hull.mean(axis=0)
+    xmin, ymin = hull.min(axis=0)
+    xmax, ymax = hull.max(axis=0)
+    out = []
+    for rank, gap in enumerate(LABEL_GAPS):
+        for k in range(LABEL_DIRECTIONS):
+            t = 2 * math.pi * k / LABEL_DIRECTIONS
+            ux, uy = math.cos(t), math.sin(t)
+            support = float(np.max(hull @ np.array([ux, uy]))) - (c[0] * ux + c[1] * uy)
+            d = support + gap + w / 2 * abs(ux) + h / 2 * abs(uy)
+            x, y = c[0] + ux * d, c[1] + uy * d
+            out.append(((x - w / 2, y - h / 2, x + w / 2, y + h / 2), rank))
+        for f in (0.0, 0.25, 0.5, 0.75, 1.0):
+            x0 = xmin - w / 2 + f * (xmax - xmin)
+            out += [((x0, ymax + gap, x0 + w, ymax + gap + h), rank), ((x0, ymin - gap - h, x0 + w, ymin - gap), rank)]
+    return out
+
+
 def place_labels(ctx: Context, positions: dict[str, tuple[float, float]], hulls: dict[str, np.ndarray],
                  bounds: tuple[float, float], floor: float = 0.05) -> dict[str, tuple[float, float, str, tuple]]:
-    """Label position per group (inches): above, below, right or left of its outline -- the candidate with no node, no
-    tie, no other label and no foreign outline under it, close to its group; otherwise the one with the fewest
-    collisions. Larger groups are placed first."""
+    """Label block (name line and belonging scale) per group, in inches, right at its outline: the candidate with no
+    node, no tie, no other label, no foreign outline and no foreign group area under it and the smallest distance to its
+    outline; otherwise the one with the fewest such collisions. A nested group's label may lie on the areas of the
+    groups around it (not on their outlines). Larger groups are placed first."""
     nodes = [(x - NODE_R_IN - 0.03, y - NODE_R_IN - 0.03, x + NODE_R_IN + 0.03, y + NODE_R_IN + 0.03) for x, y in positions.values()]
     ties = [_straight(positions[a], positions[b]) for a, b in _edges(ctx) if a in positions and b in positions]
     outlines = {gid: MplPath(np.vstack([hh, hh[:1]]), closed=True) for gid, hh in hulls.items()}
+    containers = _containers(ctx)
     placed: list[tuple] = []
     result = {}
     groups = sorted((g for g in ctx.case.groups if g.id in hulls), key=lambda g: -len(ctx.case.members(g.id)))
     for g in groups:
         w, h = _label_width(ctx, g), LABEL_H
         hull = hulls[g.id]
-        xmin, ymin = hull.min(axis=0)
-        xmax, ymax = hull.max(axis=0)
-        cx, cy = (xmin + xmax) / 2, (ymin + ymax) / 2
-        candidates = []
-        for rank, lift in enumerate((0.03, 0.25, 0.5, 0.8)):
-            for x0 in (cx - w / 2, xmin, xmax - w):  # centred, left-aligned, right-aligned
-                candidates += [((x0, ymax + lift, x0 + w, ymax + lift + h), "top", rank),
-                               ((x0, ymin - lift - h, x0 + w, ymin - lift), "bottom", rank)]
-            for y0 in (cy - h / 2, ymax - h, ymin):
-                candidates += [((xmax + lift, y0, xmax + lift + w, y0 + h), "right", rank),
-                               ((xmin - lift - w, y0, xmin - lift, y0 + h), "left", rank)]
         best, best_cost = None, None
-        for box, side, rank in candidates:
+        for box, rank in label_candidates(hull, w, h):
             dx = max(0.05 - box[0], 0.0) - max(box[2] - (bounds[0] - 0.05), 0.0)  # shifted back onto the page
             dy = max(floor - box[1], 0.0) - max(box[3] - (bounds[1] - 0.05), 0.0)
             box = (box[0] + dx, box[1] + dy, box[2] + dx, box[3] + dy)
-            bbox = Bbox.from_extents(*box)
-            foreign = sum(o.intersects_bbox(bbox, filled=True) for gid, o in outlines.items() if gid != g.id)
-            own = outlines[g.id].intersects_bbox(bbox, filled=True)
+            bbox = Bbox.from_extents(box[0] - LABEL_CLEAR, box[1] - LABEL_CLEAR, box[2] + LABEL_CLEAR, box[3] + LABEL_CLEAR)
+            lines = sum(o.intersects_bbox(bbox, filled=False) for gid, o in outlines.items())  # any outline, own included
+            areas = sum(o.intersects_bbox(bbox, filled=True) for gid, o in outlines.items()
+                        if gid != g.id and gid not in containers[g.id])
             crossed = sum(t.intersects_bbox(bbox, filled=False) for t in ties)
-            gap = label_gap(box, hull)[0]
-            cost = (sum(_overlap(box, n) for n in nodes) * 20 + sum(_overlap(box, b) for b in placed) * 20 + foreign * 6
-                    + crossed * 3 + own * 2 + rank * 0.5 + gap * 4)
+            gap, near_box, near_hull = label_gap(box, hull)
+            leader = 0
+            if gap > LEADER_GAP:  # the leader line should not cross other outlines either
+                segment = _straight(near_box, near_hull)
+                leader = sum(segment.intersects_path(o, filled=False) for gid, o in outlines.items() if gid != g.id)
+            cost = (sum(_overlap(box, n) for n in nodes) * 30 + sum(_overlap(box, b) for b in placed) * 30 + lines * 8
+                    + areas * 6 + crossed * 6 + leader * 2 + gap * 10 + rank * 0.2)
             if best_cost is None or cost < best_cost:
-                best, best_cost = (box, side), cost
-        box, side = best
-        placed.append(box)
-        result[g.id] = ((box[0] + box[2]) / 2, (box[1] + box[3]) / 2, side, box)
+                best, best_cost = box, cost
+        placed.append(best)
+        result[g.id] = ((best[0] + best[2]) / 2, (best[1] + best[3]) / 2, "", best)
     return result
 
 
@@ -699,7 +793,7 @@ def g3_positions(ctx: Context) -> tuple[dict[str, tuple[float, float]], float]:
     ys = [y for _, y in unit.values()]
     w, h = max(max(xs) - min(xs), 1e-6), max(max(ys) - min(ys), 1e-6)
     sy = (G3_H - floor - 2 * G3_MARGIN) / h
-    sx = min((G3_W - 2 * G3_MARGIN) / w, sy * MAX_STRETCH)
+    sx = min((G3_W - 2 * G3_MARGIN_X) / w, sy * MAX_STRETCH)
     sy = min(sy, sx * MAX_STRETCH)
     ox = (G3_W - w * sx) / 2 - min(xs) * sx
     oy = floor + (G3_H - floor - h * sy) / 2 - min(ys) * sy
@@ -724,12 +818,14 @@ def membership_marked(ctx: Context) -> list[str]:
 def g3(ctx: Context):
     colors = {g.id: GROUP_COLORS[i % len(GROUP_COLORS)] for i, g in enumerate(ctx.case.groups)}
     marked = membership_marked(ctx)
-    scale = [("scale", "Egos Antwort: 1 Sehr stark … 5 Überhaupt nicht (markierter Punkt)", "2")]
-    if any(not g.belonging.value for g in ctx.case.groups):
-        scale.append(("scale", "keine Antwort: kein Punkt markiert", None))
+    scale = [("scale", "1 = sehr stark bis 5 = überhaupt nicht; der markierte Punkt zeigt den erhobenen Wert", "2")]
+    missing = sorted({g.belonging.missing for g in ctx.case.groups if not g.belonging.value}, key=list(MISSING_SHORT).index)
+    if missing:
+        named = ", ".join(f"{MISSING_SHORT[m]} = {codes.MISSING_LABELS[m].split(' (')[0]}" for m in missing)
+        scale.append(("scale", f"kein Wert ({named}): kein Punkt markiert", None))
     sections = [
         ("Beziehungstyp", relation_entries(ctx.case)),
-        ("Zugehörigkeit zur Gruppe", scale),
+        ("Zugehörigkeit zu einer Gruppe", scale),
         (None, [("line", "bestätigte Verbindung", {"color": TIE, "linewidth": 1.0})]
                + ([("ring", "Mitglied mehrerer Gruppen", [GROUP_COLORS[0], GROUP_COLORS[1]])] if marked else [])),
     ]
@@ -772,16 +868,15 @@ def g3(ctx: Context):
         first, second = group_label_lines(ctx, g)
         gap, near_box, near_hull = label_gap(box, hulls[gid])
         if gap > LEADER_GAP:  # assigns a label that cannot sit right at its outline (nested or crowded groups)
-            ax.plot([near_box[0], near_hull[0]], [near_box[1], near_hull[1]], color=colors[gid], linewidth=0.8, zorder=5)
+            ax.plot([near_box[0], near_hull[0]], [near_box[1], near_hull[1]], color=colors[gid], linewidth=0.8, zorder=5,
+                    gid=f"leader-{gid}")
             ax.add_patch(Circle(near_hull, 0.03, facecolor=colors[gid], edgecolor="none", zorder=5))
         ax.add_patch(FancyBboxPatch((box[0], box[1]), box[2] - box[0], box[3] - box[1], boxstyle="round,pad=0.02,rounding_size=0.05",
-                                    facecolor="#FFFFFF", alpha=0.85, edgecolor="none", zorder=6))
+                                    facecolor="#FFFFFF", alpha=0.85, edgecolor="none", zorder=6, gid=f"label-{gid}"))
         ax.text(box[0] + 0.05, box[3] - 0.03, first, ha="left", va="top", fontsize=LEGEND_PT, fontweight="bold", color=colors[gid], zorder=7)
         y = box[1] + 0.1
         x = box[0] + 0.05
-        ax.text(x, y, SCALE_PREFIX, ha="left", va="center", fontsize=LEGEND_PT - 0.6, color=MUTED, zorder=7)
-        x += text_width(SCALE_PREFIX, LEGEND_PT - 0.6) + 0.08
         x += ordinal_dots(ax, x, y, g.belonging.value) + 0.08
         ax.text(x, y, second, ha="left", va="center", fontsize=LEGEND_PT - 0.6, color=INK if g.belonging.value else MUTED,
-                style="normal" if g.belonging.value else "italic", zorder=7)
+                fontweight="bold" if g.belonging.value else "normal", style="normal" if g.belonging.value else "italic", zorder=7)
     return p.figure
