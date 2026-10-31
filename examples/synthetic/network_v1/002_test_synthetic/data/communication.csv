@@ -10,14 +10,14 @@ A08;1, 4, 5;1, 2;;1;
 A09;1, 5;1;;;
 A10;1, 5;2, 3;;S;Englisch an der Uni, Deutsch privat
 A11;1, 5;2, 3;;M;
-A12;1, 5;1, 2, 3, 4;;"M;S";
+A12;1, 5;1, 2, 3, 4;;"M;S";Portugiesisch und Spanisch privat, Englisch und Deutsch am Institut
 A13;1, 5;2, 3;;2;
 A14;1, 5, 6;2, 3;;S;E-Mail als Sonstiges
 A15;1;2;;;
 A16;1, 5;2;;;
 A17;1, 4, 5;1, 2;;1;
 A18;5;1;;;
-A19;1, 5;1, 2;;S;
+A19;1, 5;1, 2;;S;Deutsch im Verein, Spanisch unter vier Augen
 A20;1;1;;;
 A21;1;1;;;
 A22;1;1;;;
@@ -27,7 +27,7 @@ A25;1;2;;;
 A26;1, 5;1, 2;;2;
 A27;2;1, 2;;S;Wechsel nach Sitzungsplan
 A28;2, 5;1, 5;Französisch;M;
-A29;2;1, 2;;M;
+A29;2;1, 2, 5;Kichwa;M;Kichwa nur in einzelnen Wendungen
 A30;2, 4, 5;1;;;
 A31;4, 5;1;;;
 A32;5;1;;;

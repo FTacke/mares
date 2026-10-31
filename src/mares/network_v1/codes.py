@@ -32,11 +32,14 @@ class Missing(enum.Enum):
 
 MARKERS = {m.value: m for m in Missing if m.value}
 MISSING_LABELS = {
-    Missing.UNKNOWN: "unbekannt (NS)",
+    Missing.UNKNOWN: "weiß nicht (NS)",
     Missing.NO_ANSWER: "keine Antwort (KA)",
     Missing.NOT_APPLICABLE: "nicht anwendbar (NA)",
     Missing.NOT_COLLECTED: "nicht erhoben",
 }
+
+# The code lists and their German labels follow the coding key of the final survey sheet
+# (templates/network_v1/05_MARES_Netzwerk_Tabelle_v1.pdf, page 6); figures use these labels.
 
 # ---------------------------------------------------------------- table A: contacts and relations -------------
 CLOSENESS = {
@@ -49,64 +52,73 @@ CLOSENESS = {
     4.0: "außerhalb der Kreise",
 }
 CLOSENESS_LEVELS = tuple(sorted(CLOSENESS))  # 1 = very close ... 4 = outside the circles
+# The sheet allows an intermediate value written as a range: 1–2 = 1,5 · 2–3 = 2,5 · 3–4 = 3,5.
+CLOSENESS_RANGES = {(1, 2): 1.5, (2, 3): 2.5, (3, 4): 3.5}
 
 RELATION_TYPE = {
     "1": "Familie",
     "2": "Partner:in",
     "3": "Freund:in",
     "4": "Bekannte:r",
-    "5": "professioneller/institutioneller Kontakt",
-    "6": "sonstige Beziehung",
+    "5": "Professionell / institutionell",
+    "6": "Sonstige Beziehung",
 }
 CONTACT_FREQUENCY = {
-    "1": "(fast) täglich",
-    "2": "wöchentlich",
-    "3": "mehrmals monatlich",
-    "4": "etwa monatlich",
-    "5": "wenige Male im Jahr oder seltener",
+    "1": "(Fast) täglich",
+    "2": "Wöchentlich",
+    "3": "Mehrmals monatlich",
+    "4": "Etwa monatlich",
+    "5": "Wenige Male/Jahr oder seltener",
 }
 FUNCTIONS = {
-    "1": "persönlicher Rückhalt / Rat",
-    "2": "gemeinsame Aktivitäten / Gespräche",
-    "3": "praktische Hilfe im Alltag",
-    "4": "sprachliche Hilfe / Übersetzung",
-    "5": "sonstige Funktion",
-    "0": "nichts davon",
+    "1": "Persönlicher Rückhalt / Rat",
+    "2": "Gemeinsame Aktivitäten / Gespräche",
+    "3": "Praktische Hilfe im Alltag",
+    "4": "Sprachliche Hilfe / Übersetzung",
+    "5": "Sonstiges",
+    "0": "Nichts davon",
 }
 FUNCTION_NONE = "0"  # exclusive: never combined with another function
+FUNCTION_OTHER = "5"  # to be explained (comment)
 
 # ---------------------------------------------------------------- table B: communication and languages --------
 COMMUNICATION_FORMS = {
-    "1": "persönlich",
+    "1": "Persönlich",
     "2": "Videoanruf",
     "3": "Telefonat",
     "4": "Sprachnachrichten",
     "5": "Textnachrichten / Chat",
     "6": "Sonstiges",
 }
+COMMUNICATION_OTHER = "6"  # to be explained (comment)
 LANGUAGES = {
     "1": "Spanisch",
     "2": "Deutsch",
     "3": "Englisch",
     "4": "Portugiesisch",
-    "5": "andere Sprache",
+    "5": "Andere Sprache",
 }
-LANGUAGE_OTHER = "5"  # needs the name of the language (column other_languages)
-LANGUAGE_USE_FLAGS = {"M": "regelmäßige Sprachmischung", "S": "abhängig von Situation oder Medium"}
+LANGUAGE_OTHER = "5"  # to be named: on the sheet in the comment, in the case folder in the column other_languages
+LANGUAGE_USE_FLAGS = {"M": "Regelmäßige Mischung", "S": "Nach Situation oder Medium"}
 
 # ---------------------------------------------------------------- table C: groups and connections -------------
 GROUP_STATUS = {
-    "T": "alle Mitglieder haben untereinander Kontakt",
-    "P": "teilweise verbunden",
-    "N": "keine Verbindungen untereinander",
-    "NS": "befragte Person weiß es nicht",
+    "T": "Todos: alle Personen haben untereinander Kontakt",
+    "P": "Parcial: manche Paare, andere nicht",
+    "N": "Ninguno: keine Kontakte untereinander",
+    "NS": "No sabe: Kenntnis fehlt",
 }
-BELONGING = {"1": "sehr stark", "2": "stark", "3": "mittel", "4": "wenig", "5": "überhaupt nicht"}
-CONNECTION = {"1": "Kontakt bestätigt", "0": "kein Kontakt bestätigt", "?": "unbekannt / nicht erhoben"}
+BELONGING = {"1": "Sehr stark", "2": "Stark", "3": "Mittel", "4": "Wenig", "5": "Überhaupt nicht"}
+CONNECTION = {"1": "Kontakt bestätigt", "0": "Kein Kontakt bestätigt", "?": "Unklar oder nicht erhoben"}
+
+# ---------------------------------------------------------------- closing block of table C (ABSCHLUSS) ---------
+CONTACT_NAMING = {"completed": "abgeschlossen", "ended_early": "vorzeitig beendet"}
+CONNECTIONS_CLARIFIED = {"complete": "vollständig geklärt", "partial": "teilweise ungeklärt"}
 
 CONTACT_ID = re.compile(r"A\d{2,}")
 GROUP_ID = re.compile(r"C\d{2,}")
 _SEPARATORS = re.compile(r"\s*[,;]\s*")
+_RANGE = re.compile(r"([1-4])\s*[-–]\s*([1-4])")
 
 
 @dataclass(frozen=True)
@@ -173,11 +185,18 @@ def read_multi(raw: str | None, codes: dict[str, str] | None, *, exclusive: str 
 
 
 def read_closeness(raw: str | None) -> Cell:
-    """1, 1,5, 2, 2,5, 3, 3,5 or 4 (decimal comma or point). The original text is kept."""
+    """1, 1,5, 2, 2,5, 3, 3,5 or 4 (decimal comma or point), or an intermediate value as a range (``1–2`` = 1,5).
+    The original text is kept."""
     text = (raw or "").strip()
     missing = _missing(text)
     if missing is not None:
         return Cell(text, missing=missing)
+    span = _RANGE.fullmatch(text)
+    if span:
+        number = CLOSENESS_RANGES.get((int(span[1]), int(span[2])))
+        if number is None:
+            return Cell(text, error=f"Nähe {text!r}: als Spanne sind nur 1–2, 2–3 und 3–4 zulässig")
+        return Cell(text, (format_closeness(number),))
     try:
         number = float(text.replace(",", "."))
     except ValueError:

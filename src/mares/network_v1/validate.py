@@ -15,11 +15,12 @@ from __future__ import annotations
 import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass
+from itertools import combinations
 
 from . import DATASET_VERSION, FORMAT
 from . import codes
 from .case import CASE_TYPES, ERROR, FIELD_ORIGINS, NOTE, PROVENANCES, WARNING, Case, Finding
-from .derive import CONFLICT, Derived, derive
+from .derive import CONFLICT, UNKNOWN, Derived, derive, pair_key
 from .places import ISO3, Area
 
 PASSED, PASSED_WITH_WARNINGS, FAILED = "PASSED", "PASSED_WITH_WARNINGS", "FAILED"
@@ -161,6 +162,8 @@ def _contacts(case: Case, out: list[Finding]) -> None:
         for iso, label in ((c.birth_country_iso3, "Geburtsland"), (c.residence_country_iso3, "Wohnland")):
             if iso and iso not in ISO3 and iso not in codes.MARKERS:
                 out.append(Finding(ERROR, "country_code", f"{c.id}: {label} {iso!r} ist kein ISO-3166-alpha-3-Code", c.ref))
+        if codes.FUNCTION_OTHER in (c.functions.values if c.functions.recorded else ()) and not c.comment:
+            out.append(Finding(NOTE, "comment_expected", f"{c.id}: Funktion 5 „Sonstiges“ ohne Erläuterung", c.ref))
         if c.birth_country and not c.birth_country_iso3:
             out.append(Finding(NOTE, "birth_country_uncoded", f"{c.id}: Geburtsland genannt, aber nicht codiert", c.ref))
     labels = {"label": "Person/Rolle", "closeness": "Persönliche Nähe", "relation_type": "Beziehungstyp",
@@ -194,6 +197,12 @@ def _communication(case: Case, out: list[Finding]) -> None:
             out.append(Finding(WARNING, "other_language_unnamed", f"{cid}: „andere Sprache“ ohne Bezeichnung", b.ref))
         if b.other_languages.recorded and codes.LANGUAGE_OTHER not in languages:
             out.append(Finding(WARNING, "other_language_without_code", f"{cid}: Sprache benannt, aber Code 5 fehlt", b.ref))
+        expected = [label for flag, label in (
+            (codes.COMMUNICATION_OTHER in (b.forms.values if b.forms.recorded else ()), "Kommunikation „Sonstiges“"),
+            ("S" in (b.language_use.values if b.language_use.recorded else ()), "Sprachgebrauch S"),
+        ) if flag]
+        if expected and not b.comment:
+            out.append(Finding(NOTE, "comment_expected", f"{cid}: {' und '.join(expected)} ohne Erläuterung im Kommentar", b.ref))
         use = b.language_use
         if len(languages) == 1:
             if use.recorded and use.values != languages:
@@ -272,6 +281,39 @@ def _connections(case: Case, derived: Derived, out: list[Finding]) -> None:
             out.append(Finding(NOTE, "pair_repeated", f"{pair.a}–{pair.b}: mehrfach gleichlautend erfasst ({', '.join(pair.sources)})", f"{pair.a}–{pair.b}"))
 
 
+def _closing(case: Case, derived: Derived, out: list[Finding]) -> None:
+    """The closing block of table C (ABSCHLUSS): counts, whether naming was completed, whether connections are clarified.
+    Stored as ``metadata.closing``; required documentation for pilot and regular cases only."""
+    closing = case.metadata.get("closing")
+    if closing is None:
+        if case.metadata.get("case_type") in ("pilot", "regular"):
+            out.append(Finding(WARNING, "closing_missing", "Abschlussangaben von Tabelle C fehlen (metadata.closing)", "metadata.json"))
+        return
+    if not isinstance(closing, dict):
+        out.append(Finding(ERROR, "closing_value", "metadata.closing muss ein Objekt sein", "metadata.json"))
+        return
+    for key, actual, label in (("n_contacts", len(case.contacts), "Kontakte"), ("n_groups", len(case.groups), "Gruppen")):
+        stated = closing.get(key)
+        if stated is None:
+            continue
+        if not isinstance(stated, int) or isinstance(stated, bool):
+            out.append(Finding(ERROR, "closing_value", f"closing.{key} muss eine ganze Zahl sein", "metadata.json"))
+        elif stated != actual:
+            out.append(Finding(WARNING, "closing_count", f"Abschluss nennt {stated} {label}, übertragen sind {actual}", "metadata.json"))
+    for key, allowed in (("contact_naming", codes.CONTACT_NAMING), ("connections", codes.CONNECTIONS_CLARIFIED)):
+        value = closing.get(key)
+        if value is not None and value not in allowed:
+            out.append(Finding(ERROR, "closing_value", f"closing.{key} {value!r} ungültig ({', '.join(allowed)})", "metadata.json"))
+    if closing.get("contact_naming") == "ended_early" and not closing.get("ended_early_reason"):
+        out.append(Finding(NOTE, "closing_reason", "Kontaktnennung vorzeitig beendet, ohne Grund", "metadata.json"))
+    if closing.get("connections") == "complete":
+        open_pairs = [f"{a}–{b}" for g in case.groups for a, b in combinations(case.members(g.id), 2)
+                      if (p := derived.pairs.get(pair_key(a, b))) is None or p.state == UNKNOWN]
+        if open_pairs:
+            out.append(Finding(WARNING, "closing_connections", f"Abschluss: Verbindungen „vollständig geklärt“, aber "
+                               f"{len(set(open_pairs))} Paar(e) innerhalb von Gruppen sind unbekannt", "metadata.json"))
+
+
 def _context(case: Case, out: list[Finding]) -> None:
     counts = Counter(f for f, _, _, _ in case.context)
     for field_name, value, _comment, ref in case.context:
@@ -301,5 +343,6 @@ def validate(case: Case) -> Validation:
     _communication(case, findings)
     _groups(case, derived, findings)
     _connections(case, derived, findings)
+    _closing(case, derived, findings)
     _context(case, findings)
     return Validation(findings, derived)

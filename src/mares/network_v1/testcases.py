@@ -278,6 +278,8 @@ def build_fictionalized(v0_package: Path, target: Path, *, source_ref: str) -> d
             "Orte und Länder sind erfunden; die Wohnortbereiche folgen der v0-Einordnung, nicht einem Ort.",
             "Nicht für empirische Aussagen verwendbar.",
         ],
+        "closing": {"n_contacts": len(contacts), "n_groups": len(groups), "contact_naming": "completed", "ended_early_reason": "",
+                    "connections": "partial"},
         "field_origins": FIELD_ORIGINS,
         "construction": {
             "source": {"dataset_version": "network_v0", "source_label": dataset.case.source_label, "package_ref": source_ref,

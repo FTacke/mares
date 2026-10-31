@@ -15,7 +15,14 @@
   "data_quality": "SYNTHETIC",
   "limitations": [
     "Erfundene Daten; kein Wert ist erhoben.",
-    "Die Codierungen folgen den Festlegungen des Auftrags zu network_v1; die finalen Erhebungsbögen lagen nicht im Repository vor."
+    "Die Codierungen folgen dem Codierschlüssel der finalen Erhebungsvorlage (templates/network_v1/05_MARES_Netzwerk_Tabelle_v1.pdf)."
   ],
+  "closing": {
+    "n_contacts": 32,
+    "n_groups": 5,
+    "contact_naming": "completed",
+    "ended_early_reason": "",
+    "connections": "partial"
+  },
   "field_origins": {}
 }
