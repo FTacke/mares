@@ -1,13 +1,17 @@
 # `network_v1` – Datenstandard, Prüfung und Standardgrafiken
 
-**Status: implementiert und mit zwei Testfällen technisch geprüft (2026-10-31); fachlich nicht validiert.** Code:
+**Status: implementiert und mit zwei Testfällen technisch geprüft (2026-10-31, Gestaltung überarbeitet am selben Tag); fachlich nicht
+validiert.** Code:
 [`src/mares/network_v1/`](../../src/mares/network_v1/__init__.py). Abgrenzung zu v0: [`network-versions.md`](network-versions.md).
-Begründung: [`ADR-0005`](../decisions/ADR-0005_2026-10-31_netzwerk-v0-v1.md).
+Begründung: [`ADR-0005`](../decisions/ADR-0005_2026-10-31_netzwerk-v0-v1.md), Gestaltung:
+[`ADR-0006`](../decisions/ADR-0006_2026-10-31_netzwerk-v1-gestaltung.md).
 
-**Grundlage.** Die finalen Erhebungsbögen und der Codierschlüssel von v1 liegen **nicht** im Repository (`templates/` ist leer).
-Codes und Regeln folgen den Festlegungen des Auftrags vom 2026-10-31. Sobald die Bögen vorliegen, sind sie die primäre
-Spezifikation; Abweichungen werden dann hier und im Code gemeinsam geändert. Offen ist vor allem der Kontextbogen (§2.6).
-Die narrativen Interviews gehören nicht zu diesem Datenmodell.
+**Grundlage.** Maßgeblich ist die leere Erhebungsvorlage
+[`templates/network_v1/05_MARES_Netzwerk_Tabelle_v1.pdf`](../../templates/network_v1/05_MARES_Netzwerk_Tabelle_v1.pdf) (Tabellen A, B, C,
+Erweiterungsblätter A+ und B+, Codierschlüssel; Instrument-Version `INS-netzwerk-tabelle@v1`). Die Codelisten stehen einmal, im Code
+([`codes.py`](../../src/mares/network_v1/codes.py)); dieses Dokument beschreibt Regeln und verweist auf die Vorlage, statt die Listen zu
+wiederholen. Der Kontextbogen ist nicht Teil der Vorlage; seine Felder bleiben vorläufig (§2.6). Die narrativen Interviews gehören nicht
+zu diesem Datenmodell.
 
 ## 1. Ablauf
 
@@ -26,7 +30,7 @@ eine Kopfzeile. Beispiel: [`examples/synthetic/network_v1/002_test_synthetic/`](
 
 | Datei | Inhalt |
 |---|---|
-| `metadata.json` | `format`, `dataset_version`, `case_code`, `case_type`, `provenance`, `empirical_analysis_eligible`, `survey` (`design`, `instrument_version`, `survey_date`, `data_origin`), `data_quality`, `limitations`, `description`, `field_origins` |
+| `metadata.json` | `format`, `dataset_version`, `case_code`, `case_type`, `provenance`, `empirical_analysis_eligible`, `survey` (`design`, `instrument_version`, `survey_date`, `data_origin`), `data_quality`, `limitations`, `description`, `field_origins`, `closing` (§2.3), optional `display_code` (§5.6) |
 | `contacts.csv` | Tabelle A (§2.1) |
 | `communication.csv` | Tabelle B (§2.2) |
 | `groups.csv`, `group_memberships.csv`, `alter_connections.csv` | Tabelle C (§2.3) |
@@ -45,26 +49,32 @@ residence_country; residence_country_iso3; comment`
 |---|---|
 | `contact_id` | `A01`, `A02`, … fortlaufend, ohne Obergrenze; eine ID = genau ein Kontakt des Falls |
 | `label` | Pseudonym oder Rolle; keine Nachnamen, keine Kontaktdaten (E-Mail- oder Telefonmuster sind ein Fehler); erscheint nie in Grafiken |
-| `closeness` | 1 sehr nah · 2 nah · 3 weniger nah · 4 außerhalb der Kreise; Zwischenwerte 1,5 · 2,5 · 3,5 (Komma oder Punkt). Ausdrücklich erfragt, **nie aus der Kartenposition**. Der Rohtext bleibt erhalten, gerechnet wird mit dem Zahlenwert. Eine 5 ist ein Fehler mit Hinweis auf die v0-Skala |
-| `relation_type` | genau eine: 1 Familie · 2 Partner:in · 3 Freund:in · 4 Bekannte:r · 5 professioneller/institutioneller Kontakt · 6 sonstige |
-| `contact_frequency` | 1 (fast) täglich · 2 wöchentlich · 3 mehrmals monatlich · 4 etwa monatlich · 5 wenige Male im Jahr oder seltener |
-| `functions` | mehrere: 1 Rückhalt/Rat · 2 gemeinsame Aktivitäten/Gespräche · 3 praktische Hilfe · 4 sprachliche Hilfe/Übersetzung · 5 sonstige; **0 nichts davon ist exklusiv** |
+| `closeness` | 1–4, Zwischenwerte als `1,5`/`2,5`/`3,5` (Komma oder Punkt) **oder** wie auf dem Bogen als Spanne `1–2`/`2–3`/`3–4`. Ausdrücklich erfragt, **nie aus der Kartenposition**. Der Rohtext bleibt erhalten, gerechnet wird mit dem Zahlenwert. Eine 5 ist ein Fehler mit Hinweis auf die v0-Skala |
+| `relation_type` | genau ein Code 1–6 (nur die Hauptbeziehung) |
+| `contact_frequency` | ein Code 1–5, 1 = am häufigsten |
+| `functions` (Bogen: „Bedeutung“) | mehrere Codes 1–5; **0 „Nichts davon“ ist exklusiv**; bei 5 „Sonstiges“ wird eine Erläuterung in `comment` erwartet (Hinweis) |
 | Geburtsland, Wohnort, Wohnland | Originalangabe als Text, daneben ISO-3166-alpha-3-Code; der Wohnortbereich wird abgeleitet (§3) |
 
 ### 2.2 Tabelle B – `communication.csv`
 
 `contact_id; communication_forms; languages; other_languages; language_use; comment`
 
-- `communication_forms` (mehrere): 1 persönlich · 2 Videoanruf · 3 Telefonat · 4 Sprachnachrichten · 5 Textnachrichten/Chat · 6 Sonstiges. Plattformen sind keine Kategorie.
-- `languages` (mehrere): 1 Spanisch · 2 Deutsch · 3 Englisch · 4 Portugiesisch · 5 andere Sprache – mit Namen in `other_languages` (mehrere, Text).
-- `language_use`: bei **genau einer** Sprache regelkonform **leer**; bei mehreren: 1–5 (überwiegende Sprache, muss eine der genannten sein), `M` regelmäßige Mischung, `S` abhängig von Situation/Medium, `M;S` beides.
-- `comment`: Freitext, besonders zu `S` und „Sonstiges“.
+- `communication_forms` (mehrere Codes 1–6). Plattformen sind keine Kategorie; ein Telefonat (auch über WhatsApp) bleibt ein Telefonat.
+- `languages` (mehrere Codes 1–5). Code 5 „Andere Sprache“ wird benannt: auf dem Bogen im Kommentar, im Fallordner als eigene Spalte
+  `other_languages` (mehrere, Text) – eine Übertragungskonvention, damit benannte Sprachen auswertbar bleiben.
+- `language_use`: bei **genau einer** Sprache regelkonform **leer** (ableitbar); bei mehreren: 1–5 (überwiegende Sprache, muss eine der
+  genannten sein), `M`, `S` oder `M;S`.
+- `comment`: Freitext. Bei `S` und bei Kommunikation 6 „Sonstiges“ erwartet der Bogen eine Erläuterung; fehlt sie, gibt es einen Hinweis.
 
 ### 2.3 Tabelle C – Gruppen und Verbindungen
 
 - `groups.csv`: `group_id` (`C01`, …); `label` (selbst gewählt); `connection_status` T alle verbunden · P teilweise · N keine Verbindungen · NS weiß nicht; `belonging` 1 sehr stark … 5 überhaupt nicht – **nur Egos Zugehörigkeit zur Gruppe**, keine Stärke einer Kontakt-Kontakt-Beziehung.
 - `group_memberships.csv`: `group_id; contact_id`; Mehrfachmitgliedschaft erlaubt.
-- `alter_connections.csv`: `contact_a; contact_b; status; source; comment` mit `status` 1 bestätigt · 0 kein Kontakt · ? unbekannt; `source` z. B. die Gruppe, zu der die Aussage gemacht wurde.
+- `alter_connections.csv`: `contact_a; contact_b; status; source; comment` mit `status` 1 bestätigt · 0 kein Kontakt · ? unbekannt; `source` z. B. die Gruppe, zu der die Aussage gemacht wurde. Hierher gehören die Ausnahmen bei P und die „Weiteren Verbindungen“ des Bogens.
+- `metadata.closing` = Block ABSCHLUSS von Tabelle C: `n_contacts`, `n_groups`, `contact_naming` (`completed` | `ended_early`),
+  `ended_early_reason`, `connections` (`complete` = vollständig geklärt | `partial` = teilweise ungeklärt). Die Zahlen werden mit den
+  übertragenen Tabellen verglichen; „vollständig geklärt“ neben unbekannten Paaren innerhalb von Gruppen ist eine Warnung. Für Pilot- und
+  reguläre Fälle ist der Block zu dokumentieren.
 
 ### 2.4 Paarregeln ([`derive.py`](../../src/mares/network_v1/derive.py))
 
@@ -81,7 +91,7 @@ residence_country; residence_country_iso3; comment`
 | Eintrag | Bedeutung |
 |---|---|
 | Wert | erhoben |
-| `NS` | unbekannt (in `connection_status` ein eigener Status „weiß nicht“) |
+| `NS` | die befragte Person weiß es nicht (in `connection_status` ein eigener Status „No sabe“) |
 | `KA` | keine Antwort |
 | `NA` | nicht anwendbar |
 | leer | nicht erhoben – außer beim Sprachgebrauch mit genau einer Sprache (regelkonform leer) |
@@ -116,36 +126,80 @@ Nichts wird geraten: Ein deutscher Ort, der weder im Verzeichnis noch unter den 
 | Stufe | Wirkung | Beispiele |
 |---|---|---|
 | Fehler | keine Grafiken; Status `FAILED` | doppelte oder ungültige Kontakt-/Gruppen-IDs; unbekannte IDs in Gruppen oder Paaren; ungültige Codes; 0 neben anderen Funktionen; Nähe außerhalb 1–4/halbe Schritte; widersprüchliche Paaraussagen; Selbstpaare; fehlende Pflichtdateien/-spalten; ungültiges JSON; überwiegende Sprache nicht unter den Sprachen; Kontaktdaten in der Bezeichnung; v0-Spalten, v0-Dateien, `dataset_version: network_v0`, Nähe 5; inkonsistente Metadaten (Testfall als empirisch, `case_type`/`provenance`/Ordner passen nicht) |
-| Warnung | Grafiken entstehen, mit Hinweis | nicht erhobene Angaben (je Feld zusammengefasst); Wohnort nicht zuordenbar; fehlender Gruppenstatus oder fehlende Zugehörigkeit; Gruppe mit < 2 Mitgliedern; mehrere Sprachen ohne Sprachgebrauch; Sprachgebrauch bei genau einer Sprache; fehlende Tabelle-B-Zeile; fehlende Dokumentation eines empirischen Falls; unbekannte Kontextfelder |
-| Hinweis | nur Bericht | gleichlautende Mehrfachaussagen; P-Gruppe ohne Einzelaussagen; ungenutzter `places.csv`-Eintrag; Geburtsland ohne Code |
+| Warnung | Grafiken entstehen, mit Hinweis | nicht erhobene Angaben (je Feld zusammengefasst); Wohnort nicht zuordenbar; fehlender Gruppenstatus oder fehlende Zugehörigkeit; Gruppe mit < 2 Mitgliedern; mehrere Sprachen ohne Sprachgebrauch; Sprachgebrauch bei genau einer Sprache; fehlende Tabelle-B-Zeile; fehlende Dokumentation eines empirischen Falls (auch `closing`); Abschlusszahlen weichen von den Tabellen ab; unbekannte Kontextfelder |
+| Hinweis | nur Bericht | gleichlautende Mehrfachaussagen; P-Gruppe ohne Einzelaussagen; ungenutzter `places.csv`-Eintrag; Geburtsland ohne Code; erwartete Erläuterung fehlt (Funktion 5, Kommunikation 6, `S`); vorzeitig beendet ohne Grund |
 
-## 5. Wissenschaftliche Regeln der Grafiken
+## 5. Gestaltung der Grafiken
 
-Nur erhobene oder regelbasiert eindeutig ableitbare Werte; keine Kante aus bloßer Gruppenzugehörigkeit; unbekannte Paare erscheinen nicht als
-„kein Kontakt“, und jede Netzwerkgrafik nennt die Abdeckung; persönliche Nähe und geografischer Bereich bleiben getrennte Achsen; Nähe,
-Häufigkeit und Zugehörigkeit in ihrer Codierrichtung (1 = am nächsten/häufigsten/stärksten oben bzw. am stärksten); ordinale Codes als
-Kategorien, nie als Messachse; Mehrfachnennungen erhalten und mehrfach gezählt; „ohne Angabe“ getrennt von „nein“ bzw. „0 · nichts davon“;
-gleiche Farben, Legenden und Skalen für alle Fälle (Bereiche: Blautöne für Marburg/Mittelhessen, hellblau übriges Deutschland, Orangetöne
-außerhalb; Beziehungstypen: eigene Farben); keine Namen; kleine Fallzeile (Fallcode, Kontakte, Gruppen, Datenstatus) und bei Testfällen das
-Kennzeichen „TESTFALL · FIKTIVE DATEN“; Layoutkennzahlen sind keine Befunde. Layouts sind deterministisch (gleiche Daten → byteidentische Dateien).
+Alles Gemeinsame steht an einer Stelle: [`figures/base.py`](../../src/mares/network_v1/figures/base.py). Begründung der Festlegungen:
+[`ADR-0006`](../decisions/ADR-0006_2026-10-31_netzwerk-v1-gestaltung.md).
+
+### 5.1 Wissenschaftliche Regeln
+
+Nur erhobene oder regelbasiert eindeutig ableitbare Werte; Linien nur für bestätigte Paare, nie aus bloßer Gruppenzugehörigkeit; eine fehlende
+Linie heißt nicht „kein Kontakt“, und jede Netzwerkgrafik nennt die Abdeckung; persönliche Nähe und Wohnortbereich bleiben getrennte Achsen;
+ordinale Codes als Kategorien in Codierrichtung (1 oben bzw. am stärksten), nie als Messachse; Mehrfachnennungen mehrfach gezählt; fehlende
+Angaben getrennt von „nein“ und von „0 · Nichts davon“; keine Namen; Layouts deterministisch (gleiche Daten → byteidentische Dateien);
+Layoutlagen haben keine Bedeutung.
+
+### 5.2 Seite
+
+Titel und knapper Untertitel oben links, Fallkennzeichnung oben rechts, darunter die Hauptdarstellung (sie bekommt den Großteil der Fläche),
+eine der zwei Legenden, höchstens zwei kurze Hinweise, eine Fußzeile `MARES · network_v1 · <n> Kontakte · <n> Gruppen` (bei echten Fällen
+zusätzlich die Datenqualität). Die Herkunft eines Werts steht in dieser Dokumentation, nicht in Achsenbeschriftungen. Schriftgrößen,
+Knoten- und Punktgrößen und Abstände sind Konstanten in `base.py`.
+
+### 5.3 Farben
+
+| Aufgabe | Festlegung |
+|---|---|
+| Beziehungstyp (Knoten und Punkte in G1, G2, G3, P1, P2, P5) | 1 Familie `#D55E00` · 2 Partner:in `#CC79A7` · 3 Freund:in `#009E73` · 4 Bekannte:r `#56B4E9` · 5 Professionell / institutionell `#0072B2` · 6 Sonstige Beziehung `#6B7280` (Okabe-Ito, Grau für die Restkategorie); feiner neutraler Rand; ohne Angabe: weiß, gepunkteter Rand |
+| Wohnortbereiche, Gruppenflächen, Ortsflächen | nur sehr helle Hintergründe; sie konkurrieren nie mit den Knotenfarben |
+| Gruppen in G3 | gedämpfte Umrissfarben nur zur Unterscheidung; die Zugehörigkeit liegt in der Linienbreite (§6) |
+| Anteile in P3/P4 | eine ruhige Blauskala; Spalten mit n = 1 neutral |
+
+Farbe bedeutet in Knoten immer nur den Beziehungstyp – nie Region, Nähe oder Stärke.
+
+### 5.4 Legenden
+
+Genau zwei Layouts: `side` (senkrecht rechts, G1) und `bottom` (waagerecht unter der Grafik, alle übrigen). Reihenfolge, Bezeichnungen und
+Farben der Beziehungstypen sind überall gleich und stammen aus `codes.RELATION_TYPE`. P3/P4 zeigen in der Legende die Farbskala.
+
+### 5.5 Geografie in Grafiken
+
+Fünf Darstellungsbereiche in fester Reihenfolge Marburg (Stadt) → übriges Mittelhessen → übriges Deutschland → übriges Europa → außerhalb
+Europas; die ersten beiden tragen die gemeinsame Klammer „Marburg und Mittelhessen“. Vor „außerhalb Europas“ steht ein etwas größerer
+Abstand – ein Kategorienschritt, keine Entfernung. **„Nicht zuordenbar“ ist keine Region:** keine Spalte, kein gleichrangiges Band. In den
+Matrizen wird der Kontakt in einem Hinweis genannt („Wohnort nicht zuordenbar (nicht dargestellt): A22“); in G2 steht er mit seinen
+Verbindungen in einem schmalen, gestrichelt abgesetzten Kasten rechts.
+
+### 5.6 Fallkennzeichnung und Dateinamen
+
+Oben rechts, aus den Metadaten: Testfälle `TESTFALL <Nummer>* · SYNTHETISCH` bzw. `· FIKTIONALISIERT` (rot hinterlegt), echte Fälle
+`FALL · <display_code>` oder, ohne `display_code`, `FALL · MARES-<Nummer>`. Nie ein Name, nie der lange Ordnername. Dateien:
+`<Fallcode>_<Grafikcode>_<Bezeichnung>.png` (optional `.svg`).
 
 ## 6. Die acht Standardgrafiken ([`figures/`](../../src/mares/network_v1/figures/__init__.py))
 
-Datei: `<Fallcode>_<Grafikcode>_<Bezeichnung>.png` (optional zusätzlich `.svg`), z. B. `002_test_synthetic_G1_persoenliches_netz.png`.
-Fehlen die Daten einer Grafik, entsteht keine Datei; der Lauf nennt den Grund (`figures_index.json`).
+Fehlen die Daten einer Grafik, entsteht keine Datei; der Lauf nennt den Grund (`figures_index.json`). Gemeinsame Bausteine: Punktmatrix
+(P1, P2, P5: gleiche Punkt- und Beschriftungsgröße, Kontakte einer Zelle nebeneinander und in Zeilen, nie überlappend) und Heatmap (P3, P4).
 
-| Code | Datei | Eingänge | Darstellung |
+| Code | Datei | Darstellung | Legende |
 |---|---|---|---|
-| G1 | `G1_persoenliches_netz` | A: Nähe, Beziehungstyp; C: bestätigte Paare | Ego im Zentrum, Abstand = erhobene Nähe (Ringe 1–4, Zwischenwerte gestrichelt), Farbe = Beziehungstyp; nur der Winkel ist ein reproduzierbares Layout; Kontakte ohne Nähe außerhalb der Ringe; Kanten, die nahe an Ego vorbeiführen, sind gebogen |
-| G2 | `G2_geografisches_netz` | A: Wohnort/Wohnland; C: bestätigte Paare | Bänder je Bereich (Breite ∝ √Kontaktzahl), Kanten im Bereich durchgezogen, über Bereiche gestrichelt gebogen; **keine Ego-Linien**; Kontakte ohne bestätigte Verbindung in einer eigenen unteren Zeile |
-| P1 | `P1_wohnort_naehe` | A: Bereich, Nähe | Punktmatrix, Zeilen 1 · 1,5 · … · 4 (1 oben), Kontakt-IDs, Spalte „nicht zuordenbar“ und Zeile „keine Angabe“ nur bei Bedarf |
-| P2 | `P2_wohnort_haeufigkeit` | A: Bereich, Häufigkeit | Punktmatrix, Zeilen 1–5 als Kategorien |
-| P3 | `P3_wohnort_kommunikation` | A: Bereich; B: Formen | Matrix „k von n“, Schattierung = Anteil, n = Kontakte des Bereichs mit Angabe, Zeile „ohne Angabe“ |
-| P4 | `P4_wohnort_sprachen` | A: Bereich; B: Sprachen, andere Sprachen | wie P3; benannte andere Sprachen einzeln (höchstens drei, Rest „weitere“), M/S nicht dargestellt |
-| P5 | `P5_funktionen_naehe` | A: Funktionen, Nähe | Punktmatrix Funktionen 1–5 × Nähe; Mehrfachfunktionen mehrfach; „0 · nichts davon“ und „keine Angabe“ abgesetzt |
-| G3 | `G3_gruppen_zugehoerigkeit` | C: Gruppen, Mitglieder, Status, Zugehörigkeit, bestätigte Paare | links Gruppenkarte (Umrandungen um die Mitglieder, eingebettete Gruppen gestrichelt, Mehrfachmitglieder mit Farbring, Nichtmitglieder werden aus fremden Umrandungen geschoben, ungruppierte Kontakte außen), rechts Ego → Gruppen mit Linienstärke = Zugehörigkeit, Kreisgröße/Zahl = Mitglieder |
+| G1 | `G1_persoenliches_netz` | Ego im Zentrum, Abstand = erhobene Nähe (Ringe 1–4 durchgezogen, 1,5/2,5/3,5 gestrichelt); nur der Winkel ist Layout; Kontakte ohne Nähe auf einem äußeren Bogen (nur bei Bedarf); Linien, deren Strecke nahe an Ego vorbeiführt, werden von Ego weg gebogen | side |
+| G2 | `G2_geografisches_netz` | Bänder je Bereich (Breite folgt der Kontaktzahl); darin **geografische Untergruppen**: übriges Mittelhessen und übriges Deutschland nach Wohnort, Ausland nach Wohnland – mehrere Kontakte in einer hellen, fein umrandeten Fläche mit „Ort · Anzahl“ darüber, ein einzelner Kontakt ohne Fläche mit dem Ortsnamen darüber; Marburg ohne weitere Untergliederung. Verbundene Kontakte einer Untergruppe liegen auf einer Ellipse (keine Linie läuft durch einen dritten Knoten). Linien im Bereich durchgezogen, zwischen Bereichen dünn, hell, gestrichelt. Untere Zone: Kontakte ohne bestätigte Verbindung (keine Aussage über tatsächliche Kontakte). Untergruppen sind nur gemeinsame Geografie, keine sozialen Gruppen | bottom |
+| P1 | `P1_wohnort_naehe` | Punktmatrix Bereich × Nähe (1, 1,5 … 4; „keine Angabe“ nur bei Bedarf) | bottom |
+| P2 | `P2_wohnort_haeufigkeit` | derselbe Baustein, Zeilen = Kontakthäufigkeit 1–5 | bottom |
+| P3 | `P3_wohnort_kommunikation` | Heatmap; Zelle = Anzahl der Kontakte, Farbe = Anteil an n des Bereichs; 0 = leere weiße Zelle; Spalte mit n = 1 neutral; Zeilen ohne Codes, visuell gegliedert (persönlich · synchron auf Distanz: Video, Telefon · asynchron: Sprach-, Textnachrichten · weitere Formen), keine Summen; „ohne Angabe“ nur wenn vorhanden | bottom (Farbskala) |
+| P4 | `P4_wohnort_sprachen` | derselbe Baustein; Zeilen Spanisch, Deutsch, Englisch, Portugiesisch und **jede** benannte weitere Sprache; M/S bleiben im Datenmodell, ohne eigene Grafik | bottom (Farbskala) |
+| P5 | `P5_funktionen_naehe` | Punktmatrix Funktionen × Nähe, Bezeichnungen ohne Codes, n je Spalte; „Nichts davon“ und „keine Angabe“ nur, wenn sie vorkommen, abgesetzt | bottom |
+| G3 | `G3_gruppen_zugehoerigkeit` | **eine** große Gruppenkarte: Kontakte als Knoten, die von Ego benannten Gruppen als Umrandungen mit heller Fläche; Beschriftung `C01 · <Bezeichnung> · <n> Kontakte` und darunter `Zugehörigkeit: <Wert · Bezeichnung>`; **Linienstärke der Umrandung = Egos Zugehörigkeit** (1 am kräftigsten, 5 dünn, aber sichtbar; ohne Angabe gepunktet) – nicht die interne Vernetzung; Mehrfachmitglieder mit farbigem Ring; eine ganz in anderen liegende Gruppe bekommt eine engere, durchgezogene Umrandung; Nichtmitglieder werden aus fremden Umrandungen geschoben; ungruppierte Kontakte außen; T/P/N/NS wirken nur über die abgeleiteten Linien | bottom |
 
-Ausgelegt und an den Testfällen geprüft für bis zu 32 Kontakte und 6 Gruppen; für 30–40 Kontakte vorgesehen, mit mehr als 40 nicht geprüft.
+Ausgelegt und an den Testfällen geprüft für 22 und 32 Kontakte mit 5–6 Gruppen; für 30–40 Kontakte vorgesehen, mit mehr nicht geprüft.
+
+**Experiment, kein Standard:** eine kartografische Variante von G2 (Amerika, Europa, Ausschnitt Mittelhessen) liegt als Pilotskript unter
+[`pilots/network_v1_map/`](../../pilots/network_v1_map/README.md); sie läuft nur mit dem synthetischen Testfall 002, schreibt nur nach
+`WORKSPACE/runs/` und gehört nicht zu den acht Grafiken.
 
 ## 7. Testfälle und empirische Fälle
 

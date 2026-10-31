@@ -1,6 +1,7 @@
 # Visualisierungskonventionen
 
-**Status: verbindlich für die Grafiken des Netzwerkmoduls.** Gemeinsame Regeln, damit Abbildungen
+**Status: verbindlich für die Grafiken von `network_v0`.** Für `network_v1` gelten Gestaltung und Standardgrafiken in
+[`network-v1.md`](network-v1.md) §5–§6. Gemeinsame Regeln, damit Abbildungen
 verschiedener Fälle und Jahrgänge vergleichbar bleiben. Code:
 [`src/mares/network_v0/figures/style.py`](../../src/mares/network_v0/figures/style.py) (Konventionen),
 [`common.py`](../../src/mares/network_v0/figures/common.py) (Ring-Layout),
