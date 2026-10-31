@@ -14,13 +14,14 @@ from matplotlib.patheffects import withStroke
 
 from ..analysis import AnalysisParams, SurveyStatus, geo_labels
 from ..model import NetworkDataset
+from . import design
 from .common import EGO_RADIUS, NODE_RADIUS, ContactView, EgoLayout, contact_views, draw_legend, draw_node, ego_layout
 from .style import GEO_COLORS, GEO_ORDER, INK, LANGUAGE_SHORT, MODE_COLORS, MUTED, frame, new_figure, rc
 
 _SCALE_TITLE = "Nähezonen (Tabellenwert „closeness“, 1–5)\ninnen = nah, außen = weniger nah"
 _POSITION_NOTE = (
     "Radius = Tabellenwert der Nähe (1–5), nicht die Position auf der handgezeichneten Netzwerkkarte; die Kartenlegende wurde nicht umgerechnet. "
-    "Winkel und Reihenfolge innerhalb einer Zone\nsind rein darstellerisch (nach Wohnort, dann ID) und tragen keine Information."
+    "Winkel und Reihenfolge innerhalb einer Zone sind rein darstellerisch (nach Wohnort, dann ID) und tragen keine Information."
 )
 
 
@@ -63,9 +64,9 @@ def _zone_legend(dataset: NetworkDataset, layout: EgoLayout, views: list[Contact
     return (_SCALE_TITLE, entries)
 
 
-def _canvas(title: str, subtitle: str, status: SurveyStatus, note: str, layout: EgoLayout):
+def _canvas(title: str, subtitle: str, status: SurveyStatus, note: str, layout: EgoLayout, *, profile: str = "analysis", short_title: str | None = None, hint: str | None = None):
     fig = new_figure(13.2, 9.6)
-    frame(fig, title, subtitle, status, note)
+    design.frame_for(profile, fig, title, subtitle, status, note, short_title=short_title, hint=hint)
     ax = fig.add_axes([0.02, 0.12, 0.62, 0.77])
     limit = layout.outer_radius + 0.45
     ax.set_xlim(-limit, limit)
@@ -76,34 +77,36 @@ def _canvas(title: str, subtitle: str, status: SurveyStatus, note: str, layout: 
     return fig, ax, legend
 
 
-def proximity_figure(dataset: NetworkDataset, status: SurveyStatus, params: AnalysisParams):
+def proximity_figure(dataset: NetworkDataset, status: SurveyStatus, params: AnalysisParams, *, profile: str = "clean"):
     """Figure A: ego-centred network, colour = geographic category of the residence."""
     with rc():
         views = contact_views(dataset, params)
         labels = geo_labels(params)
         layout = ego_layout(views, _zones(dataset))
-        note = _POSITION_NOTE + "\nKategorien beschreiben den Wohnort, nicht die Person; ungefähre oder mehrdeutige Angaben sind nicht präzisiert."
+        note = _POSITION_NOTE + "\nKategorien beschreiben den Wohnort, nicht die Person; regionale Angaben („Region …“) bleiben regional."
         fig, ax, legend = _canvas(
             "Egozentriertes Netzwerk: Nähe und Wohnort der Kontakte",
             "Jeder Punkt ist ein Kontakt (ID); Farbe = geografische Einordnung des Wohnorts; Beziehungen zwischen Kontakten sind hier nicht dargestellt",
             status,
             note,
             layout,
+            profile=profile,
+            short_title="Nähe und Wohnort der Kontakte",
+            hint="Radius = erhobene Nähe (Tabellenwert 1–5), nicht die Position auf der Netzwerkkarte.",
         )
         _draw_zones(ax, layout)
         for view in views:
-            draw_node(ax, layout.positions[view.contact_id], view.contact_id, GEO_COLORS[view.geo], flagged=view.flagged)
+            draw_node(ax, layout.positions[view.contact_id], view.contact_id, GEO_COLORS[view.geo])
         geo_counts = Counter(v.geo for v in views)
         sections = [
             _zone_legend(dataset, layout, views),
-            ("Wohnort des Kontakts", [("dot", GEO_COLORS[g], f"{labels[g]}  (n = {geo_counts[g]})") for g in GEO_ORDER if geo_counts[g] or g is not GEO_ORDER[-1]]),
-            ("Zeichen", [("flag", "#FFFFFF", "gestrichelter Rand: offene Prüfhinweise\n(siehe Prüfbericht)")]),
+            ("Wohnort des Kontakts", [("dot", GEO_COLORS[g], f"{labels[g]}  (n = {geo_counts[g]})") for g in GEO_ORDER if geo_counts[g]]),
         ]
-        draw_legend(legend, sections)
+        draw_legend(legend, design.lean_sections(sections, profile))
     return fig
 
 
-def language_mode_figure(dataset: NetworkDataset, status: SurveyStatus, params: AnalysisParams):
+def language_mode_figure(dataset: NetworkDataset, status: SurveyStatus, params: AnalysisParams, *, profile: str = "clean"):
     """Figure D2: the same layout, colour = typical language mode (the respondent's own coding).
 
     Beneath each contact, the languages named for that contact -- listed in codebook order, which
@@ -119,12 +122,15 @@ def language_mode_figure(dataset: NetworkDataset, status: SurveyStatus, params: 
             status,
             _POSITION_NOTE + "\nDer Sprachmodus ist die codierte Angabe der Erhebung; er wird nicht aus den Sprachen berechnet. Mehrsprachige Kontakte bleiben mehrsprachig.",
             layout,
+            profile=profile,
+            short_title="Sprachmodus der Kontakte",
+            hint="Radius = Nähe, Farbe = typischer Sprachmodus; mehrere Sprachen bleiben mehrere.",
         )
         _draw_zones(ax, layout)
         for view in views:
             x, y = layout.positions[view.contact_id]
             fill = MODE_COLORS.get(view.language_mode or "", "#FFFFFF")
-            draw_node(ax, (x, y), view.contact_id, fill, flagged=view.flagged)
+            draw_node(ax, (x, y), view.contact_id, fill)
             if fill == "#FFFFFF":  # a white disc needs a visible rim
                 ax.add_patch(Circle((x, y), NODE_RADIUS, facecolor="none", edgecolor="#6C757D", linewidth=0.9, linestyle=(0, (1.2, 1.2)), zorder=5.5))
             tag = " ".join(LANGUAGE_SHORT.get(code, code) for code in view.languages) or "–"
@@ -140,12 +146,14 @@ def language_mode_figure(dataset: NetworkDataset, status: SurveyStatus, params: 
         abbreviations = "\n".join(f"{LANGUAGE_SHORT.get(c, c)} = {dataset.codebook.meaning('language', c)}" for c in dataset.codebook.codes("language"))
         draw_legend(
             legend,
-            [
-                _zone_legend(dataset, layout, views),
-                ("Typischer Sprachmodus", mode_entries),
-                ("Sprachkürzel", [("text", "", abbreviations)]),
-                ("Zeichen", [("flag", "#FFFFFF", "gestrichelter Rand: offene Prüfhinweise")]),
-            ],
+            design.lean_sections(
+                [
+                    _zone_legend(dataset, layout, views),
+                    ("Typischer Sprachmodus", mode_entries),
+                    ("Sprachkürzel", [("text", "", abbreviations)]),
+                ],
+                profile,
+            ),
             line=0.040,
         )
     return fig

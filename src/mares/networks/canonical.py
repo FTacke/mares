@@ -10,7 +10,9 @@ import csv
 import io
 import json
 
+from .analysis import AnalysisParams, birth_of, residence_of
 from .build import Network
+from .curation import NO_CURATION, Curation
 from .model import NetworkDataset
 
 FORMAT = "mares-network-canonical/v0-draft"
@@ -25,7 +27,10 @@ def _csv(header: tuple[str, ...], rows: list[tuple[object, ...]]) -> str:
     return BOM + buffer.getvalue()
 
 
-def dataset_json(dataset: NetworkDataset, network: Network) -> str:
+def dataset_json(
+    dataset: NetworkDataset, network: Network, params: AnalysisParams | None = None, curation: Curation = NO_CURATION
+) -> str:
+    params = params or AnalysisParams()
     document = {
         "format": FORMAT,
         "case": {"source_label": dataset.case.source_label, "canonical_case_id": dataset.case.canonical_case_id},
@@ -33,6 +38,14 @@ def dataset_json(dataset: NetworkDataset, network: Network) -> str:
             "session_date": dataset.session.session_date,
             "interview_type": dataset.session.interview_type,
             "package_version": dataset.session.package_version,
+        },
+        "survey": {
+            "alter_alter_elicitation": curation.survey.elicitation,
+            "alter_alter_documentation": curation.survey.documentation,
+            "group_rule": curation.survey.group_rule,
+            "pair_coverage": curation.survey.pair_coverage,
+            "basis": curation.survey.basis,
+            "curation_sha256": curation.sha256,
         },
         "contacts": [
             {
@@ -42,6 +55,12 @@ def dataset_json(dataset: NetworkDataset, network: Network) -> str:
                 "codes": {name: list(parsed.codes) for name, parsed in sorted(c.codes.items())},
                 "text": dict(sorted(c.text.items())),
                 "review_flags": list(c.review_flags),
+                # derived, never replacing the raw values above
+                "derived": {
+                    "birth_country_status": birth_of(c).status.value,
+                    "residence_category": residence_of(c, params).category.value,
+                    "residence_region_of": residence_of(c, params).region_of,
+                },
             }
             for c in dataset.contacts
         ],
@@ -61,7 +80,8 @@ def dataset_json(dataset: NetworkDataset, network: Network) -> str:
     return json.dumps(document, indent=2, ensure_ascii=False) + "\n"
 
 
-def contacts_csv(dataset: NetworkDataset) -> str:
+def contacts_csv(dataset: NetworkDataset, params: AnalysisParams | None = None) -> str:
+    params = params or AnalysisParams()
     attributes = sorted({name for c in dataset.contacts for name in (*c.codes, *c.text)})
     rows = []
     for c in dataset.contacts:
@@ -69,8 +89,13 @@ def contacts_csv(dataset: NetworkDataset) -> str:
         for name in attributes:
             row.append("|".join(c.code_list(name)) if name in c.codes else c.text.get(name, ""))
         row.append("|".join(c.review_flags))
+        row.append(birth_of(c).status.value)
+        row.append(residence_of(c, params).category.value)
         rows.append(tuple(row))
-    return _csv(("contact_id", "source_block", "source_local_id", *attributes, "review_flags"), rows)
+    return _csv(
+        ("contact_id", "source_block", "source_local_id", *attributes, "review_flags", "birth_country_status", "residence_category"),
+        rows,
+    )
 
 
 def ties_csv(network: Network) -> str:

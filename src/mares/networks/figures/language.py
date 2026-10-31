@@ -16,6 +16,7 @@ from mares.core import ids
 
 from ..analysis import AnalysisParams, SurveyStatus, language_combinations
 from ..model import NetworkDataset
+from . import design
 from .common import ContactView, contact_views
 from .style import BAR_COLOR, FAINT, GEO_COLORS, INK, LANGUAGE_COLORS, MODE_COLORS, MUTED, frame, label_color, new_figure, rc, wrap
 
@@ -25,18 +26,21 @@ def _mode_rank(dataset: NetworkDataset, view: ContactView) -> int:
     return codes.index(view.language_mode) if view.language_mode in codes else len(codes)
 
 
-def language_profile_figure(dataset: NetworkDataset, status: SurveyStatus, params: AnalysisParams):
+def language_profile_figure(dataset: NetworkDataset, status: SurveyStatus, params: AnalysisParams, *, profile: str = "clean"):
     with rc():
         views = sorted(contact_views(dataset, params), key=lambda v: (_mode_rank(dataset, v), ids.contact_number(v.contact_id)))
         languages = list(dataset.codebook.codes("language"))
         fig = new_figure(14.2, 9.4)
-        frame(
+        design.frame_for(
+            profile,
             fig,
             "Sprachliches Netzwerkprofil: Sprachen und Sprachmodus der Kontakte",
             "Punkt = Sprache wurde für diesen Kontakt genannt (mehrere möglich); Modus = typischer Sprachmodus laut Tabelle; Reihenfolge: nach Modus, dann ID",
             status,
             "Mehrsprachige Angaben bleiben mehrsprachig: Es wird keine dominante Sprache konstruiert, und der Modus wird nicht aus den Sprachen berechnet. "
             "Reihenfolge der Sprachspalten = Codebuch (keine Rangfolge).\nKontakte mit mehreren Beziehungstypen zählen in der Tabelle rechts unten in jeder Spalte, die sie nennen.",
+            short_title="Sprachen und Sprachmodus der Kontakte",
+            hint="Mehrere Sprachen bleiben mehrere; es wird keine Hauptsprache abgeleitet.",
         )
         ax = fig.add_axes([0.02, 0.12, 0.45, 0.76])
         n = len(views)
@@ -56,8 +60,6 @@ def language_profile_figure(dataset: NetworkDataset, status: SurveyStatus, param
             previous = view.language_mode
             ax.add_patch(Rectangle((-2.2, i + 0.1), 0.14, 0.8, facecolor=GEO_COLORS[view.geo], edgecolor="none", zorder=2))
             ax.text(-1.95, y, view.contact_id, ha="left", va="center", fontsize=8.8, fontweight="bold", color=INK)
-            if view.flagged:
-                ax.text(-0.85, y, "◌", ha="center", va="center", fontsize=9, color=INK)
             for j, code in enumerate(languages):
                 used = code in view.languages
                 ax.scatter([j * col_w + 0.75], [y], s=250 if used else 14, c=LANGUAGE_COLORS.get(code, "#888888") if used else FAINT,
@@ -68,7 +70,7 @@ def language_profile_figure(dataset: NetworkDataset, status: SurveyStatus, param
                 ax.text(mode_x + 0.5, y, view.language_mode, ha="center", va="center", fontsize=9, fontweight="bold", color=label_color(fill), zorder=4)
             else:
                 ax.text(mode_x + 0.5, y, "–", ha="center", va="center", fontsize=9, color=MUTED)
-        ax.text(-2.2, -1.45, "■ Wohnort wie in Abbildung A;  ◌ offene Prüfhinweise", fontsize=7.2, color=MUTED, ha="left", va="center")
+        ax.text(-2.2, -1.45, "■ Farbstreifen = Wohnort (Farben wie in Abbildung A)", fontsize=7.2, color=MUTED, ha="left", va="center")
 
         # repertoires
         combos = language_combinations(dataset)

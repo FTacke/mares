@@ -147,7 +147,12 @@ Ergebnissen und Textauszügen) · `AUDIO_EXCERPTS` (Verwendung von Tonausschnitt
   | `unknown` | gefragt; Ego weiß es nicht |
   | *fehlend* | nicht erhoben oder nicht eingetragen |
 
-  „Fehlend“ wird nie stillschweigend als `no` gelesen.
+  „Fehlend“ wird nie stillschweigend als `no` gelesen. Ein fehlendes Paar gilt nur dann als verneint, wenn belegt ist, dass die
+  Erhebung **alle** Paare erfasst hat (Paarabdeckung).
+- Zu jeder Alter-Alter-Erhebung gehören drei getrennte Aussagen: die **Erhebungsmethode** (z. B. Beziehungen einzeln erfragt), die
+  **Dokumentationsform** (z. B. Gruppenumrandungen einer Netzwerkkarte) und die **Paarabdeckung**. Sie werden bei der
+  Verarbeitung in einer eigenen, datierten Kuratierungsdatei festgehalten, nie durch Änderung der Originaldateien
+  ([ADR-0003](../decisions/ADR-0003_2026-10-12_erhebungsmethode-und-kuratierung.md)).
 - `001-2`-artige Quellkennungen sind keine Fall-IDs: Das Netzwerkmodell führt die Quellkennung getrennt von einer
   optionalen kanonischen Fall-ID und ordnet nie ohne Register zu.
 - Welche Attribute erhoben werden und wie das Sheet aufgebaut ist, legt die Instrument-Version

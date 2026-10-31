@@ -6,8 +6,9 @@ network, ``analyze`` the descriptive tables, ``figures`` the graphics, ``run`` a
 processing report. Everything is recomputed from the input each time; nothing is cached, so a repeated
 run on a revised data version is just another run.
 
-Locations: the input is a logical reference (``INTAKE`` or ``PRIMARY`` plus a relative path), the
-output is always below ``WORKSPACE``. ``BACKUP`` and ``EXCHANGE`` are never a data source, and nothing is
+Locations: the input is a logical reference (``INTAKE`` or ``PRIMARY`` plus a relative path) -- the package
+folder and, optionally, a curation file (statements about the package; see :mod:`mares.networks.curation`) --
+the output is always below ``WORKSPACE``. ``BACKUP`` and ``EXCHANGE`` are never a data source, and nothing is
 written anywhere else. A package with validation errors is not processed further.
 """
 
@@ -31,9 +32,12 @@ from mares.core.refs import StorageRef
 from mares.core.roots import Roots
 
 from . import canonical, report as reports
+from .curation import NO_CURATION, Curation, CurationError, read_curation
 from .analysis import AnalysisParams, descriptive_tables, survey_status
 from .build import build_network
-from .figures import ego, geography, groups, language, overview
+from .figures import ego_layouts, ego_network, layouts, registry
+from .figures import network as network_figures
+from .figures.registry import FigureContext, FigureOptions
 from .figures.style import rc, save_figure
 from .package import FORMAT, PackageError, read_package
 from .validate import validate
@@ -41,17 +45,6 @@ from .validate import validate
 STAGES = ("validate", "import", "analyze", "figures", "run")
 ALLOWED_INPUT_ROOTS = ("INTAKE", "PRIMARY")  # BACKUP and EXCHANGE are never a data source
 DEFAULT_FORMATS = ("svg", "png", "pdf")
-
-# (file stem, builder, needs the network)
-FIGURES: tuple[tuple[str, Callable, bool], ...] = (
-    ("fig_A_ego_naehe_wohnort", ego.proximity_figure, False),
-    ("fig_B_gruppen_beziehungen", groups.group_network_figure, True),
-    ("fig_C_geografisches_profil", geography.geography_figure, False),
-    ("fig_D1_sprachprofil", language.language_profile_figure, False),
-    ("fig_D2_ego_sprachmodus", ego.language_mode_figure, False),
-    ("fig_E_deskriptive_uebersicht", overview.overview_figure, False),
-)
-
 
 class PipelineError(RuntimeError):
     """The run cannot start or continue (an unusable input location, an unknown stage ...)."""
@@ -145,7 +138,9 @@ def run_pipeline(
     package: StorageRef,
     stage: str = "run",
     *,
+    curation_ref: StorageRef | None = None,
     params: AnalysisParams | None = None,
+    options: FigureOptions | None = None,
     formats: tuple[str, ...] = DEFAULT_FORMATS,
     clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
 ) -> RunResult:
@@ -154,9 +149,13 @@ def run_pipeline(
     if package.root not in ALLOWED_INPUT_ROOTS:
         raise PipelineError(f"{package.root} is not a permitted data source; use one of {', '.join(ALLOWED_INPUT_ROOTS)}")
     params = params or AnalysisParams()
+    options = options or FigureOptions()
     level = STAGES.index(stage)
 
+    if curation_ref is not None and curation_ref.root not in ALLOWED_INPUT_ROOTS:
+        raise PipelineError(f"{curation_ref.root} is not a permitted data source; use one of {', '.join(ALLOWED_INPUT_ROOTS)}")
     source_dir = roots.resolve(package)  # raises RootError for an unconfigured or unreachable root
+    curation_file = roots.resolve(curation_ref) if curation_ref is not None else None
     started = clock()
     run_id = ids.new_run_id(started)
     run_ref = StorageRef("WORKSPACE", f"runs/{run_id}")
@@ -166,14 +165,17 @@ def run_pipeline(
 
     try:
         dataset = read_package(source_dir)
-    except PackageError as error:
-        record = _record(run_id, stage, "FAILED_IMPORT", started, clock(), package, None, None, params, formats, [], str(error))
+        curation = read_curation(curation_file) if curation_file is not None else NO_CURATION
+    except (PackageError, CurationError) as error:
+        record = _record(run_id, stage, "FAILED_IMPORT", started, clock(), package, None, None, params, formats, [], str(error),
+                         curation_ref=curation_ref)
         folder.write_text("run_record.json", json.dumps(record, indent=2, ensure_ascii=False) + "\n")
         return RunResult(run_id, run_ref, run_dir, "FAILED_IMPORT", record)
 
-    validation = validate(dataset, local_places=params.local_places)
+    validation = validate(dataset, local_places=params.local_places, curation=curation)
     folder.write_text("validation_report.md", reports.validation_markdown(dataset, validation))
     folder.write_text("validation_report.json", json.dumps(reports.validation_dict(validation), indent=2, ensure_ascii=False) + "\n")
+    folder.write_text("review/review_register.csv", reports.review_register_csv(validation))
 
     status = None
     tables = ()
@@ -181,15 +183,15 @@ def run_pipeline(
         outcome = "FAILED_VALIDATION"
     else:
         outcome = "COMPLETED"
-        network = build_network(dataset)
-        status = survey_status(dataset, network)
+        network = build_network(dataset, coverage_complete=curation.survey.coverage_complete)
+        status = survey_status(dataset, network, curation)
         if level >= 1:
-            folder.write_text("canonical/dataset.json", canonical.dataset_json(dataset, network))
-            folder.write_text("canonical/contacts.csv", canonical.contacts_csv(dataset))
+            folder.write_text("canonical/dataset.json", canonical.dataset_json(dataset, network, params, curation))
+            folder.write_text("canonical/contacts.csv", canonical.contacts_csv(dataset, params))
             folder.write_text("canonical/ties.csv", canonical.ties_csv(network))
             folder.write_text("canonical/group_memberships.csv", canonical.memberships_csv(dataset))
         if level >= 2:
-            tables = descriptive_tables(dataset, network, params)
+            tables = descriptive_tables(dataset, network, params, curation)
             for table in tables:
                 folder.write_text(f"analysis/{table.key}.csv", table.to_csv())
             folder.write_text("analysis/tables.md", "\n\n".join(t.to_markdown() for t in tables) + "\n")
@@ -197,26 +199,46 @@ def run_pipeline(
         if level >= 3:
             figures_dir = folder.path("figures")
             figures_dir.mkdir(parents=True, exist_ok=True)
-            for stem, build, needs_network in FIGURES:
-                figure = build(dataset, status, params, network=network) if needs_network else build(dataset, status, params)
-                with rc():
-                    save_figure(figure, figures_dir / stem, formats)
+            context = FigureContext(
+                dataset, status, params, network,
+                structure=network_figures.build_structure(network, params_layout(params)),  # one layout for B1 and B2
+                ego_structure=ego_network.build_ego_structure(network),  # B3 and P2: the same contact positions, ego added
+                options=options,
+            )
+            for spec in registry.SPECS:
+                for profile in registry.profiles_of(spec, options):
+                    target = registry.target_dir(figures_dir, spec, profile)
+                    target.mkdir(parents=True, exist_ok=True)
+                    figure = spec.build(context, profile or "clean")
+                    with rc():
+                        save_figure(figure, target / spec.stem, formats)
+            folder.write_text("figures/figures_index.json", json.dumps(registry.figure_index(options, formats, status), indent=2, ensure_ascii=False) + "\n")
 
     finished = clock()
     if level >= 4:
-        record = _record(run_id, stage, outcome, started, finished, package, dataset, validation, params, formats, [], None, status)
+        record = _record(run_id, stage, outcome, started, finished, package, dataset, validation, params, formats, [], None, status,
+                         curation=curation, curation_ref=curation_ref, options=options)
         outputs = folder.outputs(run_ref, exclude=("run_record.json", "processing_report.md"))
         folder.write_text(
             "processing_report.md",
-            reports.processing_markdown(record=record, dataset=dataset, report=validation, status=status, tables=tables, outputs=outputs),
+            reports.processing_markdown(record=record, dataset=dataset, report=validation, status=status, curation=curation,
+                                        tables=tables, outputs=outputs),
         )
     outputs = folder.outputs(run_ref, exclude=("run_record.json",))
-    record = _record(run_id, stage, outcome, started, finished, package, dataset, validation, params, formats, outputs, None, status)
+    record = _record(run_id, stage, outcome, started, finished, package, dataset, validation, params, formats, outputs, None, status,
+                     curation=curation, curation_ref=curation_ref, options=options)
     folder.write_text("run_record.json", json.dumps(record, indent=2, ensure_ascii=False) + "\n")
     return RunResult(run_id, run_ref, run_dir, outcome, record)
 
 
-def _record(run_id, stage, outcome, started, finished, package, dataset, validation, params, formats, outputs, error, status=None):
+def params_layout(params: AnalysisParams) -> str:
+    """The layout variant of the network figures: a documented choice, see the layout comparison."""
+    return layouts.DEFAULT_VARIANT
+
+
+def _record(run_id, stage, outcome, started, finished, package, dataset, validation, params, formats, outputs, error, status=None,
+            *, curation: Curation = NO_CURATION, curation_ref: StorageRef | None = None, options: FigureOptions | None = None):
+    groups = validation.by_category() if validation is not None else {}
     return {
         "schema": "mares-run-record/v0-draft",
         "run_id": run_id,
@@ -229,6 +251,9 @@ def _record(run_id, stage, outcome, started, finished, package, dataset, validat
         "input": {
             "ref": package.to_dict(),
             "files": [] if dataset is None else [{"name": f.name, "sha256": f.sha256, "size": f.size} for f in dataset.files],
+            "curation": None
+            if curation_ref is None or curation.sha256 is None
+            else {"ref": curation_ref.to_dict(), "sha256": curation.sha256, "made_on": curation.made_on, "made_by": curation.made_by},
         },
         "source": None
         if dataset is None
@@ -240,16 +265,26 @@ def _record(run_id, stage, outcome, started, finished, package, dataset, validat
             "package_version": dataset.session.package_version,
             "provenance_note": "student collection per package; cohort, collector and instrument version not registered",
         },
+        "survey_method": {
+            "alter_alter_elicitation": curation.survey.elicitation,
+            "alter_alter_documentation": curation.survey.documentation,
+            "group_rule": curation.survey.group_rule,
+            "pair_coverage": curation.survey.pair_coverage,
+            "basis": curation.survey.basis,
+        },
         "dataset_version": None,
         "software": _software(),
-        "parameters": {**params.to_dict(), "figure_formats": list(formats), "layout_seed": groups.SEED, "stage": stage},
+        "parameters": {**params.to_dict(), "figure_formats": list(formats), "layout_seed": layouts.SEED,
+                       "network_layout": layouts.DEFAULT_VARIANT, "ego_layout": ego_layouts.DEFAULT_EGO_VARIANT, "stage": stage,
+                       "figure_options": (options or FigureOptions()).to_dict(), "font": "DejaVu Sans"},
         "data_quality": None
         if validation is None
         else {
             "technical_validation": validation.technical_status,
             "errors": len(validation.errors),
             "warnings": len(validation.warnings),
-            "open_research_questions": validation.open_count,
+            "open_data_questions": validation.open_count,
+            "review_hints_by_category": {c.value: len(q) for c, q in groups.items()},
             "scientific_validation": "not performed",
             "quality_state": "UNREVIEWED",
             "release_state": "NOT_DECIDED",
@@ -258,5 +293,6 @@ def _record(run_id, stage, outcome, started, finished, package, dataset, validat
         },
         "survey_status": None if status is None else status.to_dict(),
         "outputs": [{"ref": o["ref"], "sha256": o["sha256"], "size": o["size"]} for o in outputs],
-        "methodological_limits": list(reports.LIMITS),
+        "methodological_limits": list(reports.limits(status)),
     }
+

@@ -19,7 +19,7 @@ Gemeinsam für alle Module:
 ## NETWORKS – `mares.networks`
 
 > **Ist (2026-10-12):** der Import eines CSV-Pakets (nicht der Excel-Sheets), Validierung, Beziehungen aus
-> bestätigten Gruppen, beschreibende Auswertung, sechs Grafiken und eine Kommandozeile; Ergebnisse nur nach
+> bestätigten Gruppen, beschreibende Auswertung, neunzehn Grafiken in den Gruppen `core`, `supplementary` und `diagnostic` (darunter die kraftbasierten Netzwerkdarstellungen ohne und mit Ego, die geografischen Zonen und Beziehungsnetze und die analytischen Perspektiven P1–P3 im Designsystem) und eine Kommandozeile; Ergebnisse nur nach
 > `WORKSPACE/runs/`. Die Tabelle darunter beschreibt das **Soll**; Abweichungen und Grenzen stehen in
 > [`network-module.md`](network-module.md). Entscheidungen: [`ADR-0002`](../decisions/ADR-0002_2026-10-12_netzwerkmodul.md).
 

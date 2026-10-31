@@ -61,7 +61,8 @@ class TieState(enum.Enum):
 
 class TieBasis(enum.Enum):
     CLIQUE_RULE = "clique_rule"  # derived from confirmed group membership
-    EXPLICIT = "explicit"  # asked for this pair
+    EXPLICIT = "explicit"  # a statement for exactly this pair
+    COVERAGE = "coverage_complete"  # not named, but every pair was covered: the absence is a denial
 
 
 @dataclass(frozen=True)

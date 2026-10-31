@@ -1,5 +1,9 @@
 # Run-Bericht 2026-10-12 – Netzwerkpipeline und Pilotfall 001-2
 
+> **Berichtigt:** Die Beschreibung der Alter-Alter-Erhebung in diesem Bericht (Beziehungen „aus Gruppenumrandungen abgeleitet“, Erhebung „unvollständig“)
+> wurde von der Projektleitung korrigiert; die Beziehungen wurden im Interview erfragt. Siehe
+> [`2026-10-12_netzwerk-vacca-bereinigung.md`](2026-10-12_netzwerk-vacca-bereinigung.md). Der Bericht bleibt als historisches Journal unverändert.
+
 Journal eines Laufs, keine Spezifikation. Maßgeblich sind [`network-module.md`](../architecture/network-module.md),
 [`visualization-conventions.md`](../architecture/visualization-conventions.md) und
 [`ADR-0002`](../decisions/ADR-0002_2026-10-12_netzwerkmodul.md). Ortsangaben beschreiben den Projektarbeitsplatz.

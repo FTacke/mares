@@ -14,6 +14,7 @@ from matplotlib.ticker import MaxNLocator
 
 from ..analysis import AnalysisParams, SurveyStatus, attribute_counts, residence_of
 from ..model import NetworkDataset
+from . import design
 from .style import BAR_COLOR, GEO_COLORS, INK, LANGUAGE_COLORS, MODE_COLORS, MUTED, FAINT, frame, new_figure, rc, wrap
 
 _MAX_PLACES = 12
@@ -42,7 +43,7 @@ def _bars(ax, title: str, rows: list[tuple[str, int, str]], n: int, note: str = 
         ax.text(0, 1.02, note, transform=ax.transAxes, fontsize=7.4, color=MUTED, va="bottom", ha="left")
 
 
-def overview_figure(dataset: NetworkDataset, status: SurveyStatus, params: AnalysisParams):
+def overview_figure(dataset: NetworkDataset, status: SurveyStatus, params: AnalysisParams, *, profile: str = "clean"):
     with rc():
         n = len(dataset.contacts)
         panels = []
@@ -75,12 +76,15 @@ def overview_figure(dataset: NetworkDataset, status: SurveyStatus, params: Analy
 
         height = 15.2
         fig = new_figure(13.6, height)
-        frame(
+        design.frame_for(
+            profile,
             fig,
             "Deskriptive Übersicht über die erfassten Kontaktmerkmale",
             f"Zahl der Kontakte je Ausprägung (n = {n}); explorativ-deskriptiv, keine inferenzstatistische Auswertung; leere Kategorien bleiben sichtbar",
             status,
             "Zählungen der Angaben der Quelle; „nicht erfasst“ = leeres Feld, nicht „trifft nicht zu“. Die Verteilungen sind kein Maß für Struktur oder Vollständigkeit des Netzwerks.",
+            short_title="Übersicht über die Kontaktmerkmale",
+            hint="Zählungen der Angaben; „nicht erfasst“ heißt nicht „trifft nicht zu“.",
         )
         grid = fig.add_gridspec(4, 2, left=0.21, right=0.985, top=1 - 1.45 / height, bottom=0.075, hspace=0.62, wspace=0.85)
         for index, (title, rows, note) in enumerate(panels):

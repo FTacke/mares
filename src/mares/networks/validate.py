@@ -6,9 +6,12 @@ Three things are kept apart, because they mean different things to the reader an
   the data cannot be used as delivered.
 * **warnings** -- usable, but something a reader must know (a missing expected attribute, an
   unresolved origin statement, a review flag without a review item).
-* **open research questions** -- documented uncertainty about the *source* (``review_items.csv``
-  and a few that only the software can see). They never block anything and are never "resolved" by
-  the validator.
+* **review hints** -- documented uncertainty about the *source* (``review_items.csv``, review flags on
+  contacts, and a few questions only the software can see). Each is in exactly one of four
+  categories (:class:`~mares.networks.curation.ReviewCategory`): an open decision-relevant question, a
+  documented ambiguity of the source, an accepted imprecision, or resolved. Only the first is "open".
+  Hints never block anything and are never decided by the validator: a category comes from the
+  curation file (a person's statement) or, failing that, from the package's own recommended action.
 
 Validation is technical. It never sets a data-quality state: a package that passes is
 ``UNREVIEWED`` until a person has checked it against the original documents.
@@ -23,7 +26,8 @@ from dataclasses import dataclass
 from mares.core import ids
 
 from .build import Network, NetworkConstructionError, build_network
-from .geo import DEFAULT_LOCAL_PLACES, ISO3, HOME_COUNTRY
+from .curation import DOCUMENTATION, ELICITATION, NO_CURATION, Curation, ReviewCategory
+from .geo import DEFAULT_LOCAL_PLACES, HOME_COUNTRY, ISO3, BirthStatus, GeoCategory, classify_birth_country, classify_residence
 from .identity import canonical_contact_ids, local_number
 from .model import CANDIDATE, CONFIRMED, NEEDS_REVIEW, Finding, NetworkDataset, Severity
 from .package import CONTACT_COLUMNS
@@ -32,12 +36,16 @@ _SEVERITY_ORDER = {Severity.ERROR: 0, Severity.WARNING: 1, Severity.INFO: 2}
 _EXPECTED_RULE = "all_pairs_know_each_other"
 _EXPECTED_RELATION = "know_each_other"
 # Review actions after which the package itself documents a decision; every other action is open.
-DECIDED_ACTIONS = frozenset({"rule_confirmed", "accepted_as_approximate"})
+# Without a curation statement the package's own recommended action is the fallback.
+_FALLBACK_CATEGORY = {
+    "rule_confirmed": ReviewCategory.RESOLVED,
+    "accepted_as_approximate": ReviewCategory.ACCEPTED_IMPRECISION,
+}
 
 
 @dataclass(frozen=True)
 class OpenQuestion:
-    """A documented, not yet resolved question about the source data."""
+    """A review hint about the source data, with the category it is in now."""
 
     question_id: str
     origin: str  # ``package`` (review_items.csv) or ``software`` (seen by this module)
@@ -46,8 +54,15 @@ class OpenQuestion:
     priority: str
     description: str
     action: str
-    state: str  # ``open`` or ``decided_in_package``
+    category: ReviewCategory
     affected_contacts: tuple[str, ...] = ()
+    decided_by: str = "package"  # ``project_lead``, ``agent_proposal`` or ``package`` (its recommended action)
+    basis: str = ""
+    note: str = ""
+
+    @property
+    def is_open(self) -> bool:
+        return self.category.is_open
 
 
 @dataclass(frozen=True)
@@ -76,14 +91,19 @@ class ValidationReport:
 
     @property
     def open_count(self) -> int:
-        return sum(1 for q in self.open_questions if q.state == "open")
+        """Open, decision-relevant data questions only: ambiguities, accepted imprecisions and
+        resolved hints are not open data errors."""
+        return sum(1 for q in self.open_questions if q.is_open)
+
+    def by_category(self) -> dict[ReviewCategory, tuple[OpenQuestion, ...]]:
+        return {c: tuple(q for q in self.open_questions if q.category is c) for c in ReviewCategory}
 
 
 def _add(found: list[Finding], severity: Severity, code: str, subject: str, message: str) -> None:
     found.append(Finding(severity, code, subject, message))
 
 
-def _contact_findings(dataset: NetworkDataset, local_places: tuple[str, ...], found: list[Finding]) -> bool:
+def _contact_findings(dataset: NetworkDataset, local_places: tuple[str, ...], curation: Curation, found: list[Finding]) -> bool:
     """Contact identity, codes and plausibility. Returns whether all contact ids are usable."""
     ids_ok = True
     seen: Counter[str] = Counter(c.contact_id for c in dataset.contacts)
@@ -155,16 +175,31 @@ def _contact_findings(dataset: NetworkDataset, local_places: tuple[str, ...], fo
         city, country = contact.text.get("residence_city"), contact.text.get("residence_country")
         if city and country and country != HOME_COUNTRY and city.casefold() in {p.casefold() for p in local_places}:
             _add(found, Severity.WARNING, "place_country_contradiction", cid, "Wohnort und Wohnland passen nicht zusammen.")
-        if "birth_country_source" in contact.text and "birth_country" not in contact.text:
-            _add(found, Severity.WARNING, "birth_country_unresolved", cid, "Herkunftsangabe der Quelle vorhanden, aber kein ISO-Code gesetzt (mehrdeutig oder nicht auflösbar); nichts wurde ergänzt.")
+        birth = classify_birth_country(contact.text.get("birth_country"), contact.text.get("birth_country_source"))
+        if birth.status is BirthStatus.AMBIGUOUS:
+            _add(
+                found, Severity.INFO, "birth_country_ambiguous", cid,
+                "Geburtsland mehrdeutig (die Quelle nennt mehrere Länder): Rohwert erhalten, keines gewählt, nicht als zwei Länder gezählt.",
+            )
+        elif birth.status is BirthStatus.UNMAPPED:
+            _add(found, Severity.WARNING, "birth_country_unmapped", cid, "Geburtsland genannt, aber ohne ISO-Code; nichts wurde ergänzt.")
+        residence = classify_residence(city, country, local_places)
+        if residence.region_of:
+            _add(
+                found, Severity.INFO, "residence_region_stated", cid,
+                f"Wohnort ist eine regionale Angabe (Bezug: {residence.region_of}); kein konkreter Wohnort wurde ergänzt.",
+            )
 
     review_refs = {item.reference for item in dataset.review_items}
     for contact in dataset.contacts:
-        if contact.review_flags and contact.contact_id not in review_refs:
-            _add(
-                found, Severity.WARNING, "flag_without_review_item", contact.contact_id,
-                f"Review-Markierung ({', '.join(contact.review_flags)}) ohne zugehörigen Eintrag in review_items.csv.",
-            )
+        if contact.contact_id in review_refs:
+            continue
+        for flag in contact.review_flags:
+            if curation.disposition(f"flag:{contact.contact_id}:{flag}") is None:
+                _add(
+                    found, Severity.WARNING, "flag_without_review_item", contact.contact_id,
+                    f"Review-Markierung ({flag}) ohne zugehörigen Eintrag in review_items.csv und ohne Kuratierungsangabe.",
+                )
     return ids_ok
 
 
@@ -309,48 +344,101 @@ def _completeness(dataset: NetworkDataset) -> tuple[tuple[str, int, int], ...]:
     return tuple(rows)
 
 
-def _open_questions(dataset: NetworkDataset) -> tuple[OpenQuestion, ...]:
+def _open_questions(dataset: NetworkDataset, curation: Curation) -> tuple[OpenQuestion, ...]:
     contacts = set(dataset.contact_ids)
     questions: list[OpenQuestion] = []
+
+    def categorised(ref: str, fallback: ReviewCategory) -> tuple[ReviewCategory, str, str, str]:
+        item = curation.disposition(ref)
+        if item is None:
+            return fallback, "package", "", ""
+        return item.category, item.decided_by, item.basis, item.note
+
     for item in dataset.review_items:
         affected = (item.reference,) if item.reference in contacts else ()
-        state = "decided_in_package" if item.recommended_action in DECIDED_ACTIONS else "open"
-        questions.append(
-            OpenQuestion(item.review_id, "package", item.reference, item.field, item.priority, item.description, item.recommended_action, state, affected)
+        category, decided_by, basis, note = categorised(
+            item.review_id, _FALLBACK_CATEGORY.get(item.recommended_action, ReviewCategory.OPEN_DECISION)
         )
+        questions.append(
+            OpenQuestion(item.review_id, "package", item.reference, item.field, item.priority, item.description,
+                         item.recommended_action, category, affected, decided_by, basis, note)
+        )
+    # Review flags on a contact that has no review item of its own: their category comes from the curation.
+    review_refs = {item.reference for item in dataset.review_items}
+    for contact in dataset.contacts:
+        if contact.contact_id in review_refs:
+            continue
+        for flag in contact.review_flags:
+            ref = f"flag:{contact.contact_id}:{flag}"
+            if curation.disposition(ref) is not None:
+                category, decided_by, basis, note = categorised(ref, ReviewCategory.OPEN_DECISION)
+                questions.append(
+                    OpenQuestion(f"FLAG-{contact.contact_id}", "package", contact.contact_id, flag, "low",
+                                 f"Review-Markierung {flag} ohne eigenen Review-Eintrag.", "none", category,
+                                 (contact.contact_id,), decided_by, basis, note)
+                )
     # Questions only this software can see: they concern identity and provenance, not contact data.
+    label = dataset.case.source_label
     if dataset.case.canonical_case_id is None:
         questions.append(
-            OpenQuestion(
-                "SW-01", "software", dataset.case.source_label, "case_id", "high",
-                "Kanonische Fall-ID nicht zugeordnet; Verknüpfung mit einer früheren Erhebung desselben Falls offen (Register fehlt).",
-                "register_case", "open",
-            )
+            OpenQuestion("SW-01", "software", label, "case_id", "high",
+                         "Kanonische Fall-ID nicht zugeordnet; Verknüpfung mit einer früheren Erhebung desselben Falls offen (Register fehlt).",
+                         "register_case", ReviewCategory.OPEN_DECISION)
         )
     questions.append(
-        OpenQuestion(
-            "SW-02", "software", dataset.case.source_label, "provenance", "medium",
-            "Kohorte, Lehrveranstaltung, Erhebende (Pseudonym) und Instrument-Version sind im Paket nicht belegt; formale Provenienz erst mit der Registrierung.",
-            "register_provenance", "open",
-        )
+        OpenQuestion("SW-02", "software", label, "provenance", "medium",
+                     "Kohorte, Lehrveranstaltung, Erhebende (Pseudonym) und Instrument-Version sind im Paket nicht belegt; formale Provenienz erst mit der Registrierung.",
+                     "register_provenance", ReviewCategory.OPEN_DECISION)
     )
     questions.append(
-        OpenQuestion(
-            "SW-03", "software", dataset.case.source_label, "source_validation", "high",
-            "Manuell aus Fotografien übertragen und noch nicht gegen die Originalbögen geprüft; Datenqualität bleibt UNREVIEWED.",
-            "source_check", "open",
-        )
+        OpenQuestion("SW-03", "software", label, "source_validation", "high",
+                     "Manuell aus Fotografien übertragen und noch nicht gegen die Originalbögen geprüft; Datenqualität bleibt UNREVIEWED.",
+                     "source_check", ReviewCategory.OPEN_DECISION)
     )
     return tuple(questions)
 
 
-def validate(dataset: NetworkDataset, *, local_places: tuple[str, ...] = DEFAULT_LOCAL_PLACES) -> ValidationReport:
+def _curation_findings(dataset: NetworkDataset, curation: Curation, found: list[Finding]) -> None:
+    if curation is NO_CURATION:
+        return
+    if curation.source_label != dataset.case.source_label:
+        _add(found, Severity.ERROR, "curation_label_mismatch", "curation",
+             "Die Kuratierungsdatei gehört zu einer anderen Quellkennung als das Paket.")
+    version = dataset.session.package_version
+    if curation.applies_to_package_version and version and curation.applies_to_package_version != version:
+        _add(found, Severity.WARNING, "curation_version_mismatch", "curation",
+             f"Die Kuratierung bezieht sich auf Paketversion {curation.applies_to_package_version}, gelesen wurde {version}.")
+    review_ids = {i.review_id for i in dataset.review_items}
+    flags = {(c.contact_id, f) for c in dataset.contacts for f in c.review_flags}
+    for disposition in curation.dispositions:
+        flag = disposition.flag
+        known = (flag in flags) if flag else (disposition.ref in review_ids)
+        if not known:
+            _add(found, Severity.WARNING, "curation_ref_unknown", disposition.ref,
+                 "Kuratierungsangabe verweist auf einen Review-Eintrag oder eine Markierung, die das Paket nicht enthält.")
+    method = curation.survey
+    if method.stated:
+        _add(found, Severity.INFO, "survey_method", "curation",
+             f"Alter-Alter-Beziehungen: {ELICITATION[method.elicitation]}; dokumentiert als {DOCUMENTATION[method.documentation]}. "
+             f"Grundlage: {method.basis}")
+        if not method.coverage_complete:
+            _add(found, Severity.INFO, "pair_coverage_not_established", "curation",
+                 "Die vollständige Abdeckung aller Kontaktpaare ist nicht belegt; Paare ohne Angabe bleiben unbekannt.")
+
+
+def validate(
+    dataset: NetworkDataset,
+    *,
+    local_places: tuple[str, ...] = DEFAULT_LOCAL_PLACES,
+    curation: Curation = NO_CURATION,
+) -> ValidationReport:
     found: list[Finding] = list(dataset.import_findings)
     _package_findings(dataset, found)
-    ids_ok = _contact_findings(dataset, local_places, found)
+    _curation_findings(dataset, curation, found)
+    ids_ok = _contact_findings(dataset, local_places, curation, found)
     _group_findings(dataset, found)
     _review_findings(dataset, found)
     if ids_ok:
         _network_findings(dataset, found)
     found.sort(key=lambda f: (_SEVERITY_ORDER[f.severity], f.code, f.subject, f.message))
-    return ValidationReport(tuple(found), _open_questions(dataset), _completeness(dataset), len(dataset.contacts))
+    return ValidationReport(tuple(found), _open_questions(dataset, curation), _completeness(dataset), len(dataset.contacts))

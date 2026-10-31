@@ -80,11 +80,28 @@ def test_missing_values_are_warnings_or_silent_but_never_filled_in(tmp_path):
     assert completeness["closeness"] == (11, 1) and completeness["function"][1] >= 1
 
 
-def test_origin_text_without_iso_code_is_flagged_not_resolved(tmp_path):
+def test_an_ambiguous_birth_country_is_documented_not_resolved_and_not_a_warning(tmp_path):
     rows = fx.contact_rows(6)
-    rows[2].update(birth_country_iso3="", birth_country_source="A/B")
+    rows[2].update(birth_country_iso3="", birth_country_source="Land A/Land B")
     report = _validate(tmp_path, contacts=rows)
-    assert any(f.code == "birth_country_unresolved" and f.subject == "A03" for f in report.warnings)
+    assert any(f.code == "birth_country_ambiguous" and f.subject == "A03" for f in report.of(Severity.INFO))
+    assert not any(f.subject == "A03" and f.code.startswith("birth_country") for f in report.warnings)
+    contact = read_package(tmp_path / "p").contacts[2]
+    assert contact.text["birth_country_source"] == "Land A/Land B" and "birth_country" not in contact.text  # raw kept, nothing chosen
+
+
+def test_a_single_unmapped_birth_country_is_a_warning(tmp_path):
+    rows = fx.contact_rows(6)
+    rows[2].update(birth_country_iso3="", birth_country_source="Irgendwo")
+    assert any(f.code == "birth_country_unmapped" for f in _validate(tmp_path, contacts=rows).warnings)
+
+
+def test_a_regional_residence_is_noted_not_made_precise(tmp_path):
+    rows = fx.contact_rows(6)
+    rows[1].update(residence_city="Nähe Marburg", residence_country_iso3="DEU")
+    report = _validate(tmp_path, contacts=rows)
+    assert any(f.code == "residence_region_stated" and f.subject == "A02" for f in report.of(Severity.INFO))
+    assert read_package(tmp_path / "p").contacts[1].text["residence_city"] == "Nähe Marburg"  # raw kept
 
 
 def test_place_and_country_that_contradict_are_a_warning(tmp_path):
@@ -160,8 +177,8 @@ def test_review_items_do_not_block_and_stay_separate_from_findings(tmp_path):
     ])
     assert report.errors == ()  # open questions never fail the validation
     questions = {q.question_id: q for q in report.open_questions}
-    assert questions["R1"].state == "open" and questions["R1"].affected_contacts == ("A03",)
-    assert questions["R2"].state == "decided_in_package"
+    assert questions["R1"].is_open and questions["R1"].affected_contacts == ("A03",)
+    assert questions["R2"].category.value == "resolved"  # the package's own recommended action closes it
     assert any(f.code == "review_reference_unknown" and f.subject == "R3" for f in report.warnings)
     assert report.open_count >= 2
     # the software's own open questions: case id, provenance, source validation

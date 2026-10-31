@@ -116,3 +116,39 @@ def test_a_network_is_complete_only_if_every_pair_is_explicit(tmp_path):
 def test_pair_order_is_by_contact_number():
     assert pair_key("A10", "A02") == ("A02", "A10")
     assert pair_key("A100", "A99") == ("A99", "A100")
+
+
+def _pilot_shape(tmp_path):
+    """22 contacts on two sheets and six confirmed groups shaped like the pilot case (synthetic ids and values)."""
+    groups = [fx.group(f"G0{i}") for i in range(1, 7)]
+    memberships = (
+        fx.members("G01", ["A07", "A08", "A10", "A11", "A14", "A15"])
+        + fx.members("G02", ["A09", "A19", "A20"])
+        + fx.members("G03", ["A21", "A22"])
+        + fx.members("G04", ["A04", "A05", "A06"])
+        + fx.members("G05", ["A01", "A02", "A03", "A04", "A05", "A06"])
+        + fx.members("G06", ["A04", "A05", "A06", "A12", "A16"])
+    )
+    return read_package(fx.build_package(tmp_path / "p", contacts=fx.contact_rows(22), groups=groups, memberships=memberships))
+
+
+def test_a_pilot_shaped_network_keeps_22_contacts_6_groups_and_41_unique_ties(tmp_path):
+    dataset = _pilot_shape(tmp_path)
+    network = build_network(dataset)
+    assert len(dataset.contacts) == 22 and len(network.confirmed_groups) == 6 and network.unconfirmed_groups == ()
+    pairs = [t.pair for t in network.positive_ties]
+    assert len(pairs) == len(set(pairs)) == 15 + 3 + 1 + 15 + 10 - 3  # overlaps counted once: G04 adds nothing, G05 and G06 share a triangle
+    assert next(t for t in network.ties if t.pair == ("A04", "A05")).group_ids == ("G04", "G05", "G06")
+    assert network.pair_total == 231 and network.pair_counts()[TieState.NOT_RECORDED] == 231 - 41
+    from mares.networks.validate import validate
+
+    assert validate(dataset).errors == ()  # the receipt table agrees with the derivation
+    assert {tie.state for tie in network.ties} == {TieState.YES}  # nothing is removed, nothing denied
+
+
+def test_contact_ids_decide_the_links_not_labels_or_names(tmp_path):
+    """Whatever a source calls a contact, the ids link the tables: a group names ids, never labels."""
+    dataset = _pilot_shape(tmp_path)
+    assert {m.contact_id for m in dataset.memberships} <= set(dataset.contact_ids)
+    assert all(c.contact_id.startswith("A") for c in dataset.contacts)
+    assert not any("label" in vars(c) for c in dataset.contacts)  # the contact model has no name or label field

@@ -17,6 +17,7 @@ import network_fixtures as fx
 from mares.core.refs import StorageRef
 from mares.core.roots import RootError, Roots, load_root_specs
 from mares.networks import cli
+from mares.networks.figures import registry
 from mares.networks.run import PipelineError, STAGES, _RunFolder, parse_ref, run_pipeline
 
 SPECS = load_root_specs()
@@ -59,10 +60,11 @@ def test_a_full_run_writes_only_below_the_workspace_run_folder(machine):
     assert written == {("runs", result.run_id)}  # nowhere else in the workspace
     names = {p.relative_to(result.run_dir).as_posix() for p in result.run_dir.rglob("*") if p.is_file()}
     assert {"run_record.json", "processing_report.md", "validation_report.md", "validation_report.json", "canonical/dataset.json",
-            "canonical/ties.csv", "analysis/tables.md", "analysis/survey_status.json"} <= names
-    for stem in ("fig_A_ego_naehe_wohnort", "fig_B_gruppen_beziehungen", "fig_C_geografisches_profil", "fig_D1_sprachprofil",
-                 "fig_D2_ego_sprachmodus", "fig_E_deskriptive_uebersicht"):
-        assert {f"figures/{stem}.svg", f"figures/{stem}.png"} <= names and f"figures/{stem}.pdf" not in names
+            "canonical/ties.csv", "analysis/tables.md", "analysis/survey_status.json", "review/review_register.csv"} <= names
+    for spec in registry.SPECS:  # every figure in the folder of its tier; the working version of the clean ones in figures/analysis/<tier>
+        folder = f"figures/{spec.tier}/{spec.stem}"
+        assert {f"{folder}.svg", f"{folder}.png"} <= names and f"{folder}.pdf" not in names, spec.stem
+    assert "figures/figures_index.json" in names
 
 
 def test_the_run_record_documents_inputs_parameters_status_and_outputs(machine):
@@ -107,10 +109,11 @@ def test_the_processing_report_states_status_limits_and_open_questions(machine):
     result = run_pipeline(roots_for(machine), parse_ref(PACKAGE), "run", formats=("svg",))
     report = (result.run_dir / "processing_report.md").read_text(encoding="utf-8")
     for expected in ("UNREVIEWED", "NOT_PRESERVED", "Wissenschaftlich validiert: **nein**", "keine** Fall-ID", "Bekannte methodische Grenzen",
-                     "Nicht berechnet (bewusst)", "Netzwerkdichte", "SHA-256", "studentische"):
+                     "Nicht berechnet (bewusst, Paarabdeckung nicht belegt)", "Netzwerkdichte", "SHA-256", "studentische"):
         assert expected in report
     validation = (result.run_dir / "validation_report.md").read_text(encoding="utf-8")
-    assert "Harte Fehler" in validation and "Warnungen" in validation and "Offene Forschungsfragen" in validation
+    assert "Harte Fehler" in validation and "Warnungen" in validation and "Offene, entscheidungsrelevante Datenfragen" in validation
+    assert "Dokumentierte Mehrdeutigkeiten" in validation and "Akzeptierte Unschärfen" in validation and "Geklärte" in validation
     assert "RT01" in validation and "SW-01" in validation
 
 
@@ -120,7 +123,7 @@ def test_stages_are_cumulative(machine):
         "validate": {"validation_report.md"},
         "import": {"canonical/dataset.json"},
         "analyze": {"analysis/tables.md"},
-        "figures": {"figures/fig_A_ego_naehe_wohnort.png"},
+        "figures": {"figures/supplementary/fig_A_ego_naehe_wohnort.png"},
         "run": {"processing_report.md"},
     }
     seen: set[str] = set()
@@ -164,7 +167,7 @@ def test_a_package_with_errors_is_not_processed_further(machine):
     result = run_pipeline(roots_for(machine), parse_ref(PACKAGE), "run", formats=("png",))
     assert result.status == "FAILED_VALIDATION"
     names = {p.relative_to(result.run_dir).as_posix() for p in result.run_dir.rglob("*") if p.is_file()}
-    assert names == {"validation_report.md", "validation_report.json", "run_record.json", "processing_report.md"}
+    assert names == {"validation_report.md", "validation_report.json", "run_record.json", "processing_report.md", "review/review_register.csv"}
     assert not (result.run_dir / "figures").exists() and not (result.run_dir / "canonical").exists()
     assert result.record["data_quality"]["errors"] >= 1
 
@@ -239,3 +242,76 @@ def test_cli_local_place_parameter_is_applied_and_recorded(machine):
     assert result.record["parameters"]["local_places"] == ["Berlin"]
     table = (result.run_dir / "analysis" / "geo_category.csv").read_text(encoding="utf-8")
     assert "Berlin;3" in table  # the local category is named after the configured local place
+
+
+def put_curation(machine, **overrides):
+    folder = machine["intake"] / "inbox" / "curation"
+    folder.mkdir(exist_ok=True)
+    document = json.loads((Path(__file__).parent.parent / "examples" / "synthetic" / "network-curation-0000" / "curation.json").read_text(encoding="utf-8"))
+    document.update(overrides)
+    (folder / "curation.json").write_text(json.dumps(document), encoding="utf-8")
+    return "INTAKE:inbox/curation/curation.json"
+
+
+def test_a_run_reads_a_curation_and_records_it(machine):
+    ref = put_curation(machine)
+    result = run_pipeline(roots_for(machine), parse_ref(PACKAGE), "run", curation_ref=parse_ref(ref), formats=("svg",))
+    assert result.status == "COMPLETED"
+    record = result.record
+    curation_file = machine["intake"] / "inbox" / "curation" / "curation.json"
+    assert record["input"]["curation"]["ref"] == {"root": "INTAKE", "rel": "inbox/curation/curation.json"}
+    assert record["input"]["curation"]["sha256"] == hashlib.sha256(curation_file.read_bytes()).hexdigest()
+    assert record["survey_method"]["alter_alter_elicitation"] == "asked_per_pair" and record["survey_method"]["pair_coverage"] == "not_established"
+    assert record["data_quality"]["review_hints_by_category"] == {
+        "open_decision": 3, "documented_ambiguity": 1, "accepted_imprecision": 0, "resolved": 1,
+    }
+    assert record["data_quality"]["open_data_questions"] == 3  # SW-01 .. SW-03; the package's two items are closed by the curation
+    register = (result.run_dir / "review" / "review_register.csv").read_text(encoding="utf-8")
+    assert "RT01;package;A03" in register and "documented_ambiguity" in register and "resolved" in register
+    report = (result.run_dir / "processing_report.md").read_text(encoding="utf-8")
+    assert "Kuratierung: `INTAKE:inbox/curation/curation.json`" in report and "Beziehungen einzeln erfragt" in report
+    assert "Gruppenumrandungen der Netzwerkkarte" in report and "Paarabdeckung: nicht belegt" in report
+    assert "im Interview erfragt" in " ".join(record["methodological_limits"])
+    canonical = json.loads((result.run_dir / "canonical" / "dataset.json").read_text(encoding="utf-8"))
+    assert canonical["survey"]["alter_alter_elicitation"] == "asked_per_pair" and canonical["survey"]["curation_sha256"]
+    assert len(canonical["ties"]) == 9  # the curation changes the interpretation, never the ties
+
+
+def test_the_curation_does_not_change_the_data_only_its_description(machine):
+    roots = roots_for(machine)
+    plain = run_pipeline(roots, parse_ref(PACKAGE), "analyze", formats=("svg",))
+    curated = run_pipeline(roots, parse_ref(PACKAGE), "analyze", curation_ref=parse_ref(put_curation(machine)), formats=("svg",))
+    ties = lambda result: (result.run_dir / "canonical" / "ties.csv").read_bytes()
+    assert ties(plain) == ties(curated)
+    contacts = lambda result: (result.run_dir / "canonical" / "contacts.csv").read_bytes()
+    assert contacts(plain) == contacts(curated)
+
+
+def test_a_complete_pair_coverage_turns_missing_pairs_into_denials_and_adds_structure_measures(machine):
+    ref = put_curation(machine, survey={
+        "elicitation": "asked_per_pair", "documentation": "group_outlines", "pair_coverage": "complete", "basis": "synthetic: every pair asked"})
+    result = run_pipeline(roots_for(machine), parse_ref(PACKAGE), "analyze", curation_ref=parse_ref(ref))
+    assert result.record["survey_status"]["completeness"] == "complete" and result.record["survey_status"]["denied_pairs"] == 66 - 9
+    assert (result.run_dir / "analysis" / "structure.csv").is_file()
+    ties = (result.run_dir / "canonical" / "ties.csv").read_text(encoding="utf-8")
+    assert ties.count(";yes;") == 9 and ties.count(";no;") == 57 and "coverage_complete" in ties
+
+
+def test_a_curation_may_only_come_from_intake_or_primary(machine):
+    roots = roots_for(machine, MARES_BACKUP_ROOT=str(machine["backup"]))
+    with pytest.raises(PipelineError, match="not a permitted data source"):
+        run_pipeline(roots, parse_ref(PACKAGE), "validate", curation_ref=StorageRef("BACKUP", "curation.json"))
+
+
+def test_a_broken_curation_fails_the_import_in_the_record(machine):
+    ref = put_curation(machine, format="something-else")
+    result = run_pipeline(roots_for(machine), parse_ref(PACKAGE), "run", curation_ref=parse_ref(ref))
+    assert result.status == "FAILED_IMPORT" and "format" in result.record["error"]
+    assert {p.name for p in result.run_dir.iterdir()} == {"run_record.json"}
+
+
+def test_cli_accepts_a_curation(machine, capsys):
+    roots = roots_for(machine)
+    ref = put_curation(machine)
+    assert cli.main(["validate", "--package", PACKAGE, "--curation", ref], roots=roots) == 0
+    assert "open data questions" in capsys.readouterr().out

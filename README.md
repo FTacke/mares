@@ -12,7 +12,7 @@ gemeinsamen Datenbestand.
 > **Status (2026-10-12).** Vorhanden sind Verzeichnisstruktur, Architektur- und Datenverträge, der
 > Resolver für benannte Storage-Roots, Identifikatoren und Statusvokabular – und das **Netzwerkmodul**:
 > Import eines CSV-Pakets, Validierung, Beziehungen aus bestätigten Gruppen, beschreibende Auswertung,
-> sechs Grafiken und eine Kommandozeile, getestet mit synthetischen Daten. **Nicht vorhanden** sind
+> neunzehn Grafiken in drei Gruppen – `core`, `supplementary`, `diagnostic` – (darunter kraftbasierte Netzwerkdarstellungen ohne und mit Ego, geografische Zonen und Beziehungsnetze, drei analytische Perspektiven P1–P3) in einem einheitlichen, reduzierten Designsystem und eine Kommandozeile, getestet mit synthetischen Daten. **Nicht vorhanden** sind
 > Intake, Erhaltung, Backup-Läufe, der Import der Excel-Sheets, Register und Transkription. Eine erste
 > Datenlieferung (Pilotfall `001-2`) liegt im lokalen Eingang `INTAKE`, ist aber weder nach dem
 > Intake-Vertrag geprüft noch erhalten oder gesichert; der Primärspeicher, das Backup und der
@@ -104,12 +104,13 @@ Ein Netzwerkpaket (CSV-Ordner im Format `mares-network-package/v0-draft`) liegt 
 
 ```text
 .venv\Scripts\python -m mares.networks validate --package INTAKE:inbox/<Lieferung>/contents
-.venv\Scripts\python -m mares.networks run      --package INTAKE:inbox/<Lieferung>/contents
+.venv\Scripts\python -m mares.networks run      --package INTAKE:inbox/<Lieferung>/contents --curation INTAKE:inbox/<Ordner>/curation.json
 ```
 
 `validate` → `import` → `analyze` → `figures` → `run` bauen aufeinander auf (`run` erzeugt zusätzlich den
-Verarbeitungsbericht). Ein Paket mit harten Fehlern wird nicht weiterverarbeitet. Zum Ausprobieren dient
-`examples/synthetic/network-package-0000/` (in einen `INTAKE`-Ordner kopieren). Einzelheiten:
+Verarbeitungsbericht). `--curation` (optional) ist eine datierte Datei mit Aussagen *über* das Paket – Erhebungsmethode, Paarabdeckung,
+Kategorie der Prüfhinweise –; das Paket selbst bleibt unverändert. Ein Paket mit harten Fehlern wird nicht weiterverarbeitet. Zum Ausprobieren dient
+`examples/synthetic/network-package-0000/` (in einen `INTAKE`-Ordner kopieren). Die Abbildungen B3, G2 und P1–P3 erscheinen in zwei Profilen (`clean` in `figures/`, `analysis` in `figures/analysis/`); `--language-view`, `--tie-highlight` und `--profiles` wählen Sprachansicht, Beziehungshervorhebung und Profile (Designsystem: [`docs/architecture/visualization-conventions.md`](docs/architecture/visualization-conventions.md) §3.4–3.5). Einzelheiten:
 [`docs/architecture/network-module.md`](docs/architecture/network-module.md) §7.
 
 ## Tests

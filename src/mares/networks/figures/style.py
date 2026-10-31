@@ -4,10 +4,9 @@ One variable keeps one colour (and one symbol) in every figure; a colour never c
 between figures. The palettes are colour-blind-safe (Okabe-Ito and Paul Tol) and the figures stay
 legible in grey scale because every colour is backed by a label or a legend entry.
 
-* geography (where the contact lives) -- blues for Germany, orange for abroad, grey for unknown
+* geography (where the contact lives) -- blues for Germany (dark = reference place, light = rest), light orange for the rest of Europe, strong orange outside Europe, grey unknown
 * language (what is spoken)           -- one colour per language; modes 1-3 reuse their language
 * groups (drawn outlines)             -- a separate set of hues, used for group figures only
-* dashed outline                      -- the contact has open review flags (see validation report)
 
 Rendering is deterministic: the OO API (no pyplot state, no GUI backend), a bundled font, fixed
 hash salt, and no dates or software strings in the files.
@@ -42,13 +41,17 @@ MUTED = "#5B6770"
 FAINT = "#C9CED3"
 PAPER = "#FFFFFF"
 
+# Blues from dark to light follow the distance to the reference place within Germany; oranges are abroad
+# (light = the rest of Europe, strong = outside Europe).
 GEO_COLORS = {
     GeoCategory.LOCAL: "#0072B2",
-    GeoCategory.GERMANY_OTHER: "#56B4E9",
-    GeoCategory.ABROAD: "#E69F00",
+    GeoCategory.LOCAL_REGION: "#56B4E9",
+    GeoCategory.GERMANY_OTHER: "#C3DAEC",
+    GeoCategory.EUROPE_OTHER: "#F3D49A",
+    GeoCategory.OUTSIDE_EUROPE: "#E69F00",
     GeoCategory.UNKNOWN: "#9A9A9A",
 }
-GEO_ORDER = (GeoCategory.LOCAL, GeoCategory.GERMANY_OTHER, GeoCategory.ABROAD, GeoCategory.UNKNOWN)
+GEO_ORDER = (GeoCategory.LOCAL, GeoCategory.LOCAL_REGION, GeoCategory.GERMANY_OTHER, GeoCategory.EUROPE_OTHER, GeoCategory.OUTSIDE_EUROPE, GeoCategory.UNKNOWN)
 
 # Colours by *codebook code* of the language field; modes 1-3 name one language each.
 LANGUAGE_COLORS = {"1": "#882255", "2": "#332288", "3": "#DDCC77", "4": "#44AA99", "5": "#999933"}
@@ -61,16 +64,25 @@ NEUTRAL_TIE = "#3A444D"
 BAR_COLOR = "#6C8EAD"
 
 
-def label_color(fill: str) -> str:
-    """Black or white label, whichever contrasts with the fill (WCAG relative luminance)."""
+def luminance(fill: str) -> float:
+    """WCAG relative luminance of a ``#RRGGBB`` colour."""
     value = fill.lstrip("#")
     r, g, b = (int(value[i : i + 2], 16) / 255 for i in (0, 2, 4))
 
     def lin(c: float) -> float:
         return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
 
-    luminance = 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
-    return "#FFFFFF" if luminance < 0.30 else "#111111"
+    return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b)
+
+
+def label_color(fill: str) -> str:
+    """Black or white label, whichever contrasts with the fill."""
+    return "#FFFFFF" if luminance(fill) < 0.30 else "#111111"
+
+
+def rim_color(fill: str) -> str:
+    """A pale fill needs a visible rim on a pale background; a dark one gets a white rim."""
+    return "#6B7A88" if luminance(fill) > 0.45 else "#FFFFFF"
 
 
 def group_color(group_id: str, ordered_group_ids: Sequence[str]) -> str:
@@ -93,7 +105,9 @@ def frame(figure: Figure, title: str, subtitle: str, status: SurveyStatus, note:
     height = figure.get_figheight()
     figure.text(0.03, 1 - 0.22 / height, title, fontsize=14.5, fontweight="bold", color=INK, ha="left", va="top")
     figure.text(0.03, 1 - 0.58 / height, subtitle, fontsize=9.2, color=MUTED, ha="left", va="top")
-    figure.text(0.03, 0.036, note, fontsize=7.6, color=INK, ha="left", va="bottom", linespacing=1.35)
+    width = max(60, int(figure.get_figwidth() * 13.2))  # characters per line at this size
+    wrapped = "\n".join(wrap(paragraph, width) for paragraph in note.split("\n"))
+    figure.text(0.03, 0.036, wrapped, fontsize=7.6, color=INK, ha="left", va="bottom", linespacing=1.35)
     figure.text(0.03, 0.012, status.stamp(), fontsize=7.2, color=MUTED, ha="left", va="bottom")
 
 

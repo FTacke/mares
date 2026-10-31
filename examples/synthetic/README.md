@@ -18,6 +18,12 @@ neun abgeleitete Beziehungen, Review-Einträge, Prüfsummen. Quellkennung `0000-
 den Tests benutzt und lässt sich zum Ausprobieren in einen `INTAKE`-Ordner kopieren. Erzeugt mit
 `tests/network_fixtures.py`; die Tests prüfen, dass es gültig bleibt.
 
+## `network-curation-0000/`
+
+Eine erfundene Kuratierungsdatei (`mares-network-curation/v0-draft`) zum Beispielpaket: Erhebungsmethode der Alter-Alter-Beziehungen,
+Paarabdeckung und die Kategorie jedes Prüfhinweises. Aufruf: `--curation INTAKE:inbox/<Ordner>/curation.json`. Die Datei ändert das
+Paket nicht; sie wird beim Lauf neben ihm gelesen und mit ihrem Hash im Run-Record festgehalten.
+
 ## `MARES-0000-001/`
 
 | Datei | Inhalt |

@@ -1,0 +1,29 @@
+{
+  "format": "mares-network-curation/v0-draft",
+  "source_label": "0000-1",
+  "applies_to_package_version": "0.0-synthetic",
+  "made_on": "0000-01-02",
+  "made_by": "synthetic example",
+  "survey": {
+    "elicitation": "asked_per_pair",
+    "documentation": "group_outlines",
+    "group_rule": "all_members_know_each_other",
+    "pair_coverage": "not_established",
+    "basis": "synthetic example statement: the relations were asked in the interview and documented as group outlines; whether every pair was covered is not established"
+  },
+  "dispositions": [
+    {
+      "ref": "RT01",
+      "category": "documented_ambiguity",
+      "decided_by": "project_lead",
+      "basis": "synthetic",
+      "note": "raw value kept"
+    },
+    {
+      "ref": "RT02",
+      "category": "resolved",
+      "decided_by": "project_lead",
+      "basis": "synthetic"
+    }
+  ]
+}

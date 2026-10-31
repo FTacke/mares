@@ -95,7 +95,7 @@ def test_the_cli_runs_on_a_copy_of_the_example_in_synthetic_roots(tmp_path):
     roots = Roots(load_root_specs(), env, checkout=folders["checkout"])
     assert cli.main(["figures", "--package", "INTAKE:inbox/example", "--formats", "svg"], roots=roots) == 0
     (run,) = (folders["workspace"] / "runs").iterdir()
-    assert len(list((run / "figures").glob("*.svg"))) == 6
+    assert len(list((run / "figures").glob("*/*.svg"))) == 19  # core 4, supplementary 10, diagnostic 5; the analysis versions are one level deeper
 
 
 def test_no_source_text_carries_a_label_of_a_real_case():
@@ -109,3 +109,14 @@ def test_no_source_text_carries_a_label_of_a_real_case():
         if "MARES_001-2" in text or "Datenpaket_2026" in text:
             offenders.append(rel)
     assert not offenders, offenders
+
+
+def test_the_synthetic_curation_example_fits_the_example_package():
+    from mares.networks.curation import read_curation
+
+    curation = read_curation(REPO / "examples" / "synthetic" / "network-curation-0000" / "curation.json")
+    assert curation.source_label.startswith("0000") and curation.survey.stated
+    report = validate(read_package(EXAMPLE), curation=curation)
+    assert report.errors == () and report.warnings == ()
+    categories = {q.question_id: q.category.value for q in report.open_questions}
+    assert categories["RT01"] == "documented_ambiguity" and categories["RT02"] == "resolved"

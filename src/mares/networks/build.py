@@ -6,8 +6,9 @@ Rules (``docs/architecture/network-module.md`` §4), all of them about what coun
    everyone inside one confirmed outline knows everyone else (clique rule, stated by the
    researcher). A group that needs review, and every ``candidate`` membership, implies nothing.
 2. Identical pairs from several groups are one tie; the groups stay as its origin.
-3. A pair without evidence is *not recorded* -- unknown, never ``no``. The model has no way to
-   turn absence into ``no``; only an explicit statement can be ``no``.
+3. A pair without evidence is *not recorded* -- unknown, never ``no``. Absence becomes ``no`` in
+   exactly one case: the survey states that **every** pair was covered (``coverage_complete``).
+   Without that statement only an explicit statement can be ``no``.
 4. An explicit statement that contradicts a clique tie is an error, not a vote.
 """
 
@@ -37,6 +38,7 @@ class Network:
     ties: tuple[Tie, ...]  # only pairs with evidence, sorted by pair
     confirmed_groups: tuple[tuple[str, tuple[str, ...]], ...]  # (group id, members)
     unconfirmed_groups: tuple[tuple[str, tuple[str, ...]], ...]  # candidates: no ties derived
+    coverage_complete: bool = False  # the survey states that every pair was covered
 
     def state(self, a: str, b: str) -> TieState:
         key = pair_key(a, b)
@@ -63,16 +65,14 @@ class Network:
         return counts
 
     def is_complete(self) -> bool:
-        """True only if every pair carries an explicit statement."""
-        return self.pair_total > 0 and all(t.basis is TieBasis.EXPLICIT for t in self.ties) and len(
-            self.ties
-        ) == self.pair_total
+        """True only if every pair carries a statement: named explicitly or covered by a complete survey."""
+        return self.pair_total > 0 and len(self.ties) == self.pair_total
 
     def groups_of(self, contact_id: str) -> tuple[str, ...]:
         return tuple(group for group, members in self.confirmed_groups if contact_id in members)
 
 
-def build_network(dataset: NetworkDataset, explicit_ties: Iterable[Tie] = ()) -> Network:
+def build_network(dataset: NetworkDataset, explicit_ties: Iterable[Tie] = (), *, coverage_complete: bool = False) -> Network:
     known = set(dataset.contact_ids)
     confirmed_groups = {group.group_id for group in dataset.groups if group.confirmed}
 
@@ -110,10 +110,14 @@ def build_network(dataset: NetworkDataset, explicit_ties: Iterable[Tie] = ()) ->
         groups = existing.group_ids if existing else ()
         ties[key] = Tie(key[0], key[1], explicit.state, TieBasis.EXPLICIT if existing is None else existing.basis, groups)
 
+    if coverage_complete:
+        for a, b in combinations(sorted(known, key=ids.contact_number), 2):
+            ties.setdefault((a, b), Tie(a, b, TieState.NO, TieBasis.COVERAGE))
     ordered = tuple(sorted(ties.values(), key=lambda tie: (ids.contact_number(tie.a), ids.contact_number(tie.b))))
     return Network(
         contact_ids=dataset.contact_ids,
         ties=ordered,
+        coverage_complete=coverage_complete,
         confirmed_groups=tuple((g, tuple(m)) for g, m in sorted(members_by_group.items())),
         unconfirmed_groups=tuple(
             (g, tuple(sorted(set(m), key=ids.contact_number))) for g, m in sorted(unconfirmed.items())
