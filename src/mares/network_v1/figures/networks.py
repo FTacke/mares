@@ -1,47 +1,55 @@
-"""The network figures of network_v1: G1 (personal network), G2 (geographic network), G3 (groups and belonging).
+"""The network figures of network_v1: G1 (personal network), G2 (geographic network), G3 (group map).
 
 Edges are always *confirmed* contact-contact connections (state ``1``). Denied (``0``) and unknown pairs are never drawn
-as lines; the case line and the note give the coverage, so an absent line is not read as 'no contact'. Group
-membership alone never creates a line.
+as lines; a note gives the coverage, so an absent line is not read as 'no contact'. Group membership alone never creates
+a line. Node colour = relation type, in all three figures.
 """
 
 from __future__ import annotations
 
 import math
 from collections import defaultdict
+from dataclasses import dataclass, field
 
 import numpy as np
-from matplotlib.lines import Line2D
-from matplotlib.patches import Circle, PathPatch, Polygon, Rectangle, Wedge
+from matplotlib.patches import Circle, FancyBboxPatch, PathPatch, Polygon, Rectangle
 from matplotlib.path import Path as MplPath
+from matplotlib.transforms import Bbox
 
 from .. import codes
-from ..places import AREA_LABELS, Area
+from ..places import AREA_LABELS, AREA_ORDER, Area, norm
 from .base import (
-    AREA_COLORS, GROUP_COLORS, ID_PT, INK, MISSING_FILL, MUTED, RELATION_COLORS, SMALL_PT, TEXT_PT, TIE_BETWEEN, TIE_WITHIN,
-    Context, draw_nodes, force_layout, frame, initial_circle, legend_box, new_figure, rim_color,
+    AREA_TINTS, GROUP_COLORS, INK, LABEL_PT, LEGEND_PT, MUTED, NODE_PT, TIE, TIE_BETWEEN, Context, draw_nodes, force_layout,
+    initial_circle, page, relation_entries, relation_fill, ring_segments, text_width,
 )
 
 EGO_FILL = "#1F2933"
-
-
-def _relation_fill(ctx: Context, cid: str) -> str | None:
-    cell = ctx.case.contact(cid).relation_type
-    return RELATION_COLORS.get(cell.value) if cell.recorded else None
-
-
-def _area_fill(ctx: Context, cid: str) -> str | None:
-    area = ctx.derived.area(cid)
-    return None if area is Area.UNRESOLVED else AREA_COLORS[area]
+NODE_R_IN = NODE_PT / 72 / 2  # node radius in inches
 
 
 def _edges(ctx: Context) -> list[tuple[str, str]]:
     return ctx.derived.confirmed_edges
 
 
+def _fills(ctx: Context, ids) -> dict[str, str | None]:
+    return {cid: relation_fill(ctx.case, cid) for cid in ids}
+
+
+def _tie(ax, path: MplPath, *, color: str, width: float, dashed: bool = False, zorder: int = 2) -> None:
+    patch = PathPatch(path, fill=False, edgecolor=color, linewidth=width, linestyle=(0, (4, 2.5)) if dashed else "solid", zorder=zorder)
+    patch.set_gid("tie")  # every confirmed tie is one artist with this id (counted by the tests)
+    ax.add_patch(patch)
+
+
+def _straight(p1, p2) -> MplPath:
+    return MplPath([p1, p2], [MplPath.MOVETO, MplPath.LINETO])
+
+
 # ---------------------------------------------------------------------------------------------------- G1 ---
 MISSING_RADIUS = 4.75
-LABEL_HALF_WIDTH = 0.33  # half the width kept free for the ring numbers at the top, in ring units
+EGO_CLEARANCE = 0.75  # ring units: no tie passes closer to Ego
+LABEL_HALF_WIDTH = 0.42  # half the width kept free for the ring numbers at the top, in ring units
+G1_SIZE = 8.4  # inches, square main area
 
 
 def g1_layout(ctx: Context) -> dict[str, tuple[float, float]]:
@@ -66,170 +74,359 @@ def g1_layout(ctx: Context) -> dict[str, tuple[float, float]]:
 
 
 def _bent(p1, p2) -> MplPath:
-    """A tie between two contacts; one that would pass close to Ego bends away from the centre, so it is never
-    mistaken for an ego line."""
+    """A tie between two contacts; one that would pass close to Ego bends away from the centre (perpendicular to the
+    chord, on the side of its midpoint), so it is never mistaken for an ego line."""
     (x1, y1), (x2, y2) = p1, p2
     mx, my = (x1 + x2) / 2, (y1 + y2) / 2
-    dist = math.hypot(mx, my)
-    push = max(0.0, 1.25 - dist)
-    if push == 0.0:
-        control = (mx, my)
-    else:
-        if dist > 0.05:
-            ux, uy = mx / dist, my / dist
-        else:
-            length = math.hypot(x2 - x1, y2 - y1) or 1.0
-            ux, uy = -(y2 - y1) / length, (x2 - x1) / length
-        control = (mx + ux * push * 1.6, my + uy * push * 1.6)
+    length = math.hypot(x2 - x1, y2 - y1) or 1.0
+    px, py = -(y2 - y1) / length, (x2 - x1) / length  # unit normal of the chord
+    side = px * mx + py * my  # distance of the chord from Ego (signed)
+    if side < 0:
+        px, py, side = -px, -py, -side
+    dx, dy = x2 - x1, y2 - y1
+    t = min(max(-(x1 * dx + y1 * dy) / (dx * dx + dy * dy or 1.0), 0.0), 1.0)  # the point of the segment closest to Ego
+    if math.hypot(x1 + t * dx, y1 + t * dy) >= EGO_CLEARANCE:
+        return _straight(p1, p2)
+    offset = 2 * (EGO_CLEARANCE - side)  # the apex of a quadratic curve lies halfway to its control point
+    control = (mx + px * offset, my + py * offset)
     return MplPath([(x1, y1), control, (x2, y2)], [MplPath.MOVETO, MplPath.CURVE3, MplPath.CURVE3])
 
 
 def g1(ctx: Context):
-    figure = new_figure(11.0, 9.6)
-    ax = figure.add_axes((0.02, 0.07, 0.66, 0.82))
-    ax.set_aspect("equal")
-    ax.axis("off")
-    lim = MISSING_RADIUS + 0.55
+    sections = [
+        ("Beziehungstyp", relation_entries(ctx.case)),
+        ("Persönliche Nähe", [
+            ("line", "1 sehr nah · 2 nah ·\n3 weniger nah · 4 außerhalb", {"color": "#9AA5B1", "linewidth": 1.0}),
+            ("line", "Zwischenwerte 1,5 · 2,5 · 3,5", {"color": "#C3CAD1", "linewidth": 0.7, "linestyle": (0, (2, 3))}),
+        ]),
+        ("Verbindungen", [("line", "bestätigte Verbindung\nzwischen Kontakten", {"color": TIE, "linewidth": 1.0})]),
+    ]
+    notes = ["Abstand zu Ego = erhobene persönliche Nähe; die Lage auf dem Ring ist ein Layout ohne eigene Bedeutung.",
+             "Fehlende Linie heißt nicht „kein Kontakt“ (nur bestätigte Verbindungen). " + ctx.coverage_line()]
+    p = page(ctx, "G1 · Persönliches Beziehungsnetz", "Kontakte nach persönlicher Nähe und Beziehungstyp",
+             main_w=G1_SIZE, main_h=G1_SIZE, legend="side", sections=sections, notes=notes)
+    ax = p.main
+    without = any(codes.closeness_value(c.closeness) is None for c in ctx.case.contacts)
+    lim = (MISSING_RADIUS if without else max(codes.CLOSENESS_LEVELS)) + 0.45  # the outer arc only when it is needed
     ax.set_xlim(-lim, lim)
     ax.set_ylim(-lim, lim)
     for value in codes.CLOSENESS_LEVELS:
         whole = value == int(value)
-        ax.add_patch(Circle((0, 0), value, fill=False, edgecolor="#9AA5B1" if whole else "#D5DAE0",
-                            linewidth=1.0 if whole else 0.6, linestyle="solid" if whole else (0, (2, 3)), zorder=0))
+        ax.add_patch(Circle((0, 0), value, fill=False, edgecolor="#9AA5B1" if whole else "#C3CAD1",
+                            linewidth=1.0 if whole else 0.7, linestyle="solid" if whole else (0, (2, 3)), zorder=0))
         if whole:
-            ax.text(0, value, f"{int(value)}", fontsize=SMALL_PT + 0.5, color=MUTED, ha="center", va="center", zorder=1,
+            ax.text(0, value, f"{int(value)}", fontsize=LABEL_PT - 1, color=MUTED, ha="center", va="center", zorder=1,
                     bbox={"boxstyle": "round,pad=0.12", "facecolor": "white", "edgecolor": "none"})
     positions = g1_layout(ctx)
     if any(codes.closeness_value(c.closeness) is None for c in ctx.case.contacts):
         ax.add_patch(Circle((0, 0), MISSING_RADIUS, fill=False, edgecolor="#C9CED3", linewidth=0.6, linestyle=(0, (1, 3))))
-        ax.text(0, -MISSING_RADIUS - 0.2, "Nähe ohne Angabe", fontsize=SMALL_PT, color=MUTED, ha="center", va="top", style="italic")
+        ax.text(0, -MISSING_RADIUS - 0.22, "Nähe ohne Angabe", fontsize=LABEL_PT - 1.5, color=MUTED, ha="center", va="top", style="italic")
     for a, b in _edges(ctx):
-        ax.add_patch(PathPatch(_bent(positions[a], positions[b]), fill=False, edgecolor=TIE_WITHIN, linewidth=0.8, alpha=0.85, zorder=2))
+        _tie(ax, _bent(positions[a], positions[b]), color=TIE, width=0.8)
     ax.add_patch(Circle((0, 0), 0.36, facecolor=EGO_FILL, edgecolor="white", zorder=5))
-    ax.text(0, 0, "Ego", color="white", fontsize=TEXT_PT - 1, ha="center", va="center", fontweight="bold", zorder=6)
-    draw_nodes(ax, positions, {cid: _relation_fill(ctx, cid) for cid in positions}, size=330)
-
-    side = figure.add_axes((0.69, 0.07, 0.29, 0.82))
-    side.axis("off")
-    entries = [(f"{code} · {label}".replace("professioneller/institutioneller Kontakt", "professionell / institutionell"), RELATION_COLORS[code])
-               for code, label in codes.RELATION_TYPE.items()]
-    if any(_relation_fill(ctx, c) is None for c in ctx.case.contact_ids):
-        entries.append(("keine Angabe", MISSING_FILL))
-    y = legend_box(side, entries, "Beziehungstyp (Tabelle A)", x=0.0, y=0.98, line_gap=0.038)
-    y = legend_box(side, [], "Ringe = persönliche Nähe (Tabelle A)", x=0.0, y=y - 0.02, line_gap=0.038)
-    for value in (1, 2, 3, 4):
-        side.text(0.0, y + 0.01, f"{value} · {codes.CLOSENESS[float(value)]}", transform=side.transAxes, fontsize=TEXT_PT - 0.5, color=INK, va="center")
-        y -= 0.034
-    side.text(0.0, y + 0.01, "gestrichelt: Zwischenwerte 1,5 · 2,5 · 3,5", transform=side.transAxes, fontsize=TEXT_PT - 0.5, color=MUTED, va="center")
-    y -= 0.04
-    side.add_line(Line2D([0.0, 0.07], [y - 0.03, y - 0.03], transform=side.transAxes, color=TIE_WITHIN, linewidth=1.2))
-    side.text(0.1, y - 0.03, "bestätigte Verbindung\nzwischen Kontakten", transform=side.transAxes, fontsize=TEXT_PT - 0.5, va="center")
-    side.text(0.0, y - 0.13, (
-        "Abstand zu Ego = erhobene Nähe, nie aus\nder Kartenposition abgeleitet.\n\n"
-        "Die Lage auf dem Kreis ist ein reproduzier-\nbares Layout ohne Bedeutung.\n\n"
-        "Unbekannte und verneinte Paare werden\nnicht gezeichnet; fehlende Linie heißt\nnicht „kein Kontakt“.\n\n"
-        "Ego ist mit allen Kontakten verbunden\n(nicht gezeichnet).\n\n" + ctx.coverage_line().replace(" · ", "\n", 1)
-    ), transform=side.transAxes, fontsize=SMALL_PT + 0.3, color=INK, va="top", linespacing=1.35)
-    frame(figure, ctx, "G1 · Persönliches Beziehungsnetz", "Kontakte nach erhobener persönlicher Nähe und Beziehungstyp")
-    return figure
+    ax.text(0, 0, "Ego", color="white", fontsize=LABEL_PT - 1, ha="center", va="center", fontweight="bold", zorder=6)
+    draw_nodes(ax, positions, _fills(ctx, positions))
+    return p.figure
 
 
 # ---------------------------------------------------------------------------------------------------- G2 ---
+G2_W = 13.0
+STEP = 0.5  # inches between node centres inside a subgroup
+ARC_STEP = 0.56  # inches between neighbours on the ellipse of a subgroup
+BOX_PAD = 0.12  # subgroup area around its nodes
+SUB_LABEL_H = 0.24  # room for a subgroup label above its area
+BAND_GAP = 0.06
+OUTSIDE_GAP_G2 = 0.3  # a little more room before 'außerhalb Europas' (a category step, never a distance)
+UNRESOLVED_W = 1.15
+HEADER_H_G2 = 0.62
+BRACKET_H_G2 = 0.3
+SHELF_GAP = 0.18
+ISOLATED_LABEL_H = 0.3
+SUBGROUP_AREAS = (Area.MITTELHESSEN, Area.GERMANY_OTHER, Area.EUROPE_OTHER, Area.OUTSIDE_EUROPE)
+
+
+@dataclass
+class Subgroup:
+    """Contacts of one band with the same residence place (Mittelhessen, rest of Germany) or residence country (abroad).
+    A geographic bundle only -- no social group and no connection. Connected contacts sit on an ellipse (no tie can run
+    through a third node), contacts without a confirmed connection on a grid."""
+
+    area: Area
+    label: str | None  # None: no label (Marburg, unresolved)
+    members: list[str]
+    ring: bool = False
+    cols: int = 1
+    x: float = 0.0  # left edge of the node area (inches)
+    top: float = 0.0  # top edge of the node area
+
+    @property
+    def radii(self) -> tuple[float, float]:
+        k = len(self.members)
+        if k <= 2:
+            return ((k - 1) * STEP / 2, 0.0)
+        r = max(k * ARC_STEP / (2 * math.pi), 0.32)
+        return r * 1.3, r * 0.78
+
+    @property
+    def rows(self) -> int:
+        return math.ceil(len(self.members) / self.cols)
+
+    @property
+    def width(self) -> float:
+        inner = 2 * self.radii[0] if self.ring else (self.cols - 1) * STEP
+        return inner + 2 * NODE_R_IN + 2 * BOX_PAD
+
+    @property
+    def height(self) -> float:
+        inner = 2 * self.radii[1] if self.ring else (self.rows - 1) * STEP
+        return inner + 2 * NODE_R_IN + 2 * BOX_PAD
+
+    @property
+    def footprint(self) -> tuple[float, float]:
+        label_w = text_width(self.label_text, LABEL_PT - 1.5) + 0.1 if self.label else 0.0
+        return max(self.width, label_w), self.height + (SUB_LABEL_H if self.label else 0.0)
+
+    @property
+    def label_text(self) -> str:
+        if not self.label:
+            return ""
+        return self.label if len(self.members) == 1 else f"{self.label} · {len(self.members)}"
+
+    def box(self) -> tuple[float, float, float, float]:
+        return self.x, self.top - self.height, self.width, self.height
+
+
+def subgroup_label(ctx: Context, cid: str) -> str | None:
+    """The place (Mittelhessen, rest of Germany) or the country (abroad) as recorded; nothing is added."""
+    c = ctx.case.contact(cid)
+    area = ctx.derived.area(cid)
+    if area in (Area.MITTELHESSEN, Area.GERMANY_OTHER):
+        return c.residence_place.strip() or None
+    if area in (Area.EUROPE_OTHER, Area.OUTSIDE_EUROPE):
+        return c.residence_country.strip() or c.residence_country_iso3 or None
+    return None
+
+
+def subgroups(ctx: Context, ids: list[str], *, ring: bool = False) -> dict[Area, list[Subgroup]]:
+    """Subgroups per band: same place or country (spelling variants of case and umlauts are one place). Largest first."""
+    found: dict[Area, dict[str, Subgroup]] = defaultdict(dict)
+    for cid in ids:
+        area = ctx.derived.area(cid)
+        label = subgroup_label(ctx, cid) if area in SUBGROUP_AREAS else None
+        key = norm(label) if label else ""
+        group = found[area].setdefault(key, Subgroup(area, label, [], ring))
+        group.members.append(cid)
+    result = {}
+    for area, groups in found.items():
+        ordered = sorted(groups.values(), key=lambda g: (-len(g.members), norm(g.label or "")))
+        for g in ordered:
+            g.cols = min(len(g.members), max(1, math.ceil(math.sqrt(len(g.members) * 1.6))))
+        result[area] = ordered
+    return result
+
+
 def g2_bands(ctx: Context) -> dict[Area, tuple[float, float]]:
-    """Band per area: width follows the number of contacts (at least room for two)."""
+    """x-range per band in inches: the five areas, plus a narrow separate box for unresolved residences if needed. Width
+    = room for the widest subgroup plus a share ∝ √(contacts) of the rest."""
     counts = defaultdict(int)
-    for r in ctx.derived.residence.values():
-        counts[r.area] += 1
-    areas = ctx.areas_present()
-    widths = {a: math.sqrt(max(counts[a], 2)) for a in areas}
-    total = sum(widths.values())
+    for cid in ctx.case.contact_ids:
+        counts[ctx.derived.area(cid)] += 1
+    groups = subgroups(ctx, ctx.case.contact_ids)
+    areas = list(AREA_ORDER)
+    gaps = BAND_GAP * (len(areas) - 1) + OUTSIDE_GAP_G2
+    width = G2_W
+    if counts[Area.UNRESOLVED]:
+        width -= UNRESOLVED_W + OUTSIDE_GAP_G2
+    need = {a: max([g.footprint[0] for g in groups.get(a, [])] + [0.9]) + 0.2 for a in areas}
+    extra = max(width - gaps - sum(need.values()), 0.0)
+    weight = {a: math.sqrt(max(counts[a], 1)) for a in areas}
+    total = sum(weight.values())
     bands, x = {}, 0.0
     for a in areas:
-        w = widths[a] / total
+        if a is Area.OUTSIDE_EUROPE:
+            x += OUTSIDE_GAP_G2 - BAND_GAP
+        w = need[a] + extra * weight[a] / total
         bands[a] = (x, x + w)
-        x += w
+        x += w + BAND_GAP
+    if counts[Area.UNRESOLVED]:
+        bands[Area.UNRESOLVED] = (G2_W - UNRESOLVED_W, G2_W)
     return bands
 
 
-ISOLATED_Y = 0.07  # contacts without a confirmed connection: a row of their own at the bottom of their band
+def _pack(groups: list[Subgroup], x0: float, x1: float) -> list[list[Subgroup]]:
+    """Shelf packing: subgroups left to right, a new shelf when the band is full."""
+    shelves: list[list[Subgroup]] = [[]]
+    used = 0.0
+    for g in groups:
+        w = g.footprint[0]
+        if shelves[-1] and used + w > (x1 - x0) - 0.1:
+            shelves.append([])
+            used = 0.0
+        shelves[-1].append(g)
+        used += w + 0.12
+    return [s for s in shelves if s]
 
 
-def g2_layout(ctx: Context) -> dict[str, tuple[float, float]]:
-    """Connected contacts: a force layout confined to their band (x) and to the upper part (y). Contacts without a
-    confirmed connection: evenly spaced in a row at the bottom of their band, so they are neither hidden nor stuck at a
-    border."""
+def _shelves_height(shelves: list[list[Subgroup]]) -> float:
+    return sum(max(g.footprint[1] for g in s) for s in shelves) + SHELF_GAP * max(len(shelves) - 1, 0)
+
+
+def _arrange(shelves: list[list[Subgroup]], x0: float, x1: float, top: float, height: float) -> None:
+    """Shelves spread over the zone height, subgroups spread over the band width."""
+    content = _shelves_height(shelves)
+    y = top - max(height - content, 0) / 2
+    for shelf in shelves:
+        widths = [g.footprint[0] for g in shelf]
+        free = (x1 - x0) - sum(widths)
+        gap = free / (len(shelf) + 1)
+        x = x0 + gap
+        for g, w in zip(shelf, widths):
+            label_h = SUB_LABEL_H if g.label else 0.0
+            g.x = x + (w - g.width) / 2
+            g.top = y - label_h
+            x += w + gap
+        y -= max(g.footprint[1] for g in shelf) + SHELF_GAP
+
+
+def _ring_order(members: list[str], edges: set[tuple[str, str]]) -> list[str]:
+    """Order on the ellipse: each next contact is the one with most ties to the previous one (then by ID), so
+    connected contacts are neighbours and chords stay short. Deterministic."""
+    rest = sorted(members)
+    order = [rest.pop(0)]
+    while rest:
+        last = order[-1]
+        nxt = max(rest, key=lambda c: (((min(c, last), max(c, last)) in edges), -rest.index(c)))
+        order.append(nxt)
+        rest.remove(nxt)
+    return order
+
+
+def _node_positions(g: Subgroup, edges: set[tuple[str, str]]) -> dict[str, tuple[float, float]]:
+    cx = g.x + g.width / 2
+    cy = g.top - g.height / 2
+    if g.ring:
+        rx, ry = g.radii
+        k = len(g.members)
+        if k <= 2:
+            return {cid: (cx - rx + i * 2 * rx, cy) for i, cid in enumerate(sorted(g.members))}
+        return {cid: (cx + rx * math.cos(math.pi / 2 + 2 * math.pi * i / k + math.pi / k),
+                      cy + ry * math.sin(math.pi / 2 + 2 * math.pi * i / k + math.pi / k))
+                for i, cid in enumerate(_ring_order(g.members, edges))}
+    out = {}
+    for i, cid in enumerate(g.members):
+        r, c = divmod(i, g.cols)
+        in_row = min(g.cols, len(g.members) - r * g.cols)
+        offset = (g.cols - in_row) * STEP / 2  # a shorter last row is centred
+        out[cid] = (g.x + BOX_PAD + NODE_R_IN + offset + c * STEP, g.top - BOX_PAD - NODE_R_IN - r * STEP)
+    return out
+
+
+@dataclass
+class G2Layout:
+    bands: dict[Area, tuple[float, float]]
+    positions: dict[str, tuple[float, float]]
+    subgroups: list[Subgroup] = field(default_factory=list)
+    height: float = 0.0
+    zone_top: float = 0.0  # top of the node zones
+    isolated_top: float | None = None  # top of the zone of contacts without a confirmed connection
+
+
+def g2_layout(ctx: Context) -> G2Layout:
+    """Bands of the five areas; inside each band the contacts are bundled by place or country (subgroups). Contacts with
+    a confirmed connection sit in the upper zone, the others in a lower zone. Inside a subgroup the nodes start on a
+    grid and are moved by a small force layout (confined to the subgroup area), so ties stay readable. Deterministic."""
     bands = g2_bands(ctx)
-    nodes = ctx.case.contact_ids
-    area = {cid: ctx.derived.area(cid) for cid in nodes}
     edges = _edges(ctx)
     linked = {c for e in edges for c in e}
-    pad = 0.03
-    positions: dict[str, tuple[float, float]] = {}
+    ids = ctx.case.contact_ids
+    upper = subgroups(ctx, [c for c in ids if c in linked], ring=True)
+    lower = subgroups(ctx, [c for c in ids if c not in linked])
+    shelves_up = {a: _pack(upper.get(a, []), *bands[a]) for a in bands}
+    shelves_low = {a: _pack(lower.get(a, []), *bands[a]) for a in bands}
+    up_h = max([_shelves_height(s) for s in shelves_up.values()] + [2.6])
+    low_h = max([_shelves_height(s) for s in shelves_low.values()] + [0.0])
+    header = HEADER_H_G2 + BRACKET_H_G2
+    height = header + up_h + (ISOLATED_LABEL_H + low_h + 0.12 if low_h else 0.0) + 0.1
+    zone_top = height - header
     for a, (x0, x1) in bands.items():
-        alone = [c for c in nodes if area[c] is a and c not in linked]
-        for i, cid in enumerate(alone):
-            positions[cid] = (x0 + (x1 - x0) * (i + 1) / (len(alone) + 1), ISOLATED_Y)
-    connected = [c for c in nodes if c in linked]
-
-    def project(n, p):
-        x0, x1 = bands[area[n]]
-        return np.array([min(max(p[0], x0 + pad), x1 - pad), min(max(p[1], 0.24), 0.94)])
-
-    start = {}
-    for n in connected:
-        x0, x1 = bands[area[n]]
-        cx, cy = initial_circle([n], 0.3)[n]
-        start[n] = ((x0 + x1) / 2 + cx * (x1 - x0), 0.58 + cy)
-    centre = [(n, ((bands[area[n]][0] + bands[area[n]][1]) / 2, 0.58), 0.012) for n in connected]
-    positions.update(force_layout(connected, edges, start=start, project=project, pulls=centre, repulsion=0.00006, spring=0.04,
-                                  iterations=700, min_distance=0.06))
-    return positions
+        _arrange(shelves_up[a], x0, x1, zone_top, up_h)
+    isolated_top = None
+    if low_h:
+        isolated_top = zone_top - up_h - 0.06
+        for a, (x0, x1) in bands.items():
+            _arrange(shelves_low[a], x0, x1, isolated_top - ISOLATED_LABEL_H, low_h)
+    groups = [g for gs in list(upper.values()) + list(lower.values()) for g in gs]
+    edge_set = set(edges)
+    positions: dict[str, tuple[float, float]] = {}
+    for g in groups:
+        positions.update(_node_positions(g, edge_set))
+    return G2Layout(bands, positions, groups, height, zone_top, isolated_top)
 
 
 def g2(ctx: Context):
-    figure = new_figure(12.5, 8.2)
-    ax = figure.add_axes((0.03, 0.17, 0.94, 0.68))
-    ax.axis("off")
-    ax.set_xlim(-0.005, 1.005)
-    ax.set_ylim(-0.02, 1.1)
-    bands = g2_bands(ctx)
-    counts = defaultdict(int)
-    for r in ctx.derived.residence.values():
-        counts[r.area] += 1
-    for i, (area, (x0, x1)) in enumerate(bands.items()):
-        color = AREA_COLORS[area]
-        ax.add_patch(Rectangle((x0 + 0.002, 0), x1 - x0 - 0.004, 1.0, facecolor=color if area is not Area.UNRESOLVED else "#F4F5F7",
-                               alpha=0.16 if area is not Area.UNRESOLVED else 1.0, edgecolor="none", zorder=0))
-        ax.add_patch(Rectangle((x0 + 0.002, 1.005), x1 - x0 - 0.004, 0.018, facecolor=color, edgecolor=rim_color(color), linewidth=0.5))
-        ax.text((x0 + x1) / 2, 1.035, f"{AREA_LABELS[area]}\nn = {counts[area]}", ha="center", va="bottom", fontsize=TEXT_PT - 0.6, color=INK, linespacing=1.15)
-    positions = g2_layout(ctx)
-    area = {cid: ctx.derived.area(cid) for cid in positions}
-    within = between = 0
-    for a, b in _edges(ctx):
-        (x1, y1), (x2, y2) = positions[a], positions[b]
-        if area[a] is area[b]:
-            within += 1
-            ax.plot([x1, x2], [y1, y2], color=TIE_WITHIN, linewidth=0.9, zorder=2)
-        else:
-            between += 1
-            mx, my = (x1 + x2) / 2, (y1 + y2) / 2
-            control = (mx - 0.18 * (y2 - y1), my + 0.18 * (x2 - x1))  # a gentle arc keeps long ties apart
-            curve = MplPath([(x1, y1), control, (x2, y2)], [MplPath.MOVETO, MplPath.CURVE3, MplPath.CURVE3])
-            ax.add_patch(PathPatch(curve, fill=False, edgecolor=TIE_BETWEEN, linewidth=1.1, linestyle=(0, (4, 2)), zorder=2))
-    draw_nodes(ax, positions, {cid: _area_fill(ctx, cid) for cid in positions}, size=290)
-    if any(abs(y - ISOLATED_Y) < 1e-9 for _, y in positions.values()):
-        ax.plot([0, 1], [0.15, 0.15], color="#C9CED3", linewidth=0.7, linestyle=(0, (3, 3)), zorder=1)
-        ax.text(0.004, 0.158, "ohne bestätigte Verbindung zu anderen Kontakten", fontsize=SMALL_PT, color=MUTED, ha="left", va="bottom", style="italic")
-    legend = [
-        Line2D([], [], color=TIE_WITHIN, linewidth=1.2, label=f"bestätigte Verbindung im selben Bereich ({within})"),
-        Line2D([], [], color=TIE_BETWEEN, linewidth=1.2, linestyle=(0, (4, 2)), label=f"bestätigte Verbindung über Bereiche hinweg ({between})"),
+    layout = g2_layout(ctx)
+    edges = _edges(ctx)
+    area = {cid: ctx.derived.area(cid) for cid in ctx.case.contact_ids}
+    within = sum(1 for a, b in edges if area[a] is area[b] and area[a] is not Area.UNRESOLVED)
+    between = len(edges) - within
+    sections = [
+        ("Beziehungstyp", relation_entries(ctx.case)),
+        ("Verbindungen", [
+            ("line", f"im selben Bereich ({within})", {"color": TIE, "linewidth": 1.0}),
+            ("line", f"zwischen Bereichen ({between})", {"color": TIE_BETWEEN, "linewidth": 0.8, "linestyle": (0, (4, 2.5))}),
+        ]),
+        (None, [("area", "gleicher Wohnort bzw. Wohnland", {"facecolor": "#FFFFFF", "edgecolor": "#B8C0C8", "linewidth": 0.7})]),
     ]
-    ax.legend(handles=legend, loc="upper left", bbox_to_anchor=(0.0, -0.01), ncol=2, frameon=False, fontsize=TEXT_PT - 0.5)
-    note = ("Bereiche sind Kategorien des Wohnorts, keine Entfernungen; Breite folgt der Kontaktzahl. Die Lage innerhalb eines Bereichs "
-            "ist ein reproduzierbares Layout\nund bedeutet keine persönliche Nähe. Ego ist nicht eingezeichnet. "
-            "Unbekannte und verneinte Paare erscheinen nicht als Linie. " + ctx.coverage_line())
-    frame(figure, ctx, "G2 · Geografisches Beziehungsnetz", "Kontakte nach Wohnortbereich und bestätigte Verbindungen zwischen ihnen", note)
-    return figure
+    notes = ["Wohnortbereiche sind Kategorien, keine Entfernungen; Flächen bündeln Kontakte mit gleichem Wohnort bzw. Wohnland.",
+             "Linien zeigen bestätigte Verbindungen; fehlende Linien bedeuten nicht zwangsläufig keinen Kontakt. " + ctx.coverage_line()]
+    p = page(ctx, "G2 · Geografisches Beziehungsnetz", "Kontakte nach Wohnortbereich und bestätigte Verbindungen zwischen ihnen",
+             main_w=G2_W, main_h=layout.height, legend="bottom", sections=sections, notes=notes)
+    ax = p.main
+    counts = defaultdict(int)
+    for a in area.values():
+        counts[a] += 1
+    zone_bottom = 0.05
+    header_y = layout.zone_top + 0.08
+    for a, (x0, x1) in layout.bands.items():
+        if a is Area.UNRESOLVED:
+            ax.add_patch(Rectangle((x0, zone_bottom), x1 - x0, layout.zone_top - zone_bottom, facecolor="#FFFFFF", edgecolor="#B8C0C8",
+                                   linewidth=0.7, linestyle=(0, (3, 3)), zorder=0))
+            ax.text((x0 + x1) / 2, header_y, f"Wohnort nicht\nzuordenbar\nn = {counts[a]}", ha="center", va="bottom",
+                    fontsize=LABEL_PT - 1, color=MUTED, style="italic", linespacing=1.15)
+            continue
+        ax.add_patch(Rectangle((x0, zone_bottom), x1 - x0, layout.zone_top - zone_bottom, facecolor=AREA_TINTS[a], edgecolor="none", zorder=0))
+        ax.text((x0 + x1) / 2, header_y, f"{AREA_LABELS[a]}\nn = {counts[a]}", ha="center", va="bottom", fontsize=LABEL_PT,
+                color=INK, linespacing=1.2)
+    m0, m1 = layout.bands[Area.MARBURG][0] + 0.1, layout.bands[Area.MITTELHESSEN][1] - 0.1
+    yb = layout.height - BRACKET_H_G2 + 0.06
+    ax.plot([m0, m0, m1, m1], [yb - 0.06, yb, yb, yb - 0.06], color=MUTED, linewidth=0.8)
+    ax.text((m0 + m1) / 2, yb + 0.04, "Marburg und Mittelhessen", ha="center", va="bottom", fontsize=LABEL_PT - 0.5, color=MUTED)
+    if layout.isolated_top is not None:
+        y = layout.isolated_top
+        ax.plot([0, G2_W], [y, y], color="#B8C0C8", linewidth=0.7, linestyle=(0, (3, 3)), zorder=1)
+        ax.text(0.06, y - 0.05, "keine bestätigte Verbindung zu anderen Kontakten erfasst", fontsize=LABEL_PT - 1.5, color=MUTED,
+                ha="left", va="top", style="italic", zorder=6)
+    for g in layout.subgroups:
+        bx, by, bw, bh = g.box()
+        if g.label and len(g.members) > 1:
+            ax.add_patch(FancyBboxPatch((bx, by), bw, bh, boxstyle="round,pad=0,rounding_size=0.12", facecolor="#FFFFFF", alpha=0.75,
+                                        edgecolor="none", zorder=1))
+            ax.add_patch(FancyBboxPatch((bx, by), bw, bh, boxstyle="round,pad=0,rounding_size=0.12", fill=False, edgecolor="#B8C0C8",
+                                        linewidth=0.7, zorder=1))
+        if g.label:
+            ax.text(bx + bw / 2, g.top + 0.04, g.label_text, ha="center", va="bottom", fontsize=LABEL_PT - 1.5, color=INK, zorder=6)
+    positions = layout.positions
+    for a, b in edges:
+        (x1, y1), (x2, y2) = positions[a], positions[b]
+        if area[a] is area[b] and area[a] is not Area.UNRESOLVED:
+            _tie(ax, _straight((x1, y1), (x2, y2)), color=TIE, width=0.9)
+        else:
+            mx, my = (x1 + x2) / 2, (y1 + y2) / 2
+            control = (mx - 0.15 * (y2 - y1), my + 0.15 * (x2 - x1))  # a gentle arc keeps long ties apart
+            curve = MplPath([(x1, y1), control, (x2, y2)], [MplPath.MOVETO, MplPath.CURVE3, MplPath.CURVE3])
+            _tie(ax, curve, color=TIE_BETWEEN, width=0.7, dashed=True)
+    draw_nodes(ax, positions, _fills(ctx, positions))
+    return p.figure
 
 
 # ---------------------------------------------------------------------------------------------------- G3 ---
@@ -253,8 +450,8 @@ def _hull(points: list[tuple[float, float]], pad: float) -> np.ndarray:
     """Convex hull of the points, each widened to a circle of radius ``pad`` (a rounded outline)."""
     samples = []
     for x, y in points:
-        for k in range(24):
-            t = 2 * math.pi * k / 24
+        for k in range(32):
+            t = 2 * math.pi * k / 32
             samples.append((x + pad * math.cos(t), y + pad * math.sin(t)))
     pts = sorted(set(samples))
 
@@ -274,11 +471,12 @@ def _hull(points: list[tuple[float, float]], pad: float) -> np.ndarray:
 
 
 HULL_PAD = 0.075
+CLEARANCE = 0.035  # a non-member keeps this distance (layout units, about a node radius) from a foreign outline
 NESTED_STEP = 0.022  # a group inside other groups gets a tighter outline, so every outline stays visible
 
 
 def group_pads(ctx: Context) -> dict[str, float]:
-    """Outline padding per group: tighter for each group that contains all its members (nested groups)."""
+    """Outline padding per group (layout units): tighter for each group that contains all its members (nested groups)."""
     members = {g.id: set(ctx.case.members(g.id)) for g in ctx.case.groups}
     pads = {}
     for g, ms in members.items():
@@ -300,7 +498,7 @@ def _fit(positions: dict[str, tuple[float, float]], margin: float = 0.1) -> dict
 def g3_layout(ctx: Context) -> dict[str, tuple[float, float]]:
     """Members gather around an anchor of their group (several groups: between the anchors); contacts without a group
     keep to an outer ring, near the contacts they are connected with. Contacts that land inside the outline of a group
-    they do not belong to are pushed out. Deterministic."""
+    they do not belong to are pushed out. Deterministic. Layout units: the unit square."""
     order = _group_order(ctx)
     k = max(len(order), 1)
     ring = 0.3 if k > 1 else 0.0
@@ -334,24 +532,24 @@ def g3_layout(ctx: Context) -> dict[str, tuple[float, float]]:
         return out
 
     positions = force_layout(nodes, _edges(ctx), start=start, project=lambda _n, p: p, pulls=pulls, repulsion=0.00012,
-                             spring=0.012, iterations=700, min_distance=0.06)
+                             spring=0.012, iterations=700, min_distance=0.065)
     pads = group_pads(ctx)
-    for _ in range(40):
+    for _ in range(80):
         moved = False
         for g in ctx.case.groups:
             members = ctx.case.members(g.id)
             if not members:
                 continue
-            hull = MplPath(_hull([positions[m] for m in members], pads[g.id]))
+            hull = MplPath(_hull([positions[m] for m in members], pads[g.id] + CLEARANCE))
             centre = np.mean([positions[m] for m in members], axis=0)
             for cid in nodes:
                 if cid in members:
                     continue
                 p = np.array(positions[cid])
-                if hull.contains_point(p, radius=-0.03):
+                if hull.contains_point(p):
                     direction = p - centre
-                    norm = float(np.hypot(*direction)) or 1.0
-                    p = p + direction / norm * 0.025
+                    norm_ = float(np.hypot(*direction)) or 1.0
+                    p = p + direction / norm_ * 0.025
                     positions[cid] = (float(p[0]), float(p[1]))
                     moved = True
         if not moved:
@@ -374,76 +572,136 @@ def intruders(ctx: Context, positions: dict[str, tuple[float, float]]) -> list[t
     return found
 
 
+# Outline width = Ego's belonging to the group (1 = very strong ... 5 = not at all); even 5 stays visible.
+BELONGING_WIDTH = {"1": 4.2, "2": 3.0, "3": 2.0, "4": 1.2, "5": 0.6}
+G3_W, G3_H = 12.0, 8.6
+G3_MARGIN = 0.8  # inches around the layout, room for group labels
+MAX_STRETCH = 1.45  # the group map may be wider than high, but not distorted beyond this
+
+
+def group_label_lines(ctx: Context, group) -> tuple[str, str]:
+    members = ctx.case.members(group.id)
+    name = group.label or "ohne Bezeichnung"
+    first = f"{group.id} · {name} · {len(members)} Kontakt{'e' if len(members) != 1 else ''}"
+    value = group.belonging.value
+    if value:
+        second = f"Zugehörigkeit: {value} · {codes.BELONGING[value]}"
+    else:
+        second = f"Zugehörigkeit: {codes.MISSING_LABELS.get(group.belonging.missing, 'keine Angabe')}"
+    return first, second
+
+
+def _overlap(a, b) -> bool:
+    return a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]
+
+
+def place_labels(ctx: Context, positions: dict[str, tuple[float, float]], hulls: dict[str, np.ndarray],
+                 bounds: tuple[float, float]) -> dict[str, tuple[float, float, str, tuple]]:
+    """Label position per group (inches): above, below, right or left of its outline -- the first candidate that hits no
+    node, no other label and stays on the page; otherwise the candidate with the fewest collisions."""
+    nodes = [(x - NODE_R_IN - 0.03, y - NODE_R_IN - 0.03, x + NODE_R_IN + 0.03, y + NODE_R_IN + 0.03) for x, y in positions.values()]
+    placed: list[tuple] = []
+    result = {}
+    for g in ctx.case.groups:
+        if g.id not in hulls:
+            continue
+        first, second = group_label_lines(ctx, g)
+        w = max(text_width(first, LEGEND_PT, bold=True), text_width(second, LEGEND_PT - 0.6)) + 0.08
+        h = 0.36
+        hull = hulls[g.id]
+        xmin, ymin = hull.min(axis=0)
+        xmax, ymax = hull.max(axis=0)
+        cx, cy = (xmin + xmax) / 2, (ymin + ymax) / 2
+        candidates = []
+        for lift in (0.03, 0.3, 0.6):
+            for x0 in (cx - w / 2, xmin, xmax - w):  # centred, left-aligned, right-aligned
+                candidates += [((x0, ymax + lift, x0 + w, ymax + lift + h), "top"), ((x0, ymin - lift - h, x0 + w, ymin - lift), "bottom")]
+            candidates += [((xmax + lift, cy - h / 2, xmax + lift + w, cy + h / 2), "right"),
+                           ((xmin - lift - w, cy - h / 2, xmin - lift, cy + h / 2), "left")]
+        shifted = []
+        for box, side in candidates:  # shift back onto the page instead of dropping the candidate
+            dx = max(0.05 - box[0], 0.0) - max(box[2] - (bounds[0] - 0.05), 0.0)
+            dy = max(0.05 - box[1], 0.0) - max(box[3] - (bounds[1] - 0.05), 0.0)
+            shifted.append(((box[0] + dx, box[1] + dy, box[2] + dx, box[3] + dy), side))
+        candidates = shifted
+        outlines = [MplPath(np.vstack([hh, hh[:1]]), closed=True) for hh in hulls.values()]
+        best, best_cost = None, None
+        for box, side in candidates:
+            inside = box[0] >= 0.05 and box[2] <= bounds[0] - 0.05 and box[1] >= 0.05 and box[3] <= bounds[1] - 0.05
+            covered = sum(o.intersects_bbox(Bbox.from_extents(*box), filled=True) for o in outlines)
+            cost = (sum(_overlap(box, n) for n in nodes) * 10 + sum(_overlap(box, b) for b in placed) * 10 + covered * 4
+                    + (0 if inside else 50))
+            if best_cost is None or cost < best_cost:
+                best, best_cost = (box, side), cost
+            if cost == 0:
+                break
+        box, side = best
+        placed.append(box)
+        result[g.id] = ((box[0] + box[2]) / 2, (box[1] + box[3]) / 2, side, box)
+    return result
+
+
+def g3_positions(ctx: Context) -> tuple[dict[str, tuple[float, float]], float]:
+    """The layout in inches: its bounding box fills the main area (x stretched at most by MAX_STRETCH against y); the
+    second value converts layout distances (outline padding) to inches."""
+    unit = g3_layout(ctx)
+    xs = [x for x, _ in unit.values()]
+    ys = [y for _, y in unit.values()]
+    w, h = max(max(xs) - min(xs), 1e-6), max(max(ys) - min(ys), 1e-6)
+    sy = (G3_H - 2 * G3_MARGIN) / h
+    sx = min((G3_W - 2 * G3_MARGIN) / w, sy * MAX_STRETCH)
+    sy = min(sy, sx * MAX_STRETCH)
+    ox = (G3_W - w * sx) / 2 - min(xs) * sx
+    oy = (G3_H - h * sy) / 2 - min(ys) * sy
+    return {cid: (ox + x * sx, oy + y * sy) for cid, (x, y) in unit.items()}, min(sx, sy)
+
+
 def g3(ctx: Context):
-    figure = new_figure(14.5, 9.0)
-    ax = figure.add_axes((0.01, 0.14, 0.56, 0.74))
-    ax.set_aspect("equal")
-    ax.axis("off")
-    ax.set_xlim(0, 1)
-    ax.set_ylim(0, 1)
-    positions = g3_layout(ctx)
     colors = {g.id: GROUP_COLORS[i % len(GROUP_COLORS)] for i, g in enumerate(ctx.case.groups)}
+    belonging = [("area", f"{code} · {label}", {"facecolor": "#FFFFFF", "edgecolor": "#55606B", "linewidth": BELONGING_WIDTH[code]})
+                 for code, label in codes.BELONGING.items()]
+    multi = [ctx.case.groups_of(cid) for cid in ctx.case.contact_ids]
+    sections = [
+        ("Beziehungstyp", relation_entries(ctx.case)),
+        ("Zugehörigkeit von Ego (Umrandung)", belonging),
+        (None, [("line", "bestätigte Verbindung", {"color": TIE, "linewidth": 1.0})]
+               + ([("ring", "Mitglied mehrerer Gruppen", [GROUP_COLORS[0], GROUP_COLORS[1]])] if any(len(m) > 1 for m in multi) else [])),
+    ]
+    notes = ["Umrandungsstärke = Egos Zugehörigkeit zur Gruppe, nicht ihre interne Vernetzung; gemeinsame Mitgliedschaft ist keine Verbindung.",
+             "Kontakte außerhalb aller Umrandungen gehören keiner Gruppe an. " + ctx.coverage_line()]
+    p = page(ctx, "G3 · Gruppenstruktur und Zugehörigkeit", "Von Ego benannte Gruppen, ihre Mitglieder und Egos Zugehörigkeit",
+             main_w=G3_W, main_h=G3_H, legend="bottom", sections=sections, notes=notes)
+    ax = p.main
+    positions, span = g3_positions(ctx)
     pads = group_pads(ctx)
+    hulls = {}
     for g in ctx.case.groups:
         members = ctx.case.members(g.id)
-        if not members:
-            continue
-        hull = _hull([positions[m] for m in members], pads[g.id])
-        ax.add_patch(Polygon(hull, closed=True, facecolor=colors[g.id], alpha=0.10, edgecolor="none", zorder=0))
-        ax.add_patch(Polygon(hull, closed=True, fill=False, edgecolor=colors[g.id], linewidth=1.4, alpha=0.8, zorder=1,
-                             linestyle=(0, (5, 2)) if pads[g.id] < HULL_PAD else "solid"))
-        nested = pads[g.id] < HULL_PAD  # label of a nested group below its outline, clear of the enclosing ones
-        anchor = hull[np.argmin(hull[:, 1])] if nested else hull[np.argmax(hull[:, 1])]
-        ax.text(anchor[0], anchor[1] + (-0.006 if nested else 0.006), f"{g.id} ({len(members)})", va="top" if nested else "bottom", color=colors[g.id], fontsize=TEXT_PT - 0.5, fontweight="bold",
-                ha="center", zorder=6, bbox={"boxstyle": "round,pad=0.15", "facecolor": "white", "edgecolor": "none", "alpha": 0.85})
-    for a, b in _edges(ctx):
-        (x1, y1), (x2, y2) = positions[a], positions[b]
-        ax.plot([x1, x2], [y1, y2], color=TIE_WITHIN, linewidth=0.8, zorder=2)
-    fills = {cid: ("#E6E9ED" if ctx.case.groups_of(cid) else MISSING_FILL) for cid in positions}
-    draw_nodes(ax, positions, fills, size=240)
-    for cid in positions:  # several memberships: one ring segment per group around the node
-        gs = ctx.case.groups_of(cid)
-        if len(gs) < 2:
-            continue
-        x, y = positions[cid]
-        for i, g in enumerate(gs):
-            ax.add_patch(Wedge((x, y), 0.026, 90 + 360 * i / len(gs), 90 + 360 * (i + 1) / len(gs), width=0.007,
-                               facecolor=colors[g], edgecolor="none", zorder=5))
-
-    # ------------------------------------------------------------------ belonging panel (ego and groups) -----
-    side = figure.add_axes((0.6, 0.14, 0.39, 0.74))
-    side.axis("off")
-    side.set_xlim(0, 1)
-    side.set_ylim(0, 1)
-    side.text(0.0, 1.0, "Zugehörigkeit von Ego zu den Gruppen", fontsize=TEXT_PT + 0.5, fontweight="bold", color=INK, va="top")
-    side.text(0.0, 0.955, "Linienstärke = erhobene Zugehörigkeit (1 = sehr stark … 5 = überhaupt nicht).\n"
-              "Sie beschreibt Ego und Gruppe, keine Beziehung zwischen Kontakten.\nZahl im Kreis = Mitglieder.",
-              fontsize=SMALL_PT, color=MUTED, va="top", linespacing=1.3)
-    n = len(ctx.case.groups)
-    ego = (0.06, 0.45)
-    side.scatter([ego[0]], [ego[1]], s=1100, c=[EGO_FILL], edgecolors="white", zorder=4)
-    side.text(*ego, "Ego", color="white", fontsize=TEXT_PT - 1, ha="center", va="center", fontweight="bold", zorder=5)
-    width_of = {"1": 7.0, "2": 5.0, "3": 3.2, "4": 1.8, "5": 0.7}
-    gx = 0.36
-    for i, g in enumerate(ctx.case.groups):
-        y = 0.8 - (0.7 * i / (n - 1) if n > 1 else 0.35)
-        members = ctx.case.members(g.id)
+        if members:
+            hulls[g.id] = _hull([positions[m] for m in members], pads[g.id] * span)
+    # fill all first (pale), then outlines from the widest belonging to the thinnest, so thin outlines stay on top
+    for g in ctx.case.groups:
+        if g.id in hulls:
+            ax.add_patch(Polygon(hulls[g.id], closed=True, facecolor=colors[g.id], alpha=0.07, edgecolor="none", zorder=0))
+    order = sorted((g for g in ctx.case.groups if g.id in hulls), key=lambda g: -BELONGING_WIDTH.get(g.belonging.value or "", 0.8))
+    for g in order:
         value = g.belonging.value
-        if value:
-            side.plot([ego[0], gx], [ego[1], y], color=colors[g.id], linewidth=width_of[value], solid_capstyle="butt", zorder=2)
-            label = f"{value} · {codes.BELONGING[value]}"
-        else:
-            side.plot([ego[0], gx], [ego[1], y], color="#9AA5B1", linewidth=0.8, linestyle=(0, (1, 2)), zorder=2)
-            label = codes.MISSING_LABELS.get(g.belonging.missing, "keine Angabe")
-        side.scatter([gx], [y], s=260 + 40 * len(members), c=[colors[g.id]], edgecolors="white", zorder=3)
-        side.text(gx, y, str(len(members)), color="white", fontsize=SMALL_PT + 0.4, ha="center", va="center", fontweight="bold", zorder=4)
-        side.text(gx + 0.06, y + 0.012, f"{g.id} · {g.label or 'ohne Bezeichnung'}", fontsize=TEXT_PT - 0.8, color=INK, va="bottom")
-        side.text(gx + 0.06, y - 0.004, f"Zugehörigkeit {label}\nStatus {g.status.value or '–'} · {len(members)} Mitglieder",
-                  fontsize=SMALL_PT - 0.2, color=MUTED, va="top", linespacing=1.25)
-    note = ("Gruppenkarte (links): Umrandung = von Ego benannte Gruppe (Zahl = Mitglieder); farbiger Ring = Mitglied mehrerer Gruppen; gestrichelte Umrandung = Gruppe, die ganz in anderen liegt; "
-            "gestrichelter Knoten = keiner Gruppe zugeordnet.\n"
-            "Linien = bestätigte Verbindungen. Status T: alle verbunden · P: teilweise · N: keine Verbindungen · NS: unbekannt – bei P und NS "
-            "gelten nur einzeln bestätigte Paare.\n"
-            "Gemeinsame Mitgliedschaft allein ist keine Verbindung; die Lage der Knoten ist ein reproduzierbares Layout. " + ctx.coverage_line())
-    frame(figure, ctx, "G3 · Gruppenstruktur und Zugehörigkeit", "Von Ego benannte Gruppen als konkrete Konstellationen und Egos Zugehörigkeit zu ihnen", note)
-    return figure
+        style = {"linewidth": BELONGING_WIDTH[value]} if value else {"linewidth": 0.8, "linestyle": (0, (1, 2))}
+        outline = Polygon(hulls[g.id], closed=True, fill=False, edgecolor=colors[g.id], alpha=0.9, zorder=1, joinstyle="round", **style)
+        outline.set_gid(f"group-{g.id}")
+        ax.add_patch(outline)
+    for a, b in _edges(ctx):
+        _tie(ax, _straight(positions[a], positions[b]), color=TIE, width=0.7)
+    draw_nodes(ax, positions, _fills(ctx, positions))
+    for cid, (x, y) in positions.items():
+        gs = ctx.case.groups_of(cid)
+        if len(gs) > 1:
+            ring_segments(ax, (x, y), [colors[g] for g in gs], NODE_R_IN + 0.07)
+    for gid, (x, y, side, box) in place_labels(ctx, positions, hulls, (G3_W, G3_H)).items():
+        g = next(gr for gr in ctx.case.groups if gr.id == gid)
+        first, second = group_label_lines(ctx, g)
+        ax.add_patch(FancyBboxPatch((box[0], box[1]), box[2] - box[0], box[3] - box[1], boxstyle="round,pad=0.02,rounding_size=0.05",
+                                    facecolor="#FFFFFF", alpha=0.72, edgecolor="none", zorder=6))
+        ax.text(box[0] + 0.04, box[3] - 0.03, first, ha="left", va="top", fontsize=LEGEND_PT, fontweight="bold", color=colors[gid], zorder=7)
+        ax.text(box[0] + 0.04, box[1] + 0.03, second, ha="left", va="bottom", fontsize=LEGEND_PT - 0.6, color=MUTED, zorder=7)
+    return p.figure

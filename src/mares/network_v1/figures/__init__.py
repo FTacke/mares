@@ -6,6 +6,7 @@ pretends to show what was not surveyed.
 
 from __future__ import annotations
 
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -57,6 +58,22 @@ FIGURES: tuple[FigureSpec, ...] = (
 FORMATS = ("png", "svg")
 
 
+SAVE_ATTEMPTS = 5
+
+
+def _save(figure, stem: Path, formats: tuple[str, ...]) -> list[Path]:
+    """Save, retrying briefly when Windows reports a file as temporarily locked (an open preview, a thumbnail or virus
+    scanner); after the last attempt the error stands."""
+    for attempt in range(SAVE_ATTEMPTS):
+        try:
+            return save_figure(figure, stem, formats)
+        except OSError:
+            if attempt == SAVE_ATTEMPTS - 1:
+                raise
+            time.sleep(0.5 * (attempt + 1))
+    raise AssertionError("unreachable")
+
+
 def render(ctx: Context, target: Path, formats: tuple[str, ...] = ("png",)) -> list[dict]:
     """Draw the eight figures into ``target`` (the case's ``graphics/``); returns one entry per figure."""
     if not formats or not set(formats) <= set(FORMATS):
@@ -72,7 +89,7 @@ def render(ctx: Context, target: Path, formats: tuple[str, ...] = ("png",)) -> l
         with rc():
             figure = spec.draw(ctx)
             stem = target / file_name(ctx.code, spec.code, spec.name, "png")
-            written = save_figure(figure, stem.with_suffix(""), formats)
+            written = _save(figure, stem.with_suffix(""), formats)
         entries.append({**entry, "status": "rendered", "reason": None, "files": [p.name for p in written]})
     return entries
 

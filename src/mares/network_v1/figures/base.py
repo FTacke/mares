@@ -1,54 +1,107 @@
-"""Building blocks of the eight network_v1 figures: case context, palettes, frame, layouts, point and count matrices.
+"""Design system of the eight network_v1 figures -- one place for everything they share.
+
+* **Palettes.** Colour of a contact = its relation type, in every figure (G1, G2, G3, P1, P2, P5): six fixed colours from
+  the Okabe-Ito family, neutral grey for 'Sonstige Beziehung'. Geographic areas and groups are pale backgrounds only, so
+  they never compete with the nodes. P3 and P4 share one quiet blue scale for shares.
+* **Typography and sizes** in points and inches, so every figure uses the same title, labels, node and dot sizes.
+* **The page** (:func:`page`): title and subtitle, case badge top right, the main area (most of the page), one of the
+  two legend layouts (``side`` or ``bottom``), at most two short notes and a one-line footer.
+* **Two matrix blocks**: :func:`point_matrix` (P1, P2, P5) and :func:`heat_matrix` (P3, P4).
 
 Rendering primitives (bundled font, deterministic files, contrast helpers) come from the v0 style module; they are
-version-neutral. Palettes: one variable keeps one colour in every figure -- residence area (blues = Marburg and
-Mittelhessen, pale blue = rest of Germany, oranges = abroad) and relation type (own hues). Every figure carries a small
-case line (case code, contacts, groups, data status) and, for a test case, a visible test marker.
+version-neutral. Main areas and legends are drawn in inch coordinates, so sizes do not depend on the page size.
 """
 
 from __future__ import annotations
 
 import math
 import zlib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Callable, Sequence
 
 import numpy as np
+from matplotlib.axes import Axes
 from matplotlib.figure import Figure
-from matplotlib.patches import FancyBboxPatch, Rectangle
+from matplotlib.font_manager import FontProperties
+from matplotlib.lines import Line2D
+from matplotlib.patches import Circle, FancyBboxPatch, Rectangle, Wedge
+from matplotlib.textpath import TextPath
 
-from mares.network_v0.figures.style import INK, MUTED, FAINT, label_color, new_figure, rim_color  # noqa: F401  (re-exported)
+from mares.network_v0.figures.style import FONT, INK, MUTED, FAINT, label_color, new_figure  # noqa: F401  (re-exported)
 
 from .. import codes
 from ..case import Case
 from ..derive import Derived
 from ..places import AREA_LABELS, AREA_ORDER, Area
 
-TITLE_PT, TEXT_PT, ID_PT, SMALL_PT = 15.0, 9.5, 7.6, 7.6
-TEST_RED = "#B03A2E"
+# ------------------------------------------------------------------------------------------------ typography ---
+TITLE_PT = 16.0
+SUBTITLE_PT = 10.5
+LABEL_PT = 9.5  # category labels, column headers
+ID_PT = 7.6  # contact IDs next to matrix dots
+NODE_ID_PT = 7.0  # contact IDs inside network nodes
+LEGEND_PT = 8.8
+NOTE_PT = 8.0
+FOOT_PT = 7.5
+BADGE_PT = 9.0
 
-AREA_COLORS = {
-    Area.MARBURG: "#0072B2",
-    Area.MITTELHESSEN: "#56B4E9",
-    Area.GERMANY_OTHER: "#C3DAEC",
-    Area.EUROPE_OTHER: "#F3D49A",
-    Area.OUTSIDE_EUROPE: "#E69F00",
-    Area.UNRESOLVED: "#FFFFFF",
-}
+# --------------------------------------------------------------------------------------------- page (inches) ---
+MARGIN_X = 0.4
+HEADER_H = 0.95
+FOOTER_H = 0.32
+NOTE_LINE_H = 0.19
+GAP = 0.14
+SIDE_W = 2.6
+LEGEND_ROW_H = 0.26
+
+# ---------------------------------------------------------------------------------------------------- colours ---
 RELATION_COLORS = {
     "1": "#D55E00",  # Familie
     "2": "#CC79A7",  # Partner:in
     "3": "#009E73",  # Freund:in
-    "4": "#F0E442",  # Bekannte:r
-    "5": "#6C7A89",  # professionell/institutionell
-    "6": "#A6761D",  # sonstige
+    "4": "#56B4E9",  # Bekannte:r
+    "5": "#0072B2",  # Professionell / institutionell
+    "6": "#6B7280",  # Sonstige Beziehung
 }
-MISSING_FILL = "#FFFFFF"  # no statement: white with a dotted rim, never the colour of a category
-TIE_WITHIN = "#7D8892"
-TIE_BETWEEN = "#1F2933"
-GROUP_COLORS = ("#117A8B", "#D55E00", "#7A5195", "#8C6D31", "#2E7D32", "#C2185B", "#455A64", "#EF6C00")
+NODE_RIM = "#4B5563"  # a fine neutral rim keeps light nodes visible on pale backgrounds
+MISSING_FILL = "#FFFFFF"  # no relation type: white with a dotted rim, never the colour of a category
+TIE = "#8A939C"  # confirmed tie inside one area (or in G1/G3)
+TIE_BETWEEN = "#AEB6BE"  # confirmed tie between areas: thinner, lighter, dashed
+TEST_RED = "#B03A2E"
+AREA_TINTS = {
+    Area.MARBURG: "#E9F1F8",
+    Area.MITTELHESSEN: "#F0F5FA",
+    Area.GERMANY_OTHER: "#F3F5F7",
+    Area.EUROPE_OTHER: "#F8F5EF",
+    Area.OUTSIDE_EUROPE: "#FAF3EB",
+}
+GROUP_COLORS = ("#3E6A9A", "#9A6B2F", "#6B4E8A", "#2F7F72", "#A04A5C", "#5E6B2E", "#4A5560", "#B0602A")
+HEAT = "#2B6A99"  # one blue scale for shares (P3, P4)
+HEAT_NEUTRAL = "#F1F3F5"  # cells of a column with n = 1: no shading
+CELL_RIM = "#DDE2E7"
+
+NODE_PT = 20.0  # diameter of a network node
+DOT_PT = 7.0  # diameter of a matrix dot
 
 
+def node_size(diameter_pt: float = NODE_PT) -> float:
+    return diameter_pt ** 2  # scatter sizes are areas in points^2
+
+
+def relation_fill(case: Case, contact_id: str) -> str | None:
+    cell = case.contact(contact_id).relation_type
+    return RELATION_COLORS.get(cell.value) if cell.recorded else None
+
+
+def relation_entries(case: Case) -> list[tuple]:
+    """Legend entries of the relation types -- same order, labels and colours in every figure."""
+    entries: list[tuple] = [("dot", label, RELATION_COLORS[code]) for code, label in codes.RELATION_TYPE.items()]
+    if any(relation_fill(case, cid) is None for cid in case.contact_ids):
+        entries.append(("dot", "keine Angabe", None))
+    return entries
+
+
+# ------------------------------------------------------------------------------------------------ case context ---
 @dataclass(frozen=True)
 class Context:
     """What a figure needs about the case."""
@@ -64,50 +117,40 @@ class Context:
     def is_test(self) -> bool:
         return self.case.metadata.get("case_type") == "test"
 
-    def areas_present(self) -> list[Area]:
-        """The five display areas, plus 'nicht zuordenbar' only when a contact needs it."""
-        areas = list(AREA_ORDER)
-        if any(r.area is Area.UNRESOLVED for r in self.derived.residence.values()):
-            areas.append(Area.UNRESOLVED)
-        return areas
+    def resolved(self) -> list[str]:
+        return [cid for cid in self.case.contact_ids if self.derived.area(cid) is not Area.UNRESOLVED]
 
-    def status_text(self) -> str:
-        m = self.case.metadata
-        provenance = {
-            "fully_synthetic": "vollständig synthetisch",
-            "v0_derived_fictionalized": "aus network_v0 abgeleitet, fiktionalisiert",
-            "survey": "Erhebung",
-        }.get(m.get("provenance"), str(m.get("provenance")))
-        if self.is_test:
-            return f"Testfall · {provenance} · nicht empirisch auswertbar"
-        return f"{ {'pilot': 'Pilotfall', 'regular': 'Erhebung'}.get(m.get('case_type'), '') } · Datenqualität {m.get('data_quality', 'nicht angegeben')}".strip()
+    def unresolved(self) -> list[str]:
+        return [cid for cid in self.case.contact_ids if self.derived.area(cid) is Area.UNRESOLVED]
 
-    def case_line(self) -> str:
-        n_groups = len(self.case.groups)
-        groups = f" · {n_groups} Gruppen" if n_groups else ""
-        return f"MARES · network_v1 · Fall {self.code} · {len(self.case.contacts)} Kontakte{groups} · {self.status_text()}"
+    def unresolved_note(self, where: str = "nicht dargestellt") -> str:
+        ids = self.unresolved()
+        return f"Wohnort nicht zuordenbar ({where}): {', '.join(ids)}." if ids else ""
 
     def coverage_line(self) -> str:
         cov = self.derived.coverage
         if not cov.pairs:
             return ""
-        share = 100 * (cov.confirmed + cov.denied) / cov.pairs
-        return (f"Kontaktpaare: {cov.pairs} · bestätigt {cov.confirmed} · verneint {cov.denied} · unbekannt {cov.unknown} "
-                f"(geklärt: {share:.0f} %)".replace(".", ","))
+        return f"Kontaktpaare: {cov.pairs} · bestätigt {cov.confirmed} · verneint {cov.denied} · unbekannt {cov.unknown}."
 
 
-def frame(figure: Figure, ctx: Context, title: str, subtitle: str, note: str = "") -> None:
-    """Title block, the small case line and -- for a test case -- the test marker."""
-    h = figure.get_figheight()
-    figure.text(0.03, 1 - 0.22 / h, title, fontsize=TITLE_PT, fontweight="bold", color=INK, ha="left", va="top")
-    if subtitle:
-        figure.text(0.03, 1 - 0.56 / h, subtitle, fontsize=TEXT_PT, color=MUTED, ha="left", va="top")
-    if note:
-        figure.text(0.03, 0.22 / h + 0.03, note, fontsize=SMALL_PT, color=INK, ha="left", va="bottom", linespacing=1.35)
-    figure.text(0.03, 0.12 / h, ctx.case_line(), fontsize=SMALL_PT, color=MUTED, ha="left", va="bottom")
+def case_badge(ctx: Context) -> str:
+    """Top right: a test case with its number and status, a real case with its pseudonymous code (never a name)."""
+    m = ctx.case.metadata
+    number = ctx.code[:3]
     if ctx.is_test:
-        figure.text(0.97, 1 - 0.22 / h, "TESTFALL · FIKTIVE DATEN", fontsize=TEXT_PT, fontweight="bold", color="#FFFFFF",
-                    ha="right", va="top", bbox={"boxstyle": "round,pad=0.35", "facecolor": TEST_RED, "edgecolor": "none"})
+        kind = {"fully_synthetic": "SYNTHETISCH", "v0_derived_fictionalized": "FIKTIONALISIERT"}.get(m.get("provenance"), "FIKTIV")
+        return f"TESTFALL {number}* · {kind}"
+    return f"FALL · {m.get('display_code') or f'MARES-{number}'}"
+
+
+def footer_line(ctx: Context) -> str:
+    n_groups = len(ctx.case.groups)
+    line = f"MARES · network_v1 · {len(ctx.case.contacts)} Kontakte · {n_groups} Gruppen"
+    quality = ctx.case.metadata.get("data_quality")
+    if not ctx.is_test and quality:
+        line += f" · Datenqualität: {quality}"
+    return line
 
 
 def file_name(case_code: str, figure_code: str, name: str, ext: str) -> str:
@@ -118,45 +161,214 @@ def file_name(case_code: str, figure_code: str, name: str, ext: str) -> str:
     return f"{stem}.{ext}"
 
 
-# ----------------------------------------------------------------------------------------- nodes and legends ---
+# -------------------------------------------------------------------------------------------- text measuring ---
+def text_width(text: str, size: float, *, bold: bool = False) -> float:
+    """Width in inches of the widest line of ``text`` in the bundled font."""
+    prop = FontProperties(family=FONT, weight="bold" if bold else "normal")
+    widest = 0.0
+    for line in text.split("\n"):
+        if line.strip():
+            widest = max(widest, TextPath((0, 0), line, size=size, prop=prop).get_extents().width / 72)
+    return widest
+
+
+# ---------------------------------------------------------------------------------------------------- legends ---
+# A legend is a list of sections ``(title, entries)``. Entries:
+#   ("dot", label, fill)            node or dot of a relation type (fill None = no answer)
+#   ("line", label, style)          a tie; style = Line2D keyword arguments
+#   ("area", label, style)          a background area or outline; style = patch keyword arguments
+#   ("ring", label, colors)         a node with ring segments (several group memberships)
+#   ("ramp", label, None)           the blue share scale of P3/P4
+#   ("text", label, None)           a short explanation
+SWATCH_W = 0.26
+ENTRY_GAP = 0.2
+SECTION_GAP = 0.42
+
+
+def _entry_width(entry: tuple) -> float:
+    kind, label, _ = entry
+    swatch = {"ramp": 5 * 0.2 + 0.08, "text": 0.0}.get(kind, SWATCH_W)
+    return swatch + (0.06 if swatch else 0) + text_width(label, LEGEND_PT)
+
+
+def _bottom_rows(sections: Sequence[tuple[str | None, Sequence[tuple]]], width: float) -> list[list[tuple[float, str, tuple | None]]]:
+    """Flow the sections into rows: (x, 'title'|'entry', entry). A section that does not fit into the rest of a row
+    starts a new row; a section wider than a row continues below its own entries."""
+    rows: list[list] = [[]]
+    x = 0.0
+    for title, entries in sections:
+        if not entries:
+            continue
+        title_w = text_width(title, LEGEND_PT, bold=True) + 0.12 if title else 0.0
+        section_w = title_w + sum(_entry_width(e) + ENTRY_GAP for e in entries) - ENTRY_GAP
+        if x > 0 and x + section_w > width:
+            rows.append([])
+            x = 0.0
+        indent = x + title_w
+        if title:
+            rows[-1].append((x, "title", (None, title, None)))
+            x += title_w
+        for entry in entries:
+            w = _entry_width(entry)
+            if x + w > width and x > indent:
+                rows.append([])
+                x = indent
+            rows[-1].append((x, "entry", entry))
+            x += w + ENTRY_GAP
+        x += SECTION_GAP - ENTRY_GAP
+    return rows
+
+
+def bottom_legend_height(sections, width: float) -> float:
+    return len(_bottom_rows(sections, width)) * LEGEND_ROW_H
+
+
+def _swatch(ax: Axes, kind: str, x: float, y: float, payload) -> None:
+    cx = x + SWATCH_W / 2
+    if kind == "dot":
+        style = node_style(payload)
+        ax.scatter([cx], [y], s=node_size(9.5), zorder=3, clip_on=False, **scatter_kwargs(style))
+    elif kind == "line":
+        ax.add_line(Line2D([x, x + SWATCH_W], [y, y], clip_on=False, **payload))
+    elif kind == "area":
+        ax.add_patch(FancyBboxPatch((x + 0.02, y - 0.065), SWATCH_W - 0.04, 0.13, boxstyle="round,pad=0,rounding_size=0.03",
+                                    clip_on=False, **payload))
+    elif kind == "ring":
+        ax.scatter([cx], [y], s=node_size(8.0), zorder=3, clip_on=False, c=["#FFFFFF"], edgecolors=[NODE_RIM], linewidths=0.6)
+        n = len(payload)
+        for i, color in enumerate(payload):
+            ax.add_patch(Wedge((cx, y), 0.085, 90 + 360 * i / n, 90 + 360 * (i + 1) / n, width=0.025, facecolor=color,
+                               edgecolor="none", clip_on=False, zorder=4))
+    elif kind == "ramp":
+        for i, share in enumerate((0.0, 0.25, 0.5, 0.75, 1.0)):
+            ax.add_patch(Rectangle((x + i * 0.2, y - 0.075), 0.18, 0.15, facecolor=heat_fill(share), edgecolor=CELL_RIM,
+                                   linewidth=0.5, clip_on=False))
+
+
+def draw_legend(ax: Axes, sections, mode: str) -> None:
+    """Draw ``sections`` into ``ax`` (inch coordinates, origin bottom left) as a ``side`` or ``bottom`` legend."""
+    width, height = ax.get_xlim()[1], ax.get_ylim()[1]
+    if mode == "bottom":
+        for r, row in enumerate(_bottom_rows(sections, width)):
+            y = height - (r + 0.5) * LEGEND_ROW_H
+            for x, what, entry in row:
+                kind, label, payload = entry
+                if what == "title":
+                    ax.text(x, y, label, fontsize=LEGEND_PT, fontweight="bold", color=INK, va="center", ha="left")
+                    continue
+                swatch = {"ramp": 5 * 0.2 + 0.08, "text": 0.0}.get(kind, SWATCH_W)
+                _swatch(ax, kind, x, y, payload)
+                ax.text(x + swatch + (0.06 if swatch else 0), y, label, fontsize=LEGEND_PT, color=MUTED if kind == "text" else INK,
+                        va="center", ha="left")
+        return
+    if mode != "side":
+        raise ValueError(f"legend mode must be 'side' or 'bottom', not {mode!r}")
+    y = height
+    for title, entries in sections:
+        if not entries:
+            continue
+        if title:
+            ax.text(0, y, title, fontsize=LEGEND_PT, fontweight="bold", color=INK, va="top", ha="left")
+            y -= 0.24
+        for kind, label, payload in entries:
+            lines = label.count("\n") + 1
+            block = LEGEND_ROW_H + (lines - 1) * 0.16
+            centre = y - block / 2
+            swatch = {"ramp": 5 * 0.2 + 0.08, "text": 0.0}.get(kind, SWATCH_W)
+            _swatch(ax, kind, 0.0, centre, payload)
+            ax.text(swatch + (0.06 if swatch else 0), centre, label, fontsize=LEGEND_PT, color=MUTED if kind == "text" else INK,
+                    va="center", ha="left", linespacing=1.25)
+            y -= block
+        y -= 0.2
+
+
+# ------------------------------------------------------------------------------------------------------- page ---
+@dataclass
+class Page:
+    figure: Figure
+    main: Axes  # inch coordinates: x 0 .. main_w, y 0 .. main_h (origin bottom left unless a block flips it)
+    main_w: float
+    main_h: float
+    legend: Axes | None = None
+    notes: list[str] = field(default_factory=list)
+
+
+def page(ctx: Context, title: str, subtitle: str, *, main_w: float, main_h: float, legend: str, sections,
+         notes: Sequence[str] = ()) -> Page:
+    """The common page of every figure. ``legend`` is ``side`` (right of the main area) or ``bottom`` (below it)."""
+    notes = [n for n in notes if n][:2]
+    notes_h = len(notes) * NOTE_LINE_H + (0.04 if notes else 0)
+    if legend == "side":
+        width = MARGIN_X * 2 + main_w + GAP + SIDE_W
+        legend_h = 0.0
+    elif legend == "bottom":
+        width = MARGIN_X * 2 + main_w
+        legend_h = bottom_legend_height(sections, main_w)
+    else:
+        raise ValueError(f"legend must be 'side' or 'bottom', not {legend!r}")
+    bottom_block = FOOTER_H + notes_h + (legend_h + GAP if legend_h else 0)
+    height = HEADER_H + main_h + GAP + bottom_block
+    figure = new_figure(width, height)
+
+    def axes(x: float, y: float, w: float, h: float) -> Axes:
+        ax = figure.add_axes((x / width, y / height, w / width, h / height))
+        ax.set_xlim(0, w)
+        ax.set_ylim(0, h)
+        ax.axis("off")
+        return ax
+
+    main = axes(MARGIN_X, bottom_block + GAP, main_w, main_h)
+    legend_ax = None
+    if legend == "side":
+        legend_ax = axes(MARGIN_X + main_w + GAP, bottom_block + GAP, SIDE_W, main_h)
+        draw_legend(legend_ax, sections, "side")
+    elif legend_h:
+        legend_ax = axes(MARGIN_X, FOOTER_H + notes_h, main_w, legend_h)
+        draw_legend(legend_ax, sections, "bottom")
+
+    figure.text(MARGIN_X / width, 1 - 0.2 / height, title, fontsize=TITLE_PT, fontweight="bold", color=INK, ha="left", va="top")
+    figure.text(MARGIN_X / width, 1 - 0.58 / height, subtitle, fontsize=SUBTITLE_PT, color=MUTED, ha="left", va="top")
+    badge = case_badge(ctx)
+    style = ({"facecolor": TEST_RED, "edgecolor": "none"} if ctx.is_test else {"facecolor": "#FFFFFF", "edgecolor": INK})
+    figure.text(1 - MARGIN_X / width, 1 - 0.22 / height, badge, fontsize=BADGE_PT, fontweight="bold",
+                color="#FFFFFF" if ctx.is_test else INK, ha="right", va="top", bbox={"boxstyle": "round,pad=0.35", **style})
+    for i, note in enumerate(reversed(notes)):
+        figure.text(MARGIN_X / width, (FOOTER_H + 0.02 + i * NOTE_LINE_H) / height, note, fontsize=NOTE_PT, color=INK,
+                    ha="left", va="bottom")
+    figure.text(MARGIN_X / width, 0.1 / height, footer_line(ctx), fontsize=FOOT_PT, color=MUTED, ha="left", va="bottom")
+    return Page(figure, main, main_w, main_h, legend_ax, notes)
+
+
+# ------------------------------------------------------------------------------------------------------ nodes ---
 def node_style(fill: str | None) -> dict:
     if fill is None or fill == MISSING_FILL:
-        return {"facecolor": MISSING_FILL, "edgecolor": "#5B6770", "linestyle": (0, (1.2, 1.2)), "linewidth": 0.9}
-    return {"facecolor": fill, "edgecolor": rim_color(fill), "linewidth": 0.8}
+        return {"facecolor": MISSING_FILL, "edgecolor": "#6B7280", "linestyle": (0, (1.2, 1.2)), "linewidth": 0.9}
+    return {"facecolor": fill, "edgecolor": NODE_RIM, "linewidth": 0.6}
 
 
-def legend_box(ax, entries: Sequence[tuple[str, str | None]], title: str, *, x: float, y: float, kind: str = "dot", columns: int = 1,
-               col_width: float = 0.5, line_gap: float = 0.055) -> float:
-    """A compact legend in axes-fraction coordinates; returns the y below it."""
-    ax.text(x, y, title, transform=ax.transAxes, fontsize=TEXT_PT, fontweight="bold", color=INK, ha="left", va="top")
-    y -= line_gap * 1.15
-    rows = math.ceil(len(entries) / columns)
-    for i, (label, color) in enumerate(entries):
-        cx = x + (i // rows) * col_width
-        cy = y - (i % rows) * line_gap
-        style = node_style(color)
-        ax.scatter([cx + 0.012], [cy - 0.012], s=70, transform=ax.transAxes, clip_on=False, zorder=5, **_scatter(style))
-        ax.text(cx + 0.035, cy - 0.012, label, transform=ax.transAxes, fontsize=TEXT_PT - 0.5, color=INK, ha="left", va="center")
-    return y - rows * line_gap
-
-
-def _scatter(style: dict) -> dict:
+def scatter_kwargs(style: dict) -> dict:
     return {"c": [style["facecolor"]], "edgecolors": [style["edgecolor"]], "linewidths": style["linewidth"],
             "linestyle": style.get("linestyle", "solid")}
 
 
-def draw_nodes(ax, positions: dict[str, tuple[float, float]], fills: dict[str, str | None], *, size: float = 150, labels: bool = True,
-               label_offset: tuple[float, float] = (0, 0), zorder: int = 4) -> None:
+def draw_nodes(ax: Axes, positions: dict[str, tuple[float, float]], fills: dict[str, str | None], *, zorder: int = 4) -> None:
+    """Network nodes: relation-type fill, fine neutral rim, contact ID inside."""
     for cid, (x, y) in positions.items():
         style = node_style(fills.get(cid))
-        ax.scatter([x], [y], s=size, zorder=zorder, **_scatter(style))
-        if labels:
-            fill = style["facecolor"]
-            ax.text(x + label_offset[0], y + label_offset[1], cid, fontsize=ID_PT - 1.4, color=label_color(fill),
-                    ha="center", va="center", zorder=zorder + 1, fontweight="bold")
+        ax.scatter([x], [y], s=node_size(), zorder=zorder, **scatter_kwargs(style))
+        ax.text(x, y, cid, fontsize=NODE_ID_PT, color=label_color(style["facecolor"]), ha="center", va="center",
+                zorder=zorder + 1, fontweight="bold")
 
 
-# ----------------------------------------------------------------------------------------------- layouts ---
+def ring_segments(ax: Axes, centre: tuple[float, float], colors: Sequence[str], radius: float, *, zorder: int = 5) -> None:
+    """Ring segments around a node, one per group (several memberships)."""
+    n = len(colors)
+    for i, color in enumerate(colors):
+        ax.add_patch(Wedge(centre, radius, 90 + 360 * i / n, 90 + 360 * (i + 1) / n, width=radius * 0.22, facecolor=color,
+                           edgecolor="none", zorder=zorder))
+
+
+# ---------------------------------------------------------------------------------------------------- layouts ---
 def _seed_angle(key: str) -> float:
     return (zlib.crc32(key.encode()) % 3600) / 3600 * 2 * math.pi
 
@@ -172,18 +384,19 @@ def force_layout(
     spring: float = 0.08,
     iterations: int = 500,
     min_distance: float = 0.06,
+    step: float = 0.06,
 ) -> dict[str, tuple[float, float]]:
     """A small deterministic force layout with a constraint: after every step each node is projected back into its
     allowed region (a ring, a band ...). Edges pull, all nodes repel, ``pulls`` add attractions to points (fixed or
-    recomputed each step). Same input, same output."""
+    recomputed each step). ``step`` is the largest move per step at the start. Same input, same output."""
     if not nodes:
         return {}
     index = {n: i for i, n in enumerate(nodes)}
     pos = np.array([start[n] for n in nodes], dtype=float)
     pos = np.array([project(n, pos[index[n]]) for n in nodes])
     edge_idx = [(index[a], index[b]) for a, b in edges if a in index and b in index]
-    for step in range(iterations):
-        temperature = 0.06 * (1 - step / iterations) + 0.004
+    for k in range(iterations):
+        temperature = step * (1 - k / iterations) + step / 15
         delta = pos[:, None, :] - pos[None, :, :]
         dist = np.sqrt((delta ** 2).sum(-1)) + 1e-9
         np.fill_diagonal(dist, np.inf)
@@ -209,24 +422,55 @@ def initial_circle(nodes: Sequence[str], radius: float = 1.0, center: tuple[floa
     return {n: (center[0] + radius * math.cos(_seed_angle(n)), center[1] + radius * math.sin(_seed_angle(n))) for n in nodes}
 
 
-def crossings(positions: dict[str, tuple[float, float]], edges: Sequence[tuple[str, str]]) -> int:
-    """Number of crossing edge pairs (a technical layout measure, never a finding)."""
-    def ccw(a, b, c):
-        return (c[1] - a[1]) * (b[0] - a[0]) - (b[1] - a[1]) * (c[0] - a[0])
-
-    count = 0
-    segs = [(positions[a], positions[b], {a, b}) for a, b in edges]
-    for i in range(len(segs)):
-        for j in range(i + 1, len(segs)):
-            (p1, p2, s1), (p3, p4, s2) = segs[i], segs[j]
-            if s1 & s2:
-                continue
-            if (ccw(p1, p3, p4) > 0) != (ccw(p2, p3, p4) > 0) and (ccw(p1, p2, p3) > 0) != (ccw(p1, p2, p4) > 0):
-                count += 1
-    return count
+# ------------------------------------------------------------------------------------ matrices: shared geometry ---
+ROW_LABEL_W = 2.0  # inches left of the first column
+HEADER_ROWS_H = 0.82  # column headers (two or three lines and n) above the first row
+BRACKET_H = 0.3  # 'Marburg und Mittelhessen' above the headers
+SLOT_W = 0.39  # one dot with its ID
+SLOT_H = 0.22
+MIN_ROW_H = 0.38
+OUTSIDE_GAP = 0.18  # a little more room before 'außerhalb Europas' (a category step, never a distance)
+MISSING_GAP = 0.3  # before 'keine Angabe'
 
 
-# ------------------------------------------------------------------------------------------ point matrix ---
+def area_columns() -> list[tuple[Area, str]]:
+    """The five display areas in their fixed order; 'nicht zuordenbar' is never a column."""
+    return [(a, AREA_LABELS[a].replace("übriges ", "übriges\n").replace("außerhalb ", "außerhalb\n").replace(" (Stadt)", "\n(Stadt)"))
+            for a in AREA_ORDER]
+
+
+def column_offsets(keys: Sequence[object], width: float, gaps: dict[int, float]) -> tuple[dict[object, float], float]:
+    """x of every column (left edge) and the common column width, filling ``width``."""
+    total_gap = sum(gaps.values())
+    col_w = (width - total_gap) / max(len(keys), 1)
+    xs, x = {}, 0.0
+    for i, key in enumerate(keys):
+        x += gaps.get(i, 0.0)
+        xs[key] = x
+        x += col_w
+    return xs, col_w
+
+
+def area_gaps(keys: Sequence[object]) -> dict[int, float]:
+    return {keys.index(Area.OUTSIDE_EUROPE): OUTSIDE_GAP} if Area.OUTSIDE_EUROPE in keys else {}
+
+
+def _headers(ax: Axes, xs: dict, col_w: float, columns: Sequence[tuple[object, str]], counts: dict[object, int], top: float,
+             y_title: str | None) -> None:
+    for key, label in columns:
+        ax.text(xs[key] + col_w / 2, top - 0.08, f"{label}\nn = {counts.get(key, 0)}", ha="center", va="top", fontsize=LABEL_PT,
+                color=INK, linespacing=1.2)
+    keys = [k for k, _ in columns]
+    if Area.MARBURG in keys and Area.MITTELHESSEN in keys:
+        x0, x1 = xs[Area.MARBURG] + 0.1, xs[Area.MITTELHESSEN] + col_w - 0.1
+        y = top + 0.08
+        ax.plot([x0, x0, x1, x1], [y - 0.06, y, y, y - 0.06], color=MUTED, linewidth=0.8)
+        ax.text((x0 + x1) / 2, y + 0.04, "Marburg und Mittelhessen", ha="center", va="bottom", fontsize=LABEL_PT - 0.5, color=MUTED)
+    if y_title:
+        ax.text(0, top - HEADER_ROWS_H + 0.06, y_title, ha="left", va="bottom", fontsize=LABEL_PT, fontweight="bold", color=INK)
+
+
+# --------------------------------------------------------------------------------- point matrix (P1, P2, P5) ---
 @dataclass(frozen=True)
 class Item:
     contact_id: str
@@ -235,131 +479,184 @@ class Item:
     color: str | None
 
 
+@dataclass(frozen=True)
+class PointGeometry:
+    per_line: int
+    row_h: float
+    height: float  # main area height in inches
+
+
+def point_geometry(columns: Sequence[tuple[object, str]], rows: Sequence[tuple[object, str]], items: Sequence[Item], width: float,
+                   gaps: dict[int, float], row_gaps: dict[int, float], *, bracket: bool) -> PointGeometry:
+    """Slots per line and a common row height, so that every cell holds its contacts without overlap."""
+    _, col_w = column_offsets([k for k, _ in columns], width - ROW_LABEL_W, gaps)
+    per_line = max(1, int((col_w - 0.08) // SLOT_W))
+    per_cell: dict[tuple, int] = {}
+    for item in items:
+        per_cell[(item.column, item.row)] = per_cell.get((item.column, item.row), 0) + 1
+    lines = max([math.ceil(n / per_line) for n in per_cell.values()] or [1])
+    row_h = max(MIN_ROW_H, lines * SLOT_H + 0.14)
+    height = HEADER_ROWS_H + (BRACKET_H if bracket else 0.0) + len(rows) * row_h + sum(row_gaps.values()) + 0.05
+    return PointGeometry(per_line, row_h, height)
+
+
 def point_matrix(
-    ax,
+    ax: Axes,
+    width: float,
+    geometry: PointGeometry,
     columns: Sequence[tuple[object, str]],
     rows: Sequence[tuple[object, str]],
     items: Sequence[Item],
     *,
-    column_gaps: Sequence[int] = (),
-    row_gaps: Sequence[int] = (),
-    per_line: int = 4,
-    column_counts: dict[object, int] | None = None,
-    column_header_colors: dict[object, str] | None = None,
-) -> None:
-    """Categories on both axes; every contact is a labelled point in its cell (several per cell side by side).
-    ``*_gaps``: indices before which a visual gap separates a block (e.g. 'keine Angabe')."""
-    col_x, x = {}, 0.0
-    for i, (key, _) in enumerate(columns):
-        if i in column_gaps:
-            x += 0.35
-        col_x[key] = x
-        x += 1.0
-    row_y, y = {}, 0.0
+    gaps: dict[int, float],
+    row_gaps: dict[int, float],
+    column_counts: dict[object, int],
+    tints: dict[object, str] | None = None,
+    y_title: str | None = None,
+) -> dict[str, tuple[float, float]]:
+    """Categories on both axes; every contact is a dot with its ID in its cell, several side by side and in lines.
+    Draws into ``ax`` in inch coordinates; returns the dot positions (for tests)."""
+    height = geometry.height
+    keys = [k for k, _ in columns]
+    xs, col_w = column_offsets(keys, width - ROW_LABEL_W, gaps)
+    xs = {k: x + ROW_LABEL_W for k, x in xs.items()}
+    ax.set_xlim(0, width)
+    ax.set_ylim(0, height)
+    top = height - (BRACKET_H if Area.MARBURG in keys else 0.0)
+    grid_top = top - HEADER_ROWS_H
+    ys, y = {}, grid_top
     for i, (key, _) in enumerate(rows):
-        if i in row_gaps:
-            y += 0.45
-        row_y[key] = y
-        y += 1.0
-    width, height = x, y
-    ax.set_xlim(-0.05, width + 0.05)
-    ax.set_ylim(height + 0.05, -0.95)
-    ax.axis("off")
-    for key, label in columns:
-        x0 = col_x[key]
-        ax.add_patch(Rectangle((x0 + 0.02, 0), 0.96, height, facecolor="#F6F7F9", edgecolor="none", zorder=0))
-        header = label + (f"\nn = {column_counts.get(key, 0)}" if column_counts is not None else "")
-        color = (column_header_colors or {}).get(key)
-        if color:
-            ax.add_patch(Rectangle((x0 + 0.06, -0.18), 0.88, 0.08, facecolor=color, edgecolor=rim_color(color), linewidth=0.6, zorder=1))
-        ax.text(x0 + 0.5, -0.24, header, ha="center", va="bottom", fontsize=TEXT_PT - 0.8, color=INK, linespacing=1.2)
+        y -= row_gaps.get(i, 0.0)
+        ys[key] = y  # top edge of the row
+        y -= geometry.row_h
+    grid_bottom = y
+    shift = ROW_LABEL_W
+    for key, _ in columns:
+        tint = (tints or {}).get(key, "#F6F7F9")
+        ax.add_patch(Rectangle((xs[key] + 0.03, grid_bottom), col_w - 0.06, grid_top - grid_bottom, facecolor=tint, edgecolor="none", zorder=0))
     for key, label in rows:
-        y0 = row_y[key]
-        ax.plot([-0.05, width + 0.05], [y0, y0], color=FAINT, linewidth=0.5, zorder=0)
-        ax.text(-0.09, y0 + 0.5, label, ha="right", va="center", fontsize=TEXT_PT - 0.8, color=INK)
+        y0 = ys[key]
+        ax.plot([shift - 0.1, width], [y0, y0], color="#E5E8EB", linewidth=0.6, zorder=1)
+        ax.text(shift - 0.14, y0 - geometry.row_h / 2, label, ha="right", va="center", fontsize=LABEL_PT,
+                color=MUTED if key == "missing" else INK, style="italic" if key == "missing" else "normal")
+    ax.plot([shift - 0.1, width], [grid_bottom, grid_bottom], color="#E5E8EB", linewidth=0.6, zorder=1)
+    _headers(ax, xs, col_w, columns, column_counts, top, y_title)
     cells: dict[tuple[object, object], list[Item]] = {}
     for item in items:
         cells.setdefault((item.column, item.row), []).append(item)
-    for (ck, rk), group in cells.items():
+    positions = {}
+    for (ck, rk), group in sorted(cells.items(), key=lambda kv: str(kv[0])):
         group = sorted(group, key=lambda it: it.contact_id)
-        lines = math.ceil(len(group) / per_line)
+        n_lines = math.ceil(len(group) / geometry.per_line)
+        used = min(len(group), geometry.per_line) * SLOT_W
+        x_start = xs[ck] + (col_w - used) / 2
         for k, item in enumerate(group):
-            line, slot = divmod(k, per_line)
-            cx = col_x[ck] + 0.1 + slot * (0.88 / per_line)
-            cy = row_y[rk] + 0.5 + (line - (lines - 1) / 2) * min(0.28, 0.9 / max(lines, 1))
+            line, slot = divmod(k, geometry.per_line)
+            cx = x_start + slot * SLOT_W + 0.07
+            cy = ys[rk] - geometry.row_h / 2 - (line - (n_lines - 1) / 2) * SLOT_H
             style = node_style(item.color)
-            ax.scatter([cx + 0.03], [cy], s=34, zorder=3, **_scatter(style))
-            ax.text(cx + 0.07, cy, item.contact_id, fontsize=ID_PT - 0.6, color=INK, ha="left", va="center", zorder=4)
+            ax.scatter([cx], [cy], s=node_size(DOT_PT), zorder=3, **scatter_kwargs(style))
+            ax.text(cx + 0.075, cy, item.contact_id, fontsize=ID_PT, color=INK, ha="left", va="center", zorder=4)
+            positions[f"{item.contact_id}@{ck}"] = (cx, cy)
+    return positions
 
 
-def count_matrix(
-    ax,
+# ------------------------------------------------------------------------------------- heat matrix (P3, P4) ---
+CELL_H = 0.42
+SECTION_TITLE_H = 0.26
+
+
+def heat_fill(share: float) -> tuple[float, float, float]:
+    rgb = np.array([int(HEAT[i : i + 2], 16) / 255 for i in (1, 3, 5)])
+    return tuple(float(v) for v in 1 - share * 0.9 * (1 - rgb))
+
+
+def heat_cell(k: int, n: int) -> tuple[object, str]:
+    """Fill and text of one cell: count only; empty for 0; neutral for a column with n = 1; blank without a base."""
+    if n == 0:
+        return "#FFFFFF", ""
+    if n == 1:
+        return HEAT_NEUTRAL, "1" if k else ""
+    if k == 0:
+        return "#FFFFFF", ""
+    return heat_fill(k / n), str(k)
+
+
+def heat_height(sections: Sequence[tuple[str | None, Sequence[tuple[object, str]]]], with_missing: bool) -> float:
+    rows = sum(len(r) for _, r in sections)
+    titles = sum(1 for t, r in sections if t and r)
+    return BRACKET_H + HEADER_ROWS_H + rows * CELL_H + titles * SECTION_TITLE_H + (CELL_H + 0.12 if with_missing else 0) + 0.05
+
+
+def heat_matrix(
+    ax: Axes,
+    width: float,
+    height: float,
     columns: Sequence[tuple[object, str]],
-    rows: Sequence[tuple[object, str]],
+    sections: Sequence[tuple[str | None, Sequence[tuple[object, str]]]],
     counts: dict[tuple[object, object], int],
     bases: dict[object, int],
-    *,
     missing: dict[object, int],
-    column_gaps: Sequence[int] = (),
-    column_header_colors: dict[object, str] | None = None,
-    shade: str = "#2B6A99",
-) -> None:
-    """Rows x columns of 'k of n' with the share as shading; n = contacts of the column with a recorded answer.
-    A last row shows contacts of the column without an answer (never counted as 'no')."""
-    col_x, x = {}, 0.0
-    for i, (key, _) in enumerate(columns):
-        if i in column_gaps:
-            x += 0.3
-        col_x[key] = x
-        x += 1.0
-    n_rows = len(rows) + 1
-    ax.set_xlim(-0.05, x + 0.05)
-    ax.set_ylim(n_rows + 0.55, -1.4)
-    ax.axis("off")
-    rgb = np.array([int(shade[i : i + 2], 16) / 255 for i in (1, 3, 5)])
-    for key, label in columns:
-        x0 = col_x[key]
-        color = (column_header_colors or {}).get(key)
-        if color:
-            ax.add_patch(Rectangle((x0 + 0.06, -0.2), 0.88, 0.09, facecolor=color, edgecolor=rim_color(color), linewidth=0.6))
-        ax.text(x0 + 0.5, -0.27, f"{label}\nn = {bases.get(key, 0)}", ha="center", va="bottom", fontsize=TEXT_PT - 0.8, color=INK, linespacing=1.2)
-    for r, (rkey, rlabel) in enumerate(rows):
-        ax.text(-0.09, r + 0.5, rlabel, ha="right", va="center", fontsize=TEXT_PT - 0.8, color=INK)
-        for ckey, _ in columns:
-            n = bases.get(ckey, 0)
-            k = counts.get((ckey, rkey), 0)
-            share = k / n if n else 0.0
-            fill = tuple(1 - share * (1 - rgb)) if n else (1, 1, 1)
-            ax.add_patch(Rectangle((col_x[ckey] + 0.03, r + 0.04), 0.94, 0.92, facecolor=fill, edgecolor="#E3E6EA", linewidth=0.6))
-            if n:
-                text_color = "#FFFFFF" if share > 0.55 else INK
-                ax.text(col_x[ckey] + 0.5, r + 0.42, f"{k}", ha="center", va="center", fontsize=TEXT_PT + 1, fontweight="bold", color=text_color)
-                ax.text(col_x[ckey] + 0.5, r + 0.74, f"von {n} · {100 * share:.0f} %", ha="center", va="center", fontsize=SMALL_PT - 0.4, color=text_color)
-            else:
-                ax.text(col_x[ckey] + 0.5, r + 0.5, "–", ha="center", va="center", fontsize=TEXT_PT, color=MUTED)
-    r = len(rows) + 0.25
-    ax.text(-0.09, r + 0.4, "ohne Angabe", ha="right", va="center", fontsize=TEXT_PT - 0.8, color=MUTED, style="italic")
-    for ckey, _ in columns:
-        ax.add_patch(FancyBboxPatch((col_x[ckey] + 0.08, r + 0.12), 0.84, 0.56, boxstyle="round,pad=0.0,rounding_size=0.08",
-                                    facecolor="#FFFFFF", edgecolor="#B5BEC7", linestyle=(0, (2, 2)), linewidth=0.7))
-        ax.text(col_x[ckey] + 0.5, r + 0.4, str(missing.get(ckey, 0)), ha="center", va="center", fontsize=TEXT_PT - 0.5, color=MUTED)
-
-
-def area_columns(ctx: Context) -> list[tuple[Area, str]]:
-    return [(a, AREA_LABELS[a].replace("übriges ", "übriges\n").replace("außerhalb ", "außerhalb\n").replace(" (Stadt)", "\n(Stadt)").replace("nicht ", "nicht\n")) for a in ctx.areas_present()]
-
-
-def area_bracket(ax, columns: Sequence[tuple[Area, str]], *, y: float, gap_after: Sequence[int] = ()) -> None:
-    """A bracket over Marburg and übriges Mittelhessen: together they are the primary category 1."""
+) -> dict[tuple[object, object], str]:
+    """Rows (in visual sections) x area columns. A cell shows the number of contacts; its shade is the share among the
+    column's contacts with an answer (n in the header). Returns the cell texts (for tests)."""
     keys = [k for k, _ in columns]
-    if Area.MARBURG in keys and Area.MITTELHESSEN in keys:
-        x0, x1 = keys.index(Area.MARBURG) + 0.08, keys.index(Area.MITTELHESSEN) + 0.92
-        ax.plot([x0, x0, x1, x1], [y + 0.06, y, y, y + 0.06], color=MUTED, linewidth=0.8, clip_on=False)
-        ax.text((x0 + x1) / 2, y - 0.04, "Marburg und Mittelhessen", ha="center", va="bottom", fontsize=SMALL_PT, color=MUTED, clip_on=False)
+    gaps = area_gaps(keys)
+    xs, col_w = column_offsets(keys, width - ROW_LABEL_W, gaps)
+    xs = {k: x + ROW_LABEL_W for k, x in xs.items()}
+    ax.set_xlim(0, width)
+    ax.set_ylim(0, height)
+    top = height - BRACKET_H
+    _headers(ax, xs, col_w, columns, bases, top, None)
+    y = top - HEADER_ROWS_H
+    texts = {}
+    for title, rows in sections:
+        if not rows:
+            continue
+        if title:
+            ax.text(ROW_LABEL_W - 0.14, y - SECTION_TITLE_H + 0.06, title, ha="right", va="bottom", fontsize=LABEL_PT - 1,
+                    color=MUTED, fontweight="bold")
+            y -= SECTION_TITLE_H
+        for rkey, rlabel in rows:
+            ax.text(ROW_LABEL_W - 0.14, y - CELL_H / 2, rlabel, ha="right", va="center", fontsize=LABEL_PT, color=INK)
+            for ckey in keys:
+                fill, text = heat_cell(counts.get((ckey, rkey), 0), bases.get(ckey, 0))
+                ax.add_patch(Rectangle((xs[ckey] + 0.03, y - CELL_H + 0.03), col_w - 0.06, CELL_H - 0.06, facecolor=fill,
+                                       edgecolor=CELL_RIM, linewidth=0.6))
+                if text:
+                    n = bases.get(ckey, 0)
+                    share = counts.get((ckey, rkey), 0) / n if n > 1 else 0.0
+                    ax.text(xs[ckey] + col_w / 2, y - CELL_H / 2, text, ha="center", va="center", fontsize=LABEL_PT + 1,
+                            fontweight="bold", color="#FFFFFF" if share > 0.6 else INK)
+                texts[(ckey, rkey)] = text
+            y -= CELL_H
+    if any(missing.values()):
+        y -= 0.12
+        ax.text(ROW_LABEL_W - 0.14, y - CELL_H / 2, "ohne Angabe", ha="right", va="center", fontsize=LABEL_PT, color=MUTED, style="italic")
+        for ckey in keys:
+            k = missing.get(ckey, 0)
+            ax.add_patch(FancyBboxPatch((xs[ckey] + 0.1, y - CELL_H + 0.08), col_w - 0.2, CELL_H - 0.16,
+                                        boxstyle="round,pad=0,rounding_size=0.04", facecolor="#FFFFFF", edgecolor="#B5BEC7",
+                                        linestyle=(0, (2, 2)), linewidth=0.7))
+            if k:
+                ax.text(xs[ckey] + col_w / 2, y - CELL_H / 2, str(k), ha="center", va="center", fontsize=LABEL_PT, color=MUTED)
+    return texts
+
+
+HEAT_LEGEND = [
+    (None, [
+        ("ramp", "Farbintensität = Anteil im jeweiligen Wohnortbereich (0–100 %)", None),
+        ("area", "n = 1: neutral", {"facecolor": HEAT_NEUTRAL, "edgecolor": CELL_RIM, "linewidth": 0.6}),
+        ("text", "Zahlen = Anzahl der Kontakte · leer = keine Nennung · Mehrfachnennungen möglich", None),
+    ]),
+]
 
 
 def closeness_rows(include_missing: bool) -> list[tuple[object, str]]:
-    rows: list[tuple[object, str]] = [(v, f"{codes.closeness_label(v)}" + (f"  {codes.CLOSENESS[v]}" if v == int(v) else "")) for v in codes.CLOSENESS_LEVELS]
+    rows: list[tuple[object, str]] = [
+        (v, f"{codes.closeness_label(v)}" + (f" · {codes.CLOSENESS[v]}" if v == int(v) else "")) for v in codes.CLOSENESS_LEVELS
+    ]
     if include_missing:
         rows.append(("missing", "keine Angabe"))
     return rows
+

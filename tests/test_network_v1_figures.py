@@ -5,7 +5,6 @@ from __future__ import annotations
 import math
 
 import pytest
-from matplotlib.lines import Line2D
 from matplotlib.patches import PathPatch
 from matplotlib.text import Text
 
@@ -71,9 +70,8 @@ def test_g2_draws_confirmed_ties_only_and_no_ego(ctx):
     ax = figure.axes[0]
     texts = [t.get_text() for t in ax.findobj(Text)]
     assert not any("Ego" == t for t in texts)
-    solid = [l for l in ax.lines if isinstance(l, Line2D) and len(l.get_xdata()) == 2 and l.get_linestyle() == "-"]
-    arcs = [p for p in ax.patches if isinstance(p, PathPatch)]
-    assert len(solid) + len(arcs) == len(ctx.derived.confirmed_edges) == 35
+    ties = [p for p in ax.patches if isinstance(p, PathPatch) and p.get_gid() == "tie"]
+    assert len(ties) == len(ctx.derived.confirmed_edges) == 35  # one line per confirmed pair, no ego lines
 
 
 def test_g3_keeps_non_members_out_of_group_outlines(ctx):
@@ -92,7 +90,8 @@ def test_no_labels_of_persons_in_any_figure(tmp_path):
             figure = spec.draw(named)
         texts = " ".join(t.get_text() for t in figure.findobj(Text))
         assert "Pseudonym-Xq" not in texts, spec.code
-        assert "TESTFALL" in texts and named.code in texts  # test marker and case line on every figure
+        assert "TESTFALL 002* · SYNTHETISCH" in texts  # case badge on every figure
+        assert "MARES · network_v1 · 32 Kontakte · 5 Gruppen" in texts  # the same footer on every figure
 
 
 def test_coverage_is_stated_on_network_figures(ctx):
