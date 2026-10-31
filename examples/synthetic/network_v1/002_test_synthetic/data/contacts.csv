@@ -1,0 +1,33 @@
+contact_id;label;closeness;relation_type;contact_frequency;functions;birth_country;birth_country_iso3;residence_place;residence_country;residence_country_iso3;comment
+A01;Mutter;1;1;1;1, 2;Kolumbien;COL;Bogotá;Kolumbien;COL;
+A02;Vater;1,5;1;2;1;Kolumbien;COL;Bogotá;Kolumbien;COL;
+A03;Schwester;1;1;1;1, 2;Kolumbien;COL;Madrid;Spanien;ESP;
+A04;Großmutter;2;1;3;1;Kolumbien;COL;Medellín;Kolumbien;COL;
+A05;Cousin;2,5;1;4;2;Kolumbien;COL;Miami;USA;USA;
+A06;Partner;1;2;1;1, 2, 3, 4;Deutschland;DEU;Marburg;Deutschland;DEU;
+A07;Mutter des Partners;3;1;4;3;Deutschland;DEU;Kassel;Deutschland;DEU;
+A08;Freundin aus dem Studium;1,5;3;1;1, 2, 3;Kolumbien;COL;Marburg;Deutschland;DEU;
+A09;Freund aus dem Studium;2;3;2;2;Mexiko;MEX;Gießen;Deutschland;DEU;
+A10;Freundin aus der Promotion;2;3;2;2, 4;Deutschland;DEU;Marburg;Deutschland;DEU;
+A11;Freund aus der Promotion;2,5;3;3;2;Vereinigtes Königreich;GBR;Marburg;Deutschland;DEU;
+A12;Kollegin und Freundin;2;3;2;2, 3;Brasilien;BRA;Marburg;Deutschland;DEU;
+A13;Kollege;3;4;2;2, 4;Deutschland;DEU;Cölbe;Deutschland;DEU;
+A14;Betreuerin der Promotion;3;5;3;1, 3;Deutschland;DEU;Marburg;Deutschland;DEU;
+A15;Kollege;3,5;4;2;2;Deutschland;DEU;Wetzlar;Deutschland;DEU;
+A16;Sekretariat des Instituts;4;5;3;3;Deutschland;DEU;Kirchhain;Deutschland;DEU;
+A17;Vorsitzende des Vereins;2,5;3;3;2;Peru;PER;Gießen;Deutschland;DEU;
+A18;Vereinsmitglied;3;4;4;2;Argentinien;ARG;Frankfurt am Main;Deutschland;DEU;
+A19;Vereinsmitglied;3;4;3;2, 4;Venezuela;VEN;Marburg;Deutschland;DEU;
+A20;Vereinsmitglied;3,5;4;4;0;Kolumbien;COL;Lahntal;Deutschland;DEU;
+A21;Vereinsmitglied;3,5;4;5;0;Spanien;ESP;Gießen;Deutschland;DEU;
+A22;Vereinsmitglied;KA;4;5;KA;Kolumbien;COL;Neustadt;Deutschland;DEU;Wohnort ohne Zusatz notiert
+A23;Hausärztin;4;5;5;3;Deutschland;DEU;Marburg;Deutschland;DEU;
+A24;Sachbearbeiterin Ausländerbehörde;4;5;5;3;Deutschland;DEU;Marburg;Deutschland;DEU;
+A25;Nachbarin;3;4;2;3;Polen;POL;Wehrda;Deutschland;DEU;Stadtteil von Marburg
+A26;Mitbewohner;2,5;4;1;2, 3, 4;Deutschland;DEU;Marburg;Deutschland;DEU;
+A27;Tandempartnerin;3,5;4;3;4;Deutschland;DEU;Berlin;Deutschland;DEU;
+A28;Tandempartner;4;4;4;4;Frankreich;FRA;Lyon;Frankreich;FRA;
+A29;Tandempartnerin;3,5;4;3;2, 4;Ecuador;ECU;Quito;Ecuador;ECU;
+A30;Freundin aus der Schulzeit;1,5;3;2;1;Kolumbien;COL;Bogotá;Kolumbien;COL;
+A31;Freund aus dem Studium in Bogotá;2,5;3;4;1, 2;Kolumbien;COL;Barcelona;Spanien;ESP;
+A32;Onkel;3,5;1;5;KA;Kolumbien;COL;Toronto;Kanada;CAN;

@@ -1,0 +1,27 @@
+contact_a;contact_b;status;source;comment
+A08;A09;1;C02;
+A08;A10;1;C02;
+A08;A12;1;C02;
+A08;A26;1;C02;
+A10;A11;1;C02;
+A11;A12;1;C02;
+A09;A11;0;C02;
+A09;A26;0;C02;
+A10;A26;?;C02;
+A12;A14;1;C03;bestätigt, auch durch T abgedeckt
+A09;A17;1;C04;
+A17;A19;1;C04;
+A18;A22;?;C04;
+A06;A07;1;;
+A06;A08;1;;
+A06;A10;1;;
+A06;A26;1;;
+A01;A06;1;;über Videoanrufe
+A01;A30;1;;
+A03;A30;1;;
+A03;A31;1;;
+A05;A32;1;;
+A01;A32;1;;
+A25;A26;1;;
+A23;A24;0;;
+A08;A14;0;;

@@ -1,0 +1,21 @@
+{
+  "format": "mares-network-case/v1",
+  "dataset_version": "network_v1",
+  "case_code": "002_test_synthetic",
+  "case_type": "test",
+  "provenance": "fully_synthetic",
+  "empirical_analysis_eligible": false,
+  "description": "Vollständig erfundener Testfall: Doktorandin aus Kolumbien in Marburg mit enger transnationaler Familie, Partner in Marburg, überlappenden Kreisen an der Universität, einem lateinamerikanischen Verein und Sprachtandems. Die erkennbaren Muster sind erfundene Testannahmen, keine Forschungshypothesen und keine empirischen Befunde.",
+  "survey": {
+    "design": "network_v1",
+    "instrument_version": "not applicable (synthetic)",
+    "survey_date": "0000-01-01",
+    "data_origin": "fully synthetic, written for the test suite"
+  },
+  "data_quality": "SYNTHETIC",
+  "limitations": [
+    "Erfundene Daten; kein Wert ist erhoben.",
+    "Die Codierungen folgen den Festlegungen des Auftrags zu network_v1; die finalen Erhebungsbögen lagen nicht im Repository vor."
+  ],
+  "field_origins": {}
+}

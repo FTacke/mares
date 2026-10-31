@@ -1,0 +1,21 @@
+field;value;comment
+origin_country;COL;
+age;31;
+stay_duration;4 Jahre;
+migration_context;Promotion;
+migration_context;Partnerschaft;
+residence_place;Marburg;
+marburg_relation;Wohnort;
+marburg_relation;Arbeitsort;
+occupation;Doktorandin;
+housing;Wohngemeinschaft;
+daily_languages;Spanisch;
+daily_languages;Deutsch;
+daily_languages;Englisch;
+language_use:familie;Spanisch;
+language_use:partnerschaft;Spanisch, Deutsch, Englisch;gemischt
+language_use:arbeit;Deutsch, Englisch;
+language_use:behoerden;Deutsch;
+language_confidence:spanisch;sehr sicher;Skala des Kontextbogens als Text erhalten
+language_confidence:deutsch;eher sicher;
+language_confidence:englisch;sicher;
