@@ -9,14 +9,14 @@ import json
 
 import pytest
 
-import network_fixtures as fx
-from mares.networks.analysis import descriptive_tables, survey_status
-from mares.networks.analysis import AnalysisParams
-from mares.networks.build import build_network
-from mares.networks.curation import NO_CURATION, CurationError, ReviewCategory, read_curation
-from mares.networks.model import Severity, TieBasis, TieState
-from mares.networks.package import read_package
-from mares.networks.validate import validate
+import network_v0_fixtures as fx
+from mares.network_v0.analysis import descriptive_tables, survey_status
+from mares.network_v0.analysis import AnalysisParams
+from mares.network_v0.build import build_network
+from mares.network_v0.curation import NO_CURATION, CurationError, ReviewCategory, read_curation
+from mares.network_v0.model import Severity, TieBasis, TieState
+from mares.network_v0.package import read_package
+from mares.network_v0.validate import validate
 
 
 def curation_file(tmp_path, **overrides):

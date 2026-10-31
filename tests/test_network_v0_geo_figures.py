@@ -15,16 +15,16 @@ import pytest
 from matplotlib.collections import LineCollection, PathCollection
 from matplotlib.text import Text
 
-import network_fixtures as fx
+import network_v0_fixtures as fx
 from mares.core import ids
-from mares.networks.analysis import AnalysisParams, survey_status
-from mares.networks.build import build_network
-from mares.networks.figures import ego_network, geo_zones
-from mares.networks.figures import network as netfig
-from mares.networks.figures.common import contact_views
-from mares.networks.figures.style import GEO_COLORS, rc, save_figure
-from mares.networks.geo import GeoCategory
-from mares.networks.package import read_package
+from mares.network_v0.analysis import AnalysisParams, survey_status
+from mares.network_v0.build import build_network
+from mares.network_v0.figures import ego_network, geo_zones
+from mares.network_v0.figures import network as netfig
+from mares.network_v0.figures.common import contact_views
+from mares.network_v0.figures.style import GEO_COLORS, rc, save_figure
+from mares.network_v0.geo import GeoCategory
+from mares.network_v0.package import read_package
 
 PARAMS = AnalysisParams()
 # residence of the first contacts: (city, country) -> the category the contact must land in
@@ -267,9 +267,9 @@ def test_the_geographic_figures_are_reproducible_byte_for_byte(tmp_path):
 
 
 _PROBE = """
-from mares.networks.figures import geo_zones
-from mares.networks.figures.common import ContactView
-from mares.networks.geo import GeoCategory
+from mares.network_v0.figures import geo_zones
+from mares.network_v0.figures.common import ContactView
+from mares.network_v0.geo import GeoCategory
 cats = [GeoCategory.LOCAL, GeoCategory.LOCAL_REGION, GeoCategory.GERMANY_OTHER, GeoCategory.EUROPE_OTHER, GeoCategory.OUTSIDE_EUROPE]
 views = [ContactView(f"A{i:02d}", cats[i % 4], ("Ort" + str(i % 3)), "DEU", None, "DEU", (), None, ()) for i in range(1, 15)]
 order = [f"A{i:02d}" for i in (3, 9, 1, 14, 5, 7, 2, 12, 4, 10, 8, 13, 6, 11)]

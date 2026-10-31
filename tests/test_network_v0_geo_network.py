@@ -16,16 +16,16 @@ import pytest
 from matplotlib.collections import LineCollection, PathCollection
 from matplotlib.text import Text
 
-import network_fixtures as fx
+import network_v0_fixtures as fx
 from mares.core import ids
-from mares.networks.analysis import AnalysisParams, survey_status
-from mares.networks.build import build_network
-from mares.networks.figures import design, geo_network, geo_zones, registry
-from mares.networks.figures.common import contact_views
-from mares.networks.figures.registry import FigureContext, FigureOptions
-from mares.networks.figures.style import rc, save_figure
-from mares.networks.geo import GeoCategory
-from mares.networks.package import read_package
+from mares.network_v0.analysis import AnalysisParams, survey_status
+from mares.network_v0.build import build_network
+from mares.network_v0.figures import design, geo_network, geo_zones, registry
+from mares.network_v0.figures.common import contact_views
+from mares.network_v0.figures.registry import FigureContext, FigureOptions
+from mares.network_v0.figures.style import rc, save_figure
+from mares.network_v0.geo import GeoCategory
+from mares.network_v0.package import read_package
 
 PARAMS = AnalysisParams()
 PLACES = {
@@ -235,12 +235,12 @@ _PROBE = """
 import sys
 from pathlib import Path
 sys.path.insert(0, {tests!r})
-import test_networks_geo_network as t
+import test_network_v0_geo_network as t
 root = Path({tmp!r})
 dataset = t._pilot_like(root)
 network, status = t._make(dataset)
-from mares.networks.figures import geo_network
-from mares.networks.figures.common import contact_views
+from mares.network_v0.figures import geo_network
+from mares.network_v0.figures.common import contact_views
 views = contact_views(dataset, t.PARAMS)
 layout = geo_network.radial_layout(views, network)
 print(sorted((k, round(v[0], 9), round(v[1], 9)) for k, v in layout.positions.items()), layout.start)
@@ -394,8 +394,8 @@ def test_the_register_carries_the_full_provenance_the_clean_figures_only_hint_at
 
 
 def _context(dataset, network, status):
-    from mares.networks.figures import ego_network
-    from mares.networks.figures import network as network_figures
+    from mares.network_v0.figures import ego_network
+    from mares.network_v0.figures import network as network_figures
 
     return FigureContext(dataset, status, PARAMS, network, network_figures.build_structure(network), ego_network.build_ego_structure(network))
 

@@ -8,14 +8,14 @@ import math
 import pytest
 from matplotlib.text import Text
 
-import network_fixtures as fx
-from mares.networks.analysis import AnalysisParams, survey_status
-from mares.networks.build import build_network
-from mares.networks.figures import ego, ego_network, geo_zones, geography, language, layouts, overview, perspectives
-from mares.networks.figures import network as netfig
-from mares.networks.figures.common import contact_views, ego_layout
-from mares.networks.figures.style import rc, save_figure
-from mares.networks.package import read_package
+import network_v0_fixtures as fx
+from mares.network_v0.analysis import AnalysisParams, survey_status
+from mares.network_v0.build import build_network
+from mares.network_v0.figures import ego, ego_network, geo_zones, geography, language, layouts, overview, perspectives
+from mares.network_v0.figures import network as netfig
+from mares.network_v0.figures.common import contact_views, ego_layout
+from mares.network_v0.figures.style import rc, save_figure
+from mares.network_v0.package import read_package
 
 PARAMS = AnalysisParams()
 
@@ -248,7 +248,7 @@ def test_node_labels_do_not_collide_in_the_network_figure(tmp_path):
 
 
 def test_the_network_footnote_states_how_the_ties_were_obtained(tmp_path):
-    from mares.networks.curation import Curation, SurveyMethod
+    from mares.network_v0.curation import Curation, SurveyMethod
 
     dataset = _dataset(tmp_path)
     network = build_network(dataset)
@@ -306,7 +306,7 @@ def test_five_zones_are_labelled_from_the_codebook_and_empty_ones_stay(tmp_path)
 
 
 _LAYOUT_PROBE = """
-from mares.networks.figures import layouts
+from mares.network_v0.figures import layouts
 edges = [("A01", "A02"), ("A01", "A03"), ("A02", "A03"), ("A02", "A04"), ("A03", "A04"),
          ("A04", "A05"), ("A05", "A06"), ("A04", "A06"), ("A06", "A07")]
 nodes = {a for e in edges for a in e} | {"A08"}

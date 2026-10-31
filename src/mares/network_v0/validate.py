@@ -8,7 +8,7 @@ Three things are kept apart, because they mean different things to the reader an
   unresolved origin statement, a review flag without a review item).
 * **review hints** -- documented uncertainty about the *source* (``review_items.csv``, review flags on
   contacts, and a few questions only the software can see). Each is in exactly one of four
-  categories (:class:`~mares.networks.curation.ReviewCategory`): an open decision-relevant question, a
+  categories (:class:`~mares.network_v0.curation.ReviewCategory`): an open decision-relevant question, a
   documented ambiguity of the source, an accepted imprecision, or resolved. Only the first is "open".
   Hints never block anything and are never decided by the validator: a category comes from the
   curation file (a person's statement) or, failing that, from the package's own recommended action.

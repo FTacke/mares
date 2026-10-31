@@ -6,10 +6,10 @@ import hashlib
 
 import pytest
 
-import network_fixtures as fx
-from mares.networks.model import Severity
-from mares.networks.package import read_package
-from mares.networks.validate import validate
+import network_v0_fixtures as fx
+from mares.network_v0.model import Severity
+from mares.network_v0.package import read_package
+from mares.network_v0.validate import validate
 
 
 def _codes(report, severity):
@@ -207,7 +207,7 @@ def test_a_clarification_must_match_the_confirmed_members(tmp_path):
 
 
 def test_validation_never_sets_a_quality_state():
-    from mares.networks import validate as module
+    from mares.network_v0 import validate as module
 
     assert not hasattr(module, "QualityState")  # a person decides data quality, not the validator
 

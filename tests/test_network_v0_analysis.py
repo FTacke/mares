@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import json
 
-import network_fixtures as fx
+import network_v0_fixtures as fx
 from mares.core.model import QualityState
-from mares.networks.analysis import (
+from mares.network_v0.analysis import (
     REFUSED_METRICS,
     AnalysisParams,
     attribute_counts,
@@ -14,9 +14,9 @@ from mares.networks.analysis import (
     language_combinations,
     survey_status,
 )
-from mares.networks.build import build_network
-from mares.networks.geo import GeoCategory, classify_residence
-from mares.networks.package import read_package
+from mares.network_v0.build import build_network
+from mares.network_v0.geo import GeoCategory, classify_residence
+from mares.network_v0.package import read_package
 
 
 def _load(tmp_path, n=12):
@@ -138,7 +138,7 @@ def test_regional_places_and_ambiguous_birth_countries_enter_the_tables_as_what_
     crosstab = tables["residence_by_birth_country"].rows
     assert sum(row[2] for row in crosstab) == 6  # one contact is one cell: an ambiguous birth country is not counted twice
     assert any(row[1] == "mehrdeutig" for row in crosstab) and not any(row[1] in ("Land A", "Land B") for row in crosstab)
-    from mares.networks.canonical import dataset_json
+    from mares.network_v0.canonical import dataset_json
 
     document = json.loads(dataset_json(dataset, build_network(dataset), AnalysisParams()))
     first = document["contacts"][0]

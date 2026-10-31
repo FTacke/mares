@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from mares.networks.codes import Codebook, CodebookError, CodeSyntaxError, parse_codes
+from mares.network_v0.codes import Codebook, CodebookError, CodeSyntaxError, parse_codes
 
 
 def test_empty_cell_is_not_collected_and_never_a_code():

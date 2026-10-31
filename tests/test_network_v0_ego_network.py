@@ -14,17 +14,17 @@ import sys
 import pytest
 from matplotlib.collections import LineCollection, PathCollection
 
-import network_fixtures as fx
+import network_v0_fixtures as fx
 from mares.core import ids
-from mares.networks.analysis import AnalysisParams, descriptive_tables, survey_status
-from mares.networks.build import build_network
-from mares.networks.figures import ego_layouts, layouts
-from mares.networks.figures import ego_network as b3
-from mares.networks.figures import network as netfig
-from mares.networks.figures.ego_network import EGO_LINE_COLOR
-from mares.networks.figures.style import GEO_COLORS, INK, rc, save_figure
-from mares.networks.figures.network import TIE_COLOR
-from mares.networks.package import read_package
+from mares.network_v0.analysis import AnalysisParams, descriptive_tables, survey_status
+from mares.network_v0.build import build_network
+from mares.network_v0.figures import ego_layouts, layouts
+from mares.network_v0.figures import ego_network as b3
+from mares.network_v0.figures import network as netfig
+from mares.network_v0.figures.ego_network import EGO_LINE_COLOR
+from mares.network_v0.figures.style import GEO_COLORS, INK, rc, save_figure
+from mares.network_v0.figures.network import TIE_COLOR
+from mares.network_v0.package import read_package
 
 PARAMS = AnalysisParams()
 
@@ -228,7 +228,7 @@ def test_ego_sits_near_the_middle_but_not_necessarily_in_it(tmp_path):
 
 _PROBE = """
 import networkx as nx
-from mares.networks.figures import ego_layouts, layouts
+from mares.network_v0.figures import ego_layouts, layouts
 edges = [("A01", "A02"), ("A01", "A03"), ("A02", "A03"), ("A02", "A04"), ("A03", "A04"),
          ("A04", "A05"), ("A05", "A06"), ("A04", "A06"), ("A06", "A07")]
 nodes = {a for e in edges for a in e} | {"A08"}

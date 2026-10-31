@@ -4,10 +4,10 @@ from __future__ import annotations
 
 import pytest
 
-import network_fixtures as fx
-from mares.networks.build import NetworkConstructionError, build_network, pair_key
-from mares.networks.model import Tie, TieBasis, TieState
-from mares.networks.package import read_package
+import network_v0_fixtures as fx
+from mares.network_v0.build import NetworkConstructionError, build_network, pair_key
+from mares.network_v0.model import Tie, TieBasis, TieState
+from mares.network_v0.package import read_package
 
 
 def _network(tmp_path, groups, memberships, n=12, **kwargs):
@@ -140,7 +140,7 @@ def test_a_pilot_shaped_network_keeps_22_contacts_6_groups_and_41_unique_ties(tm
     assert len(pairs) == len(set(pairs)) == 15 + 3 + 1 + 15 + 10 - 3  # overlaps counted once: G04 adds nothing, G05 and G06 share a triangle
     assert next(t for t in network.ties if t.pair == ("A04", "A05")).group_ids == ("G04", "G05", "G06")
     assert network.pair_total == 231 and network.pair_counts()[TieState.NOT_RECORDED] == 231 - 41
-    from mares.networks.validate import validate
+    from mares.network_v0.validate import validate
 
     assert validate(dataset).errors == ()  # the receipt table agrees with the derivation
     assert {tie.state for tie in network.ties} == {TieState.YES}  # nothing is removed, nothing denied

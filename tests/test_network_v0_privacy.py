@@ -15,9 +15,9 @@ import pytest
 
 from mares.core.paths import repo_root
 from mares.core.roots import Roots, load_root_specs
-from mares.networks import cli
-from mares.networks.package import read_package
-from mares.networks.validate import validate
+from mares.network_v0 import cli
+from mares.network_v0.package import read_package
+from mares.network_v0.validate import validate
 
 REPO = repo_root()
 EXAMPLE = REPO / "examples" / "synthetic" / "network-package-0000"
@@ -55,6 +55,10 @@ def test_every_package_in_the_repository_is_marked_synthetic_with_the_reserved_y
             assert str(manifest.get("source_case_label", "")).startswith("0000"), contacts
             rows = contacts.read_text(encoding="utf-8-sig").splitlines()[1:]
             assert rows and all(row.startswith("0000") for row in rows if row.strip()), contacts
+        elif (folder / "metadata.json").is_file():  # a network_v1 case: only fully synthetic test cases, reserved year
+            meta = json.loads((folder / "metadata.json").read_text(encoding="utf-8"))
+            assert (meta["dataset_version"], meta["case_type"], meta["provenance"]) == ("network_v1", "test", "fully_synthetic"), contacts
+            assert meta["empirical_analysis_eligible"] is False and meta["survey"]["survey_date"].startswith("0000"), contacts
         else:  # the illustrative case folder: its case file must say synthetic and carry the reserved year
             case = json.loads((folder / "case.json").read_text(encoding="utf-8"))
             assert case["synthetic"] is True and case["case_id"].startswith("MARES-0000-"), contacts
@@ -103,7 +107,7 @@ def test_no_source_text_carries_a_label_of_a_real_case():
     offenders = []
     for path in checkout_files():
         rel = path.relative_to(REPO).as_posix()
-        if rel == "tests/test_networks_privacy.py" or not rel.startswith(("src/", "tests/", "examples/")) or path.suffix not in {".py", ".csv", ".json", ".md", ".txt"}:
+        if rel == "tests/test_network_v0_privacy.py" or not rel.startswith(("src/", "tests/", "examples/")) or path.suffix not in {".py", ".csv", ".json", ".md", ".txt"}:
             continue
         text = path.read_text(encoding="utf-8", errors="ignore")
         if "MARES_001-2" in text or "Datenpaket_2026" in text:
@@ -112,7 +116,7 @@ def test_no_source_text_carries_a_label_of_a_real_case():
 
 
 def test_the_synthetic_curation_example_fits_the_example_package():
-    from mares.networks.curation import read_curation
+    from mares.network_v0.curation import read_curation
 
     curation = read_curation(REPO / "examples" / "synthetic" / "network-curation-0000" / "curation.json")
     assert curation.source_label.startswith("0000") and curation.survey.stated

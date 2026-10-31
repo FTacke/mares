@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import pytest
 
-import network_fixtures as fx
+import network_v0_fixtures as fx
 from mares.core import ids
-from mares.networks import identity
-from mares.networks.package import PackageError, read_package
-from mares.networks.validate import validate
+from mares.network_v0 import identity
+from mares.network_v0.package import PackageError, read_package
+from mares.network_v0.validate import validate
 
 
 @pytest.mark.parametrize("newline", ["\n", "\r\n"])

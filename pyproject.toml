@@ -10,7 +10,7 @@ version = "0.1.0"
 description = "MARES -- Marburgo: Archivo de Redes y Experiencias Sociolingüísticas. Forschungsdaten-Infrastruktur."
 readme = "README.md"
 requires-python = ">=3.11"
-# Eine Abhängigkeit kommt mit dem Code, der sie benutzt. Das Netzwerkmodul (mares.networks) braucht
+# Eine Abhängigkeit kommt mit dem Code, der sie benutzt. Die Netzwerkpipelines (mares.network_v0, mares.network_v1) brauchen
 # NetworkX (Graph, Layout) und Matplotlib (Grafiken, zieht NumPy nach); pandas bewusst nicht
 # (docs/decisions/ADR-0002_2026-10-12_netzwerkmodul.md). openpyxl kommt mit dem Sheet-Import.
 dependencies = ["networkx>=3.2", "matplotlib>=3.8"]

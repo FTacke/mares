@@ -4,7 +4,7 @@ A package is a directory of CSV files (UTF-8 with or without BOM, ``;`` as colum
 between several codes in one cell, an empty cell = not collected) plus ``manifest.json`` and a
 codebook. This module only *reads*: it parses cells, records syntax problems as findings and builds
 the model. Whether the content is coherent is the validator's business
-(:mod:`mares.networks.validate`). Nothing is corrected, completed or guessed.
+(:mod:`mares.network_v0.validate`). Nothing is corrected, completed or guessed.
 
 A package is read from a directory that the caller obtained from the storage resolver; this module
 never builds a location itself.

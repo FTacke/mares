@@ -19,20 +19,20 @@ from matplotlib.collections import LineCollection, PathCollection
 from matplotlib.patches import FancyBboxPatch
 from matplotlib.text import Text
 
-import network_fixtures as fx
+import network_v0_fixtures as fx
 from mares.core import ids
 from mares.core.roots import Roots, load_root_specs
-from mares.networks import cli
-from mares.networks.analysis import AnalysisParams, survey_status
-from mares.networks.build import build_network
-from mares.networks.figures import design, ego_network, geo_zones, perspectives, registry
-from mares.networks.figures import network as netfig
-from mares.networks.figures.common import contact_views
-from mares.networks.figures.perspectives import LanguageView, matrix_cells, media_classes
-from mares.networks.figures.style import rc, save_figure
-from mares.networks.geo import GeoCategory
-from mares.networks.package import read_package
-from mares.networks.run import FigureOptions, parse_ref, run_pipeline
+from mares.network_v0 import cli
+from mares.network_v0.analysis import AnalysisParams, survey_status
+from mares.network_v0.build import build_network
+from mares.network_v0.figures import design, ego_network, geo_zones, perspectives, registry
+from mares.network_v0.figures import network as netfig
+from mares.network_v0.figures.common import contact_views
+from mares.network_v0.figures.perspectives import LanguageView, matrix_cells, media_classes
+from mares.network_v0.figures.style import rc, save_figure
+from mares.network_v0.geo import GeoCategory
+from mares.network_v0.package import read_package
+from mares.network_v0.run import FigureOptions, parse_ref, run_pipeline
 
 PARAMS = AnalysisParams()
 CITIES = [("Marburg", "DEU"), ("Nähe Marburg", "DEU"), ("Berlin", "DEU"), ("Lima", "PER")]
@@ -476,12 +476,12 @@ _PROBE = """
 import sys, hashlib
 from pathlib import Path
 sys.path.insert(0, {tests!r})
-import network_fixtures as fx
-from mares.networks.analysis import AnalysisParams, survey_status
-from mares.networks.build import build_network
-from mares.networks.figures import geo_zones, perspectives, ego_network
-from mares.networks.figures.style import rc, save_figure
-from mares.networks.package import read_package
+import network_v0_fixtures as fx
+from mares.network_v0.analysis import AnalysisParams, survey_status
+from mares.network_v0.build import build_network
+from mares.network_v0.figures import geo_zones, perspectives, ego_network
+from mares.network_v0.figures.style import rc, save_figure
+from mares.network_v0.package import read_package
 
 root = Path({tmp!r})
 rows = fx.contact_rows(12, 8)

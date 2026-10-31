@@ -9,13 +9,13 @@ from __future__ import annotations
 
 import pytest
 
-import network_fixtures as fx
-from mares.networks.analysis import AnalysisParams, descriptive_tables, geo_labels, residence_of
-from mares.networks.build import build_network
-from mares.networks.figures.common import contact_views
-from mares.networks.figures.style import GEO_COLORS, GEO_ORDER
-from mares.networks.geo import EUROPE_ISO3, ISO3, GeoCategory, classify_residence
-from mares.networks.package import read_package
+import network_v0_fixtures as fx
+from mares.network_v0.analysis import AnalysisParams, descriptive_tables, geo_labels, residence_of
+from mares.network_v0.build import build_network
+from mares.network_v0.figures.common import contact_views
+from mares.network_v0.figures.style import GEO_COLORS, GEO_ORDER
+from mares.network_v0.geo import EUROPE_ISO3, ISO3, GeoCategory, classify_residence
+from mares.network_v0.package import read_package
 
 PARAMS = AnalysisParams()
 

@@ -7,7 +7,7 @@ processing report. Everything is recomputed from the input each time; nothing is
 run on a revised data version is just another run.
 
 Locations: the input is a logical reference (``INTAKE`` or ``PRIMARY`` plus a relative path) -- the package
-folder and, optionally, a curation file (statements about the package; see :mod:`mares.networks.curation`) --
+folder and, optionally, a curation file (statements about the package; see :mod:`mares.network_v0.curation`) --
 the output is always below ``WORKSPACE``. ``BACKUP`` and ``EXCHANGE`` are never a data source, and nothing is
 written anywhere else. A package with validation errors is not processed further.
 """

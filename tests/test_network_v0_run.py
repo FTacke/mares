@@ -13,12 +13,12 @@ from pathlib import Path
 
 import pytest
 
-import network_fixtures as fx
+import network_v0_fixtures as fx
 from mares.core.refs import StorageRef
 from mares.core.roots import RootError, Roots, load_root_specs
-from mares.networks import cli
-from mares.networks.figures import registry
-from mares.networks.run import PipelineError, STAGES, _RunFolder, parse_ref, run_pipeline
+from mares.network_v0 import cli
+from mares.network_v0.figures import registry
+from mares.network_v0.run import PipelineError, STAGES, _RunFolder, parse_ref, run_pipeline
 
 SPECS = load_root_specs()
 PACKAGE = "INTAKE:inbox/delivery/contents"
@@ -238,7 +238,7 @@ def test_cli_runs_and_reports_exit_codes(machine, capsys):
 
 def test_cli_local_place_parameter_is_applied_and_recorded(machine):
     roots = roots_for(machine)
-    result = run_pipeline(roots, parse_ref(PACKAGE), "analyze", params=__import__("mares.networks.analysis", fromlist=["x"]).AnalysisParams(("Berlin",)))
+    result = run_pipeline(roots, parse_ref(PACKAGE), "analyze", params=__import__("mares.network_v0.analysis", fromlist=["x"]).AnalysisParams(("Berlin",)))
     assert result.record["parameters"]["local_places"] == ["Berlin"]
     table = (result.run_dir / "analysis" / "geo_category.csv").read_text(encoding="utf-8")
     assert "Berlin;3" in table  # the local category is named after the configured local place
