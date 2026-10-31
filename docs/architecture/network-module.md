@@ -1,7 +1,13 @@
-# Netzwerkmodul
+# Netzwerkmodul – `network_v0`
+
+> **Seit 2026-10-31 ist dies die Pipeline `network_v0`** (früheres Erhebungsdesign, Paketformat
+> `mares-network-package/v0-draft`, Nähe 1–5 mit 5 = sehr nah). Sie bleibt unverändert nutzbar; ihre Befehle
+> (`python -m mares.networks <Schritt>`, gleichbedeutend `python -m mares.networks v0 <Schritt>`) gelten weiter. Die neue,
+> eigenständige Netzwerkerhebung ist `network_v1`: [`network-v1.md`](network-v1.md); Abgrenzung beider Versionen:
+> [`network-versions.md`](network-versions.md).
 
 **Status: implementiert (Stand 2026-10-12), Paketformat als Entwurf.** Dieses Dokument legt fest, was
-`mares.networks` liest, wie es Beziehungen konstruiert, was es prüft und ausgibt und was es ausdrücklich
+`mares.network_v0` liest, wie es Beziehungen konstruiert, was es prüft und ausgibt und was es ausdrücklich
 nicht berechnet. Es ergänzt [`modules.md`](modules.md) (Umfang) und [`data-contract.md`](data-contract.md)
 (IDs, Statusdimensionen); die Entscheidungen dahinter stehen in
 [`ADR-0002`](../decisions/ADR-0002_2026-10-12_netzwerkmodul.md) und
@@ -9,7 +15,7 @@ nicht berechnet. Es ergänzt [`modules.md`](modules.md) (Umfang) und [`data-cont
 [`visualization-conventions.md`](visualization-conventions.md). Der erste Fall:
 [`../methodology/pilot-case-001-2.md`](../methodology/pilot-case-001-2.md).
 
-Code: [`src/mares/networks/`](../../src/mares/networks/__init__.py)
+Code: [`src/mares/network_v0/`](../../src/mares/network_v0/__init__.py)
 
 ## 1. Soll und Ist
 
@@ -26,7 +32,7 @@ tragen keine Datensatzversion, solange `PRIMARY` und das Register fehlen.
 
 ## 2. Identitäten
 
-Das Modell hält Dinge getrennt, die in der Quelle verschmolzen sind ([`model.py`](../../src/mares/networks/model.py)):
+Das Modell hält Dinge getrennt, die in der Quelle verschmolzen sind ([`model.py`](../../src/mares/network_v0/model.py)):
 
 | Objekt | Bedeutung | Anmerkung |
 |---|---|---|
@@ -41,7 +47,7 @@ Das Modell hält Dinge getrennt, die in der Quelle verschmolzen sind ([`model.py
 
 **Kanonische Kontakt-IDs** sind der Rang in der Quellreihenfolge (Blatt, dann lokale Nummer), unabhängig von der
 Blattnummerierung: Blatt 1 `A01`–`A15` und Blatt 2 `A01`–`A07` ergeben `A01`–`A22`
-([`identity.py`](../../src/mares/networks/identity.py)). Die Quellposition bleibt erhalten. Abweichende
+([`identity.py`](../../src/mares/network_v0/identity.py)). Die Quellposition bleibt erhalten. Abweichende
 Namensschreibungen oder Beschriftungen zwischen Quellen sind **kein** Datenproblem, solange der Kontaktcode die
 Zuordnung eindeutig macht; Namen kommen weder ins Modell noch in Abbildungen.
 
@@ -82,7 +88,7 @@ Attribute (erwartet = Warnung, wenn leer; optional = nur gezählt):
 | `name_generator_codes` | name_generator | `name_generator` | ja | optional |
 | `review_flags` | review_flags | – | `;` oder `\|` | optional |
 
-**Mehrfachcodes und Bereiche** ([`codes.py`](../../src/mares/networks/codes.py)): `1|2|3` bleibt Liste; ein wohldefinierter
+**Mehrfachcodes und Bereiche** ([`codes.py`](../../src/mares/network_v0/codes.py)): `1|2|3` bleibt Liste; ein wohldefinierter
 aufsteigender Bereich wird zu Einzelcodes aufgelöst (`1-6`, `1–6`, `G1-G3`, `G1-3`) und als Hinweis vermerkt;
 Duplikate, leere Elemente, absteigende oder unplausibel weite Bereiche sind Syntaxfehler. Gültigkeit entscheidet
 das **Codebuch des Pakets**, nicht der Code: ein Bereich, der über das Codebuch hinausreicht, ist ein Fehler.
@@ -90,7 +96,7 @@ das **Codebuch des Pakets**, nicht der Code: ein Bereich, der über das Codebuch
 **Nähe:** maßgeblich ist ausschließlich `table_ring_near_value` (Codebuch `closeness_1_5`, Werte 1–5). Die Position
 auf der handgezeichneten Karte und ihre abweichende Legende werden weder gelesen noch umgerechnet.
 
-**Geburtsland und Wohnort** ([`geo.py`](../../src/mares/networks/geo.py)): Rohwerte bleiben erhalten; die Auswertung
+**Geburtsland und Wohnort** ([`geo.py`](../../src/mares/network_v0/geo.py)): Rohwerte bleiben erhalten; die Auswertung
 leitet daneben Kategorien ab.
 
 | Angabe | Auswertungskategorie |
@@ -106,7 +112,7 @@ leitet daneben Kategorien ab.
 ### 3.1 Kuratierung `mares-network-curation/v0-draft`
 
 Aussagen, die das Paket nicht trägt und die eine Person später trifft, stehen in einer **eigenen, datierten JSON-Datei**
-([`curation.py`](../../src/mares/networks/curation.py)), nie in den Originaldateien. Ein Lauf liest sie mit
+([`curation.py`](../../src/mares/network_v0/curation.py)), nie in den Originaldateien. Ein Lauf liest sie mit
 `--curation ROOT:rel`, prüft sie streng und hält ihren SHA-256 im Run-Record fest. Beispiel:
 [`examples/synthetic/network-curation-0000/`](../../examples/synthetic/network-curation-0000/curation.json).
 
@@ -118,7 +124,7 @@ Aussagen, die das Paket nicht trägt und die eine Person später trifft, stehen 
 - Ohne Kuratierung gilt: Methode nicht angegeben, Paarabdeckung nicht belegt, Hinweise nach der empfohlenen Aktion
   des Pakets – und nichts wird als erledigt behandelt, was niemand entschieden hat.
 
-## 4. Netzwerkkonstruktion ([`build.py`](../../src/mares/networks/build.py))
+## 4. Netzwerkkonstruktion ([`build.py`](../../src/mares/network_v0/build.py))
 
 **Erhebungsmethode, Dokumentationsform und Paarabdeckung sind drei verschiedene Aussagen.**
 
@@ -147,7 +153,7 @@ Regeln:
 
 Das Modell kann zusätzlich explizite Ja/Nein/Unbekannt-Angaben speichern (`build_network(dataset, explicit_ties=…)`).
 
-## 5. Validierung ([`validate.py`](../../src/mares/networks/validate.py))
+## 5. Validierung ([`validate.py`](../../src/mares/network_v0/validate.py))
 
 Getrennt gehalten werden harte Fehler, Warnungen und Prüfhinweise:
 
@@ -181,7 +187,7 @@ Passung der Kuratierung zum Paket (Quellkennung = Fehler, Version und unbekannte
 Validierung: die Datenqualität bleibt `UNREVIEWED`, die Freigabe `NOT_DECIDED`, bis Personen entscheiden
 ([`data-contract.md`](data-contract.md) §4). Provenienz, Datenqualität und Freigabe bleiben getrennte Dimensionen.
 
-## 6. Auswertung ([`analysis.py`](../../src/mares/networks/analysis.py))
+## 6. Auswertung ([`analysis.py`](../../src/mares/network_v0/analysis.py))
 
 Erlaubt und implementiert: Anzahl und Merkmale der Kontakte; Verteilungen aller Codefelder (leere Kategorien
 bleiben sichtbar, „nicht erfasst“ wird getrennt gezählt); Wohnort und geografische Einordnung (Referenzort,

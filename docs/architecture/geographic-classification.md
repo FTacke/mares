@@ -1,8 +1,11 @@
-# Geografische Klassifikation des Wohnorts
+# Geografische Klassifikation des Wohnorts (`network_v0`)
 
-**Status: verbindlich für das Netzwerkmodul.** Code: [`geo.py`](../../src/mares/networks/geo.py) (`classify_residence`, `EUROPE_ISO3`),
-Bezeichnungen und Parameter: [`analysis.py`](../../src/mares/networks/analysis.py) (`geo_labels`, `AnalysisParams.local_places`), Farben:
-[`figures/style.py`](../../src/mares/networks/figures/style.py). Begründung: [`ADR-0004`](../decisions/ADR-0004_2026-10-13_geografie-fuenf-stufen-und-g2.md).
+> Gilt für `network_v0`. `network_v1` teilt Marburg und Mittelhessen (fünf Landkreise) statt Marburg und Region Marburg:
+> [`network-v1.md`](network-v1.md) §3.
+
+**Status: verbindlich für das Netzwerkmodul.** Code: [`geo.py`](../../src/mares/network_v0/geo.py) (`classify_residence`, `EUROPE_ISO3`),
+Bezeichnungen und Parameter: [`analysis.py`](../../src/mares/network_v0/analysis.py) (`geo_labels`, `AnalysisParams.local_places`), Farben:
+[`figures/style.py`](../../src/mares/network_v0/figures/style.py). Begründung: [`ADR-0004`](../decisions/ADR-0004_2026-10-13_geografie-fuenf-stufen-und-g2.md).
 Darstellung: [`visualization-conventions.md`](visualization-conventions.md).
 
 Die Klassifikation beschreibt, **wo ein Kontakt wohnt** – nicht, wer er ist, und nicht, was der Ort in der Biografie der Person bedeutet.
@@ -24,7 +27,7 @@ abgeleitet und nie zurückgeschrieben. Die kanonische Ausgabe enthält Rohwert u
 ## 2. „Europa“
 
 Europa ist **geografisch** definiert, nicht als Mitgliedschaft (EU, Europarat, Schengen). Grundlage: die Region Europa des UN-Geoschemas (M49), ausgeschrieben in
-`geo.EUROPE_ISO3`. Festlegungen für Grenzfälle, die in einem Test (`tests/test_networks_geo_classification.py`) stehen und an **einer** Stelle zu ändern sind:
+`geo.EUROPE_ISO3`. Festlegungen für Grenzfälle, die in einem Test (`tests/test_network_v0_geo_classification.py`) stehen und an **einer** Stelle zu ändern sind:
 
 - **Russland** zählt zu Europa (UN-Geoschema), ebenso Ukraine, Belarus, Moldau, Kosovo (`XKX`), Island, das Vereinigte Königreich, Zwergstaaten.
 - **Türkei, Zypern, Georgien, Armenien, Aserbaidschan, Kasachstan** zählen **nicht** zu Europa (UN-Geoschema: Westasien bzw. Zentralasien). Das ist eine Konvention, keine Aussage; sie ist

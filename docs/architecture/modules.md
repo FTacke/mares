@@ -16,9 +16,13 @@ Gemeinsam für alle Module:
   Daten, kein Schalter im Code.
 - Entwickelt und getestet wird mit synthetischen Fixtures.
 
-## NETWORKS – `mares.networks`
+## NETWORKS – `mares.network_v0`, `mares.network_v1` (Einstieg `mares.networks`)
 
-> **Ist (2026-10-12):** der Import eines CSV-Pakets (nicht der Excel-Sheets), Validierung, Beziehungen aus
+> **Ist (2026-10-31):** zwei Pipelines nach Erhebungsdesign ([`network-versions.md`](network-versions.md)).
+> `network_v1` ([`network-v1.md`](network-v1.md)): Fallordner aus Kontextbogen und Tabellen A–C, Prüfung, Ableitungen, acht
+> Standardgrafiken in `<Fall>/graphics/`, zwei Testfälle; kein Excel-Import. Der folgende Absatz beschreibt `network_v0`.
+>
+> **Ist `network_v0` (2026-10-12):** der Import eines CSV-Pakets (nicht der Excel-Sheets), Validierung, Beziehungen aus
 > bestätigten Gruppen, beschreibende Auswertung, neunzehn Grafiken in den Gruppen `core`, `supplementary` und `diagnostic` (darunter die kraftbasierten Netzwerkdarstellungen ohne und mit Ego, die geografischen Zonen und Beziehungsnetze und die analytischen Perspektiven P1–P3 im Designsystem) und eine Kommandozeile; Ergebnisse nur nach
 > `WORKSPACE/runs/`. Die Tabelle darunter beschreibt das **Soll**; Abweichungen und Grenzen stehen in
 > [`network-module.md`](network-module.md). Entscheidungen: [`ADR-0002`](../decisions/ADR-0002_2026-10-12_netzwerkmodul.md).

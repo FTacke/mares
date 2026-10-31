@@ -54,7 +54,7 @@ Provenienz-, Qualitäts- und Freigabemetadaten.
 | Fundament: Pfade, Roots, Referenzen, IDs, Statusvokabular, Hashing | `src/mares/core/` | implementiert, getestet |
 | Intake | `src/mares/intake/` | Vertrag vorhanden, nicht implementiert |
 | Erhaltung und Backup | `src/mares/preservation/` | Vertrag vorhanden, nicht implementiert |
-| Netzwerke | `src/mares/networks/` | implementiert (Import, Prüfung, Auswertung, Grafiken, Kommandozeile), getestet mit synthetischen Daten; Excel-Import, Register und Ablage in `PRIMARY` fehlen |
+| Netzwerke | `src/mares/network_v0/`, `src/mares/network_v1/` (Einstieg `src/mares/networks/`) | implementiert (Import, Prüfung, Auswertung, Grafiken, Kommandozeile), getestet mit synthetischen Daten; Excel-Import, Register und Ablage in `PRIMARY` fehlen |
 | Transkription | `src/mares/transcription/` | geplant |
 | Exporte | `src/mares/exports/` | geplant |
 

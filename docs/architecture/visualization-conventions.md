@@ -2,15 +2,15 @@
 
 **Status: verbindlich für die Grafiken des Netzwerkmoduls.** Gemeinsame Regeln, damit Abbildungen
 verschiedener Fälle und Jahrgänge vergleichbar bleiben. Code:
-[`src/mares/networks/figures/style.py`](../../src/mares/networks/figures/style.py) (Konventionen),
-[`common.py`](../../src/mares/networks/figures/common.py) (Ring-Layout),
-[`layouts.py`](../../src/mares/networks/figures/layouts.py) und [`network.py`](../../src/mares/networks/figures/network.py)
-(Netzwerkfiguren), [`ego_layouts.py`](../../src/mares/networks/figures/ego_layouts.py) und [`ego_network.py`](../../src/mares/networks/figures/ego_network.py) (Ego im Netzwerk, B3),
-[`geo_zones.py`](../../src/mares/networks/figures/geo_zones.py) (geografische Zonen G1/G2),
-[`design.py`](../../src/mares/networks/figures/design.py) (Designsystem, §3.4) und
-[`perspectives.py`](../../src/mares/networks/figures/perspectives.py) (analytische Perspektiven P1–P3, §3.5),
-[`geo_network.py`](../../src/mares/networks/figures/geo_network.py) (geografische Beziehungsnetze G2-A/G2-B, §3.7) und
-[`registry.py`](../../src/mares/networks/figures/registry.py) (Abbildungsregister und Gliederung, §3.8). Geografische Klassifikation:
+[`src/mares/network_v0/figures/style.py`](../../src/mares/network_v0/figures/style.py) (Konventionen),
+[`common.py`](../../src/mares/network_v0/figures/common.py) (Ring-Layout),
+[`layouts.py`](../../src/mares/network_v0/figures/layouts.py) und [`network.py`](../../src/mares/network_v0/figures/network.py)
+(Netzwerkfiguren), [`ego_layouts.py`](../../src/mares/network_v0/figures/ego_layouts.py) und [`ego_network.py`](../../src/mares/network_v0/figures/ego_network.py) (Ego im Netzwerk, B3),
+[`geo_zones.py`](../../src/mares/network_v0/figures/geo_zones.py) (geografische Zonen G1/G2),
+[`design.py`](../../src/mares/network_v0/figures/design.py) (Designsystem, §3.4) und
+[`perspectives.py`](../../src/mares/network_v0/figures/perspectives.py) (analytische Perspektiven P1–P3, §3.5),
+[`geo_network.py`](../../src/mares/network_v0/figures/geo_network.py) (geografische Beziehungsnetze G2-A/G2-B, §3.7) und
+[`registry.py`](../../src/mares/network_v0/figures/registry.py) (Abbildungsregister und Gliederung, §3.8). Geografische Klassifikation:
 [`geographic-classification.md`](geographic-classification.md). Modul: [`network-module.md`](network-module.md).
 
 Methodische Orientierung: Vacca et al. (2016), *A personal network approach to the study of immigrant structural

@@ -9,6 +9,13 @@ solche Daten; echte Forschungsdaten gehören nie ins Repository (`AGENTS.md`).
 - Die Spalten der Beispieltabellen sind **illustrativ**. Das verbindliche Format legt erst das
   Erhebungsinstrument fest (`templates/`, `docs/architecture/modules.md`).
 
+## `network_v1/002_test_synthetic/`
+
+Der vollständig erfundene Testfall von `network_v1` ([`network-v1.md`](../../docs/architecture/network-v1.md) §7): 32 Kontakte in allen
+Wohnortbereichen, fünf Gruppen (T, P, N, NS), überlappende Mitgliedschaften, verneinte und ungeklärte Paare, Zwischenwerte der Nähe,
+M/S-Sprachgebrauch, ausgefüllter Kontextbogen. Die erkennbaren Muster sind erfundene Testannahmen. Erwartete Eigenschaften:
+`tests/test_network_v1_case002.py`. In einen Fallbaum kopiert ihn `python -m mares.networks v1 install-test-cases --root INTAKE`.
+
 ## `network-package-0000/`
 
 Ein vollständiges, erfundenes Netzwerkpaket im Importformat (`mares-network-package/v0-draft`, siehe
@@ -16,7 +23,7 @@ Ein vollständiges, erfundenes Netzwerkpaket im Importformat (`mares-network-pac
 Nummerierung beginnt auf Blatt 2 neu), vier Gruppen (zwei überlappende bestätigte, eine unbestätigte, eine Paargruppe),
 neun abgeleitete Beziehungen, Review-Einträge, Prüfsummen. Quellkennung `0000-1`, `"synthetic": true`. Es wird von
 den Tests benutzt und lässt sich zum Ausprobieren in einen `INTAKE`-Ordner kopieren. Erzeugt mit
-`tests/network_fixtures.py`; die Tests prüfen, dass es gültig bleibt.
+`tests/network_v0_fixtures.py`; die Tests prüfen, dass es gültig bleibt.
 
 ## `network-curation-0000/`
 

@@ -191,6 +191,11 @@ Cache-Schlüssels.
 └── reports/      Intake- und Inventarberichte (können personenbezogene Dateinamen enthalten)
 ```
 
+**Fallbaum der Netzwerkerhebungen (Übergang).** Bis `PRIMARY` eingerichtet ist, liegen die Netzwerkfälle in `INTAKE` unter
+`network_v0/` (Verweise auf v0-Lieferungen) und `network_v1/{pilots,cases}/<Fall>/{data,graphics}/`
+([`network-versions.md`](network-versions.md) §2). Sie werden nur als logische Referenz angesprochen; ihr Ziel ist `PRIMARY`, die
+Stelle im `PRIMARY`-Layout wird bei dessen Einrichtung festgelegt.
+
 Beide liegen außerhalb jedes Git-Checkouts. `INTAKE` kann die einzige Kopie einer noch nicht
 erhaltenen Datei enthalten und wird deshalb nie automatisch bereinigt.
 

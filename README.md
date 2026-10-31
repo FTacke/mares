@@ -9,8 +9,9 @@ Kontaktattribute, Alter-Alter-Beziehungen sowie Audiointerviews und narrative Ep
 Seminaren mehrerer Jahrgänge und in regulärer Forschung, mit denselben Werkzeugen und in einem
 gemeinsamen Datenbestand.
 
-> **Status (2026-10-12).** Vorhanden sind Verzeichnisstruktur, Architektur- und Datenverträge, der
-> Resolver für benannte Storage-Roots, Identifikatoren und Statusvokabular – und das **Netzwerkmodul**:
+> **Status (2026-10-31).** Vorhanden sind Verzeichnisstruktur, Architektur- und Datenverträge, der
+> Resolver für benannte Storage-Roots, Identifikatoren und Statusvokabular – und zwei **Netzwerkpipelines**:
+> `network_v1` (neue Netzwerkerhebung: Fallordner, Prüfung, acht Standardgrafiken, zwei Testfälle) und `network_v0` (früheres Design:
 > Import eines CSV-Pakets, Validierung, Beziehungen aus bestätigten Gruppen, beschreibende Auswertung,
 > neunzehn Grafiken in drei Gruppen – `core`, `supplementary`, `diagnostic` – (darunter kraftbasierte Netzwerkdarstellungen ohne und mit Ego, geografische Zonen und Beziehungsnetze, drei analytische Perspektiven P1–P3) in einem einheitlichen, reduzierten Designsystem und eine Kommandozeile, getestet mit synthetischen Daten. **Nicht vorhanden** sind
 > Intake, Erhaltung, Backup-Läufe, der Import der Excel-Sheets, Register und Transkription. Eine erste
@@ -99,7 +100,19 @@ Zustand der Roots anzeigen:
 
 ## Netzwerke auswerten
 
-Ein Netzwerkpaket (CSV-Ordner im Format `mares-network-package/v0-draft`) liegt in `INTAKE` oder
+Zwei Versionen, ein Einstieg ([`docs/architecture/network-versions.md`](docs/architecture/network-versions.md)).
+
+**`network_v1`** – ein Fall ist ein Ordner `network_v1/{pilots,cases}/<Fall>/` mit `data/` und `graphics/` in `INTAKE` (später `PRIMARY`):
+
+```text
+.venv\Scripts\python -m mares.networks v1 install-test-cases --root INTAKE --v0-package INTAKE:inbox/<Lieferung>/contents
+.venv\Scripts\python -m mares.networks v1 render --case INTAKE:network_v1/pilots/002_test_synthetic
+.venv\Scripts\python -m mares.networks v1 list --root INTAKE --empirical
+```
+
+Einzelheiten: [`docs/architecture/network-v1.md`](docs/architecture/network-v1.md).
+
+**`network_v0`** – ein Netzwerkpaket (CSV-Ordner im Format `mares-network-package/v0-draft`) liegt in `INTAKE` oder
 `PRIMARY`. Ein Aufruf erzeugt einen neuen Lauf unter `WORKSPACE/runs/<RUN-ID>/`:
 
 ```text
