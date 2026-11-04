@@ -31,7 +31,7 @@ eine Kopfzeile. Beispiel: [`examples/synthetic/network_v1/002_test_synthetic/`](
 
 | Datei | Inhalt |
 |---|---|
-| `metadata.json` | `format`, `dataset_version`, `case_code`, `case_type`, `provenance`, `empirical_analysis_eligible`, `survey` (`design`, `instrument_version`, `survey_date`, `data_origin`), `data_quality`, `limitations`, `description`, `field_origins`, `closing` (§2.3), optional `display_code` (§5.6) |
+| `metadata.json` | `format`, `dataset_version`, `case_code`, `case_type`, `provenance`, `empirical_analysis_eligible`, `survey` (`design`, `instrument_version`, `survey_date`, `data_origin`), `data_quality`, `limitations`, `description`, `field_origins`, `closing` (§2.3), optional `display_code` (§5.6) und `corpus` (§7) |
 | `contacts.csv` | Tabelle A (§2.1) |
 | `communication.csv` | Tabelle B (§2.2) |
 | `groups.csv`, `group_memberships.csv`, `alter_connections.csv` | Tabelle C (§2.3) |
@@ -217,6 +217,15 @@ Ausgelegt und an den Testfällen geprüft für 22 und 32 Kontakte mit 5–6 Grup
 ausschließlich diesen Filter (`v1 list --empirical`, `run.empirical_cases`). Der Validator lehnt Widersprüche ab (Testfall als empirisch,
 synthetische Herkunft als Pilot, Testfall unter `cases/`).
 
+**Getrenntes Korpus `student_pilot`** ([`ADR-0009`](../decisions/ADR-0009_2026-11-04_netzwerk-v1-korpus-student-pilot.md)).
+Authentische studentische Peer-Pilotfälle (methodische Piloten mit Studierenden, nicht die Studienpopulation) liegen unter
+`network_v1/student_pilot/<NNN_kurzname>/` mit `corpus: student_pilot`, `case_type: pilot`, `provenance: survey` und
+`empirical_analysis_eligible: false`. `NNN` zählt die Fälle des Korpus, der Kurzname ist das pseudonyme Kürzel der befragten Person
+(z. B. `001_mt`); Kürzel der erhebenden Person und Formularcode stehen im `survey`-Block. Der Validator lehnt Abweichungen ab (Ordner und
+`corpus` passen nicht, anderer `case_type`, `empirical_analysis_eligible: true`); `case.is_empirical` schließt jeden Fall mit `corpus` aus.
+Die Fälle werden wie alle anderen geprüft und gerendert, die Kennzeichnung oben rechts kommt aus `display_code` (z. B.
+`FALL · STUDENT_PILOT MT`), nie eine Testrahmung. Fallübergreifende Auswertungen des Korpus sind nicht gebaut.
+
 **Weg vom Pilot zum regulären Fall.** Ein echter v1-Pilot entsteht unter `pilots/<NNN_kurzname>/` mit `case_type: pilot`,
 `provenance: survey`, vollständigem `survey`-Block (Design `network_v1`, Instrument-Version, Erhebungsdatum, Datenherkunft),
 `data_quality` und `limitations`; ob er empirisch auswertbar ist, entscheidet eine Person (`empirical_analysis_eligible`). Reguläre
@@ -225,7 +234,7 @@ Erhebungen liegen unter `cases/` mit `case_type: regular` und demselben Datenmod
 ## 8. Befehle
 
 ```text
-.venv\Scripts\python -m mares.networks v1 validate --case INTAKE:network_v1/pilots/<Fall>
+.venv\Scripts\python -m mares.networks v1 validate --case INTAKE:network_v1/pilots/<Fall>    (ebenso cases/, student_pilot/)
 .venv\Scripts\python -m mares.networks v1 render   --case INTAKE:network_v1/pilots/<Fall> [--formats png,svg]
 .venv\Scripts\python -m mares.networks v1 render-all --root INTAKE [--formats png,svg]
 .venv\Scripts\python -m mares.networks v1 list --root INTAKE [--empirical]

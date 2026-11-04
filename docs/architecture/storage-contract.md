@@ -192,7 +192,8 @@ Cache-Schlüssels.
 ```
 
 **Fallbaum der Netzwerkerhebungen (Übergang).** Bis `PRIMARY` eingerichtet ist, liegen die Netzwerkfälle in `INTAKE` unter
-`network_v0/` (Verweise auf v0-Lieferungen) und `network_v1/{pilots,cases}/<Fall>/{data,graphics}/`
+`network_v0/` (Verweise auf v0-Lieferungen) und `network_v1/{pilots,cases,student_pilot}/<Fall>/{data,graphics}/` (`student_pilot`: getrenntes Korpus der
+studentischen Peer-Piloten, [`network-v1.md`](network-v1.md) §7)
 ([`network-versions.md`](network-versions.md) §2). Sie werden nur als logische Referenz angesprochen; ihr Ziel ist `PRIMARY`, die
 Stelle im `PRIMARY`-Layout wird bei dessen Einrichtung festgelegt.
 
