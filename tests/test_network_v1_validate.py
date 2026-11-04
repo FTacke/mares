@@ -151,6 +151,40 @@ def test_empirical_cases_need_survey_documentation(tmp_path):
     assert "survey_metadata" in codes_of(result, "warning")
 
 
+STUDENT_PILOT = {"case_type": "pilot", "provenance": "survey", "empirical_analysis_eligible": False, "corpus": "student_pilot",
+                 "survey": {"design": "network_v1", "instrument_version": "INS-netzwerk-tabelle@v1", "survey_date": "0000-01-01",
+                            "data_origin": "synthetic stand-in for a student peer pilot"}}
+
+
+def test_a_student_pilot_case_lives_in_its_own_corpus_folder(tmp_path):
+    case = copy_002(tmp_path, kind="student_pilot", name="001_sp")
+    set_metadata(case, **STUDENT_PILOT)
+    assert not check(case).errors
+
+
+@pytest.mark.parametrize("changes, code", [
+    ({"corpus": None}, "case_folder"),  # in the corpus folder without the corpus in the metadata
+    ({"corpus": "students"}, "corpus"),
+    ({"empirical_analysis_eligible": True}, "eligibility"),  # never part of the study's empirical overviews
+    ({"case_type": "regular"}, "case_type"),
+    ({"case_type": "test", "provenance": "fully_synthetic"}, "case_type"),
+])
+def test_student_pilot_metadata_must_fit_the_corpus(tmp_path, changes, code):
+    case = copy_002(tmp_path, kind="student_pilot", name="001_sp")
+    set_metadata(case, **{**STUDENT_PILOT, **changes})
+    if changes.get("corpus", "") is None:
+        meta = json.loads((case / "data" / "metadata.json").read_text(encoding="utf-8"))
+        meta.pop("corpus")
+        (case / "data" / "metadata.json").write_text(json.dumps(meta), encoding="utf-8")
+    assert code in codes_of(check(case), "error")
+
+
+def test_a_student_pilot_case_outside_its_folder_is_an_error(tmp_path):
+    case = copy_002(tmp_path, name="003_sp")  # under pilots/
+    set_metadata(case, **STUDENT_PILOT)
+    assert "case_folder" in codes_of(check(case), "error")
+
+
 def test_a_missing_file_is_a_structural_error(case):
     (case / "data" / "groups.csv").unlink()
     result = check(case)

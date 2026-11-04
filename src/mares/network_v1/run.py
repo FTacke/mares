@@ -2,7 +2,7 @@
 
 Locations (logical references only):
 
-* the case: ``ROOT:network_v1/{pilots,cases}/<case_code>`` in ``INTAKE`` (interim) or ``PRIMARY`` (target); never
+* the case: ``ROOT:network_v1/{pilots,cases,student_pilot}/<case_code>`` in ``INTAKE`` (interim) or ``PRIMARY`` (target); never
   ``BACKUP``, ``EXCHANGE`` or ``WORKSPACE``
 * the finished figures: the case's ``graphics/`` -- the eight standard files and nothing else; a re-run replaces exactly
   these files and never deletes anything
@@ -37,7 +37,7 @@ from .validate import FAILED, Validation, validate
 
 ALLOWED_ROOTS = ("INTAKE", "PRIMARY")
 TREE = "network_v1"
-KINDS = ("pilots", "cases")
+KINDS = ("pilots", "cases", "student_pilot")  # student_pilot: a separate corpus (case.CORPORA)
 
 
 class PipelineError(RuntimeError):
@@ -60,7 +60,7 @@ def check_case_ref(ref: StorageRef) -> None:
         raise PipelineError(f"{ref.root} is not a permitted location of case data; use one of {', '.join(ALLOWED_ROOTS)}")
     parts = ref.parts
     if len(parts) != 3 or parts[0] != TREE or parts[1] not in KINDS:
-        raise PipelineError(f"a case is addressed as ROOT:{TREE}/pilots/<case> or ROOT:{TREE}/cases/<case>, not {ref.root}:{ref.rel}")
+        raise PipelineError(f"a case is addressed as ROOT:{TREE}/<{'|'.join(KINDS)}>/<case>, not {ref.root}:{ref.rel}")
 
 
 def list_cases(roots: Roots, root: str) -> list[tuple[StorageRef, dict]]:

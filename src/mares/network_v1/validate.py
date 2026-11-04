@@ -19,7 +19,7 @@ from itertools import combinations
 
 from . import DATASET_VERSION, FORMAT
 from . import codes
-from .case import CASE_TYPES, ERROR, FIELD_ORIGINS, NOTE, PROVENANCES, WARNING, Case, Finding
+from .case import CASE_TYPES, CORPORA, ERROR, FIELD_ORIGINS, NOTE, PROVENANCES, WARNING, Case, Finding
 from .derive import CONFLICT, UNKNOWN, Derived, derive, pair_key
 from .places import ISO3, Area
 
@@ -110,6 +110,19 @@ def _metadata(case: Case, out: list[Finding]) -> None:
         out.append(Finding(ERROR, "case_folder", "unter cases/ liegen nur reguläre Erhebungen (case_type: regular)", "metadata.json"))
     if parent == "pilots" and case_type not in ("pilot", "test"):
         out.append(Finding(ERROR, "case_folder", "unter pilots/ liegen Pilot- und Testfälle", "metadata.json"))
+    corpus = m.get("corpus")
+    if corpus is not None and corpus not in CORPORA:
+        out.append(Finding(ERROR, "corpus", f"corpus {corpus!r} ungültig ({', '.join(CORPORA)}; ohne Angabe: MARES-Studie)", "metadata.json"))
+    if (parent in CORPORA or corpus in CORPORA) and parent != corpus:
+        out.append(Finding(ERROR, "case_folder", f"ein Fall des Korpus {corpus or parent!r} liegt unter {corpus or parent}/ "
+                           f"und trägt corpus: {corpus or parent!r}", "metadata.json"))
+    if corpus in CORPORA:
+        if case_type != "pilot":
+            out.append(Finding(ERROR, "case_type", f"Fälle des Korpus {corpus!r} sind Pilotfälle aus einer Erhebung (case_type: pilot)",
+                               "metadata.json"))
+        if eligible is True:
+            out.append(Finding(ERROR, "eligibility", f"Fälle des Korpus {corpus!r} gehen nie in empirische Auswertungen der Studie ein "
+                               "(empirical_analysis_eligible: false)", "metadata.json"))
     survey = m.get("survey") if isinstance(m.get("survey"), dict) else {}
     if case_type in ("pilot", "regular"):
         for key in ("design", "instrument_version", "survey_date", "data_origin"):

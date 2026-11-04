@@ -35,6 +35,9 @@ ERROR, WARNING, NOTE = "error", "warning", "note"
 CASE_TYPES = ("test", "pilot", "regular")
 PROVENANCES = ("fully_synthetic", "v0_derived_fictionalized", "survey")
 FIELD_ORIGINS = ("recorded", "v0_taken", "v0_interpreted", "fictional")
+# A separately kept corpus outside the MARES study population (absent = the MARES study itself). Its cases live in
+# their own folder ``network_v1/<corpus>/`` and never enter empirical overviews of the study.
+CORPORA = ("student_pilot",)
 
 TABLES: dict[str, tuple[str, ...]] = {
     "context.csv": ("field", "value", "comment"),
@@ -151,13 +154,15 @@ def is_empirical(metadata: dict) -> bool:
     """Whether a case may enter empirical overviews, case counts and statistics.
 
     Decided by the machine-readable metadata, never by the folder name: a real survey (``provenance: survey``), a pilot
-    or regular case, and ``empirical_analysis_eligible: true``. Test cases are never empirical.
+    or regular case, ``empirical_analysis_eligible: true`` and no separate corpus (``corpus``). Test cases and cases of a
+    separate corpus (student peer pilots) are never empirical.
     """
     return (
         metadata.get("dataset_version") == "network_v1"
         and metadata.get("case_type") in ("pilot", "regular")
         and metadata.get("provenance") == "survey"
         and metadata.get("empirical_analysis_eligible") is True
+        and not metadata.get("corpus")
     )
 
 

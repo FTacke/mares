@@ -83,6 +83,20 @@ def test_the_empirical_filter_reads_metadata_not_folder_names(folders):
     assert disguised.exists()
 
 
+def test_student_pilot_cases_are_processed_but_never_empirical(folders):
+    case = copy_002(folders["intake"], kind="student_pilot", name="001_sp")
+    set_metadata(case, case_type="pilot", provenance="survey", empirical_analysis_eligible=False, corpus="student_pilot",
+                 display_code="STUDENT_PILOT SP")
+    roots = roots_for(folders)
+    result = process_case(roots, StorageRef("INTAKE", "network_v1/student_pilot/001_sp"))
+    assert result.status == "COMPLETED" and result.record["case"]["empirical"] is False
+    assert {p.name for p in (case / "graphics").iterdir()} == expected_files("001_sp", ("png",))
+    assert [ref.rel for ref, _ in list_cases(roots, "INTAKE")] == ["network_v1/student_pilot/001_sp"]
+    assert not empirical_cases(roots, "INTAKE")
+    set_metadata(case, empirical_analysis_eligible=True)  # even if someone sets the flag, the corpus keeps it out
+    assert not empirical_cases(roots, "INTAKE")
+
+
 def test_install_synthetic_refuses_to_replace_a_non_test_case(tmp_path):
     target = tmp_path / SYNTHETIC_CODE
     install_synthetic(target)
