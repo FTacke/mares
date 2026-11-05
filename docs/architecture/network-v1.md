@@ -38,7 +38,8 @@ eine Kopfzeile. Beispiel: [`examples/synthetic/network_v1/002_test_synthetic/`](
 | `context.csv` | Kontextbogen (§2.6) |
 | `places.csv` | optional: ausdrückliche Einordnung deutscher Orte (§3) |
 
-`<Fall>/graphics/` enthält ausschließlich die fertigen Standardgrafiken (§6). Prüfberichte, Ableitungstabellen und das
+`<Fall>/graphics/` enthält ausschließlich die fertigen Standardgrafiken (§6). Experimentelle Zusatzgrafiken liegen getrennt davon
+unter `<Fall>/experimental/` (§6.1); die Pipeline liest dort nichts. Prüfberichte, Ableitungstabellen und das
 Laufprotokoll liegen unter `WORKSPACE/runs/<RUN-ID>/`.
 
 ### 2.1 Tabelle A – `contacts.csv`
@@ -205,6 +206,17 @@ Ausgelegt und an den Testfällen geprüft für 22 und 32 Kontakte mit 5–6 Grup
 [`pilots/network_v1_map/`](../../pilots/network_v1_map/README.md); sie läuft nur mit dem synthetischen Testfall 002, schreibt nur nach
 `WORKSPACE/runs/` und gehört nicht zu den acht Grafiken.
 
+### 6.1 Experimentelle Zusatzgrafiken (zur Evaluation, kein Standard)
+
+Code: [`experimental.py`](../../src/mares/network_v1/experimental.py), Begründung:
+[`ADR-0010`](../decisions/ADR-0010_2026-11-05_netzwerk-v1-experimentelle-grafik-x1.md). Codes `X<n>`, Dateien
+`<Fall>/experimental/<Fallcode>_X<n>_<Bezeichnung>.png|svg`, je Fall genau eine Datei je Grafik. Nicht Teil von `render`/`render-all`,
+nicht im Grafikregister; ein eigener Befehl (§8), Laufprotokoll unter `WORKSPACE/runs/`.
+
+| Code | Datei | Inhalt | Legende |
+|---|---|---|---|
+| X1 | `X1_geografische_verteilung` | **Wo leben die Kontakte?** Kartenpanels von links nach rechts Amerika · Europa (ohne Deutschland) · Deutschland, immer alle drei; weitere Weltregionen (Afrika, Asien, Ozeanien, Weitere) nur bei Bedarf zwischen Amerika und Europa; ein Panel erweitert seinen Ausschnitt, wenn ein Ort außerhalb liegt. Zuordnung über den Wohnortbereich (§3): Deutschland, übriges Europa, sonst Kontinent des Wohnlands. **Keine Kontakt-Kontakt- und keine Ego-Linien**; Knotenfarbe = Beziehungstyp. Kontakte eines Ortes in einem Ring um den Ortspunkt (bis 10 ein Ring, sonst konzentrische Ringe), sortiert nach Beziehungstyp; Orte, die auf der Karte weniger als etwa 3 mm auseinanderliegen, bilden eine **Ortsgruppe** am Punkt des größten Ortes („Marburg u. a. · 14“ mit Ortsliste). Cluster überlappen nie; muss einer ausweichen, führt eine feine Linie zu seinem Ortspunkt. Nur Wohnland bekannt: Kontakt am Länderpunkt der Basiskarte im gestrichelten Kreis („· nur Land“), nie an einer erfundenen Stadt. Nicht zuordenbarer Wohnort und Ort ohne Eintrag im Ortsverzeichnis: nicht gezeichnet, in der Fußnote genannt. Koordinaten nur aus dem Ortsverzeichnis `ROOT:network_v1/reference/gazetteer.csv` (`place; country_iso3; lat; lon; basis`, von Hand gepflegt, im Root der Fälle, nie im Repository, kein Geocoding-Dienst); Basiskarte Natural Earth 1:50m (gemeinfrei) in `WORKSPACE/cache/basemaps/` | bottom |
+
 ## 7. Testfälle und empirische Fälle
 
 | Fall | `case_type` | `provenance` | `empirical_analysis_eligible` | Herkunft |
@@ -239,6 +251,7 @@ Erhebungen liegen unter `cases/` mit `case_type: regular` und demselben Datenmod
 .venv\Scripts\python -m mares.networks v1 render-all --root INTAKE [--formats png,svg]
 .venv\Scripts\python -m mares.networks v1 list --root INTAKE [--empirical]
 .venv\Scripts\python -m mares.networks v1 install-test-cases --root INTAKE [--v0-package INTAKE:inbox/<Lieferung>/contents]
+.venv\Scripts\python -m mares.networks v1 experimental-x1 (--case INTAKE:network_v1/<…>/<Fall> | --root INTAKE) [--formats png,svg]
 ```
 
 Fälle nur aus `INTAKE` oder `PRIMARY`. `render` ersetzt in `graphics/` genau die Standarddateien des Falls und löscht nichts; fremde Dateien
