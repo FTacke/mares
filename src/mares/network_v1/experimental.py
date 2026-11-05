@@ -3,7 +3,7 @@
 X1 · Geografische Verteilung (version 2): where the contacts live, on regional map panels (Amerika, Europa, Deutschland;
 further regions only when the data need them). No contact-contact and no ego lines; node colour = relation type, as in
 every network figure. The contacts of one place -- or of a place group ("Marburg und Umgebung": places within
-UMGEBUNG_KM of each other or falling together on the map) -- sit in rings around the place point on a very pale disc; a
+UMGEBUNG_KM of each other) -- sit in rings around the place point on a very pale disc; a
 small place box names the place and is tied to the point by a fine leader that runs through a gap in the rings. A
 contact whose residence is known only by country sits at the country's label point inside a dashed ring (never at an
 invented city); contacts without a usable residence are named in a note and not drawn.
@@ -38,7 +38,7 @@ from .places import Area, norm
 from .run import check_case_ref
 from .validate import FAILED, validate
 
-X1_CODE, X1_NAME, X1_VERSION = "X1", "geografische_verteilung", 2
+X1_CODE, X1_NAME, X1_VERSION = "X1", "geografische_verteilung", "2.1"
 EXPERIMENTAL_DIR = "experimental"
 GAZETTEER = "network_v1/reference/gazetteer.csv"  # in the root of the case
 BASEMAP = "cache/basemaps/ne_50m_admin_0_countries.geojson"  # in WORKSPACE
@@ -48,47 +48,50 @@ NODE_R = NODE_PT / 72 / 2  # node radius in inches
 NODE_STEP = 2 * NODE_R + 0.035  # centre distance of two nodes of one place
 SINGLE_RING_MAX = 10  # up to this many contacts one ring around the place point, more in rings of 6, 12, ... slots
 RING_R0 = 0.22  # smallest ring radius (inches): the place point and the leader stay visible
-DISC_PAD = 0.07  # the pale disc of a place reaches this far beyond its nodes
+DISC_PAD = 0.05  # the pale disc of a place reaches this far beyond its nodes
 UMGEBUNG_KM = 20.0  # places at most this far apart form a place group ("… und Umgebung")
-MERGE_IN = 0.12  # ... and so do places closer than this on the map (inches, about 3 mm)
 MAIN_W = 14.5
 PANEL_GAP = 0.3
 OTHER_SCALE = 0.8  # the other panels are this high relative to the Germany panel
 GERMANY_H_MAX = 7.0
 TITLE_H = 0.32  # room for the panel title inside the panel
-BOX_PT = LABEL_PT - 1.0  # first line of a place box
-BOX_SUB_PT = LABEL_PT - 2.5  # list of places of a place group
+BOX_PT = LABEL_PT - 1.5  # first line of a place box
+BOX_SUB_PT = LABEL_PT - 3.0  # list of places of a place group (lighter)
 BOX_LINE_W = 1.7  # inches; a longer place list wraps
-BOX_PAD = 0.05
+BOX_PAD = 0.035
 GERMANY = (Area.MARBURG, Area.MITTELHESSEN, Area.GERMANY_OTHER)
 POINT = "#1F2933"
 
 
 @dataclass(frozen=True)
 class Region:
-    """A map panel: title and default extent (lon, lat). The extent grows to take in every place of the case."""
+    """A map panel: title, default extent (lon, lat; used when the panel has no place), and how its extent follows the
+    places: margin around them, minimum span (degrees) for orientation, optional frame it never leaves."""
 
     key: str
     title: str
     lon: tuple[float, float]
     lat: tuple[float, float]
+    margin: float = 4.0
+    min_span: tuple[float, float] = (20.0, 16.0)
+    frame: tuple[tuple[float, float], tuple[float, float]] | None = None
 
 
 # Panels from left to right: Amerika, further regions (only when the data need them), Europa, Deutschland. Amerika, Europa
 # and Deutschland are always shown. Amerika by default from Mexico to the south; it reaches north only for contacts in the
 # USA or Canada. Europa by default from Portugal to a little east of Germany.
 REGIONS = (
-    Region("americas", "Amerika", (-118.0, -34.0), (-56.0, 33.0)),
-    Region("africa", "Afrika", (-20.0, 52.0), (-36.0, 38.0)),
-    Region("asia", "Asien", (25.0, 150.0), (-10.0, 60.0)),
-    Region("oceania", "Ozeanien", (110.0, 180.0), (-48.0, 0.0)),
-    Region("other", "Weitere Regionen", (-180.0, 180.0), (-60.0, 80.0)),
-    Region("europe", "Europa (ohne Deutschland)", (-10.5, 19.5), (35.0, 59.0)),
-    Region("germany", "Deutschland", (5.5, 15.5), (47.0, 55.3)),
+    Region("americas", "Amerika", (-118.0, -34.0), (-56.0, 33.0), margin=7.0, min_span=(30.0, 30.0)),
+    Region("africa", "Afrika", (-20.0, 52.0), (-36.0, 38.0), margin=6.0, min_span=(30.0, 30.0)),
+    Region("asia", "Asien", (25.0, 150.0), (-10.0, 60.0), margin=6.0, min_span=(30.0, 30.0)),
+    Region("oceania", "Ozeanien", (110.0, 180.0), (-48.0, 0.0), margin=6.0, min_span=(30.0, 30.0)),
+    Region("other", "Weitere Regionen", (-180.0, 180.0), (-60.0, 80.0), margin=6.0, min_span=(30.0, 30.0)),
+    Region("europe", "Europa (ohne Deutschland)", (-10.5, 19.5), (35.0, 59.0), margin=3.0, min_span=(13.0, 10.0)),
+    Region("germany", "Deutschland", (5.5, 15.5), (47.0, 55.3), margin=1.2, min_span=(9.0, 7.5),
+           frame=((5.5, 15.5), (47.0, 55.3))),
 )
 ALWAYS = ("germany", "europe", "americas")
-EXTENT_MARGIN = 8.0  # degrees added beyond a place outside (or at the edge of) the default extent
-EXTENT_INSET = 1.0  # a place closer than this to the edge of the default extent widens it
+ASPECT_RANGE = (0.65, 1.5)  # width : height of a panel (degrees, latitude-corrected); a narrower extent is widened
 CONTINENT_REGION = {"North America": "americas", "South America": "americas", "Africa": "africa", "Asia": "asia", "Oceania": "oceania"}
 
 
@@ -200,10 +203,10 @@ class Place:
 
     def box_size(self) -> tuple[float, float]:
         w = text_width(self.title, BOX_PT, bold=True)
-        h = BOX_PT / 72 * 1.35
+        h = BOX_PT / 72 * 1.25
         if self.sub:
             w = max(w, max(text_width(line, BOX_SUB_PT) for line in self.sub.split("\n")))
-            h += (self.sub.count("\n") + 1) * BOX_SUB_PT / 72 * 1.3
+            h += (self.sub.count("\n") + 1) * BOX_SUB_PT / 72 * 1.2 + 0.02
         return w + 2 * BOX_PAD, h + 2 * BOX_PAD
 
 
@@ -284,7 +287,7 @@ def _box_point(box, x: float, y: float) -> tuple[float, float]:
 
 
 def _group(places: list[Place]) -> list[Place]:
-    """Places of one panel within UMGEBUNG_KM of each other, or closer than MERGE_IN on the map, form one place group
+    """Places of one panel within UMGEBUNG_KM of each other (great-circle distance of their coordinates) form one place group
     (single linkage) at the point of its largest place. Country-only places are never grouped."""
     parent = list(range(len(places)))
 
@@ -299,8 +302,7 @@ def _group(places: list[Place]) -> list[Place]:
             b = places[j]
             if a.country_only or b.country_only:
                 continue
-            near_map = math.hypot(a.point[0] - b.point[0], a.point[1] - b.point[1]) < MERGE_IN
-            if near_map or _km(a.anchor, b.anchor) <= UMGEBUNG_KM:
+            if _km(a.anchor, b.anchor) <= UMGEBUNG_KM:  # never because the symbols collide on the map
                 parent[find(j)] = find(i)
     groups: dict[int, list[Place]] = {}
     for i, p in enumerate(places):
@@ -397,19 +399,34 @@ def _member_order(ctx: Context, p: Place, rank: dict[str, int]) -> list[str]:
 
 
 def _extent(region: Region, points: list[tuple[float, float]]) -> tuple[tuple[float, float], tuple[float, float]]:
-    """The default extent, widened only where a place lies outside it or closer than EXTENT_INSET to its edge."""
-    lon0, lon1 = region.lon
-    lat0, lat1 = region.lat
-    for la, lo in points:
-        if lo < region.lon[0] + EXTENT_INSET:
-            lon0 = min(lon0, lo - EXTENT_MARGIN)
-        if lo > region.lon[1] - EXTENT_INSET:
-            lon1 = max(lon1, lo + EXTENT_MARGIN)
-        if la < region.lat[0] + EXTENT_INSET:
-            lat0 = min(lat0, la - EXTENT_MARGIN)
-        if la > region.lat[1] - EXTENT_INSET:
-            lat1 = max(lat1, la + EXTENT_MARGIN)
-    lon, lat = (lon0, lon1), (lat0, lat1)
+    """The extent follows the places of the panel: their bounding box plus the region's margin, at least its minimum span
+    (for orientation) and within a sensible width-to-height ratio, inside its frame (Germany stays Germany). Without
+    places: the default extent. Panels have different scales; distances are not comparable between panels."""
+    if not points:
+        return region.lon, region.lat
+    lats = [la for la, _ in points]
+    lons = [lo for _, lo in points]
+    lon = [min(lons) - region.margin, max(lons) + region.margin]
+    lat = [min(lats) - region.margin, max(lats) + region.margin]
+
+    def widen(span, need):
+        if span[1] - span[0] < need:
+            mid = sum(span) / 2
+            span[0], span[1] = mid - need / 2, mid + need / 2
+
+    widen(lon, region.min_span[0])
+    widen(lat, region.min_span[1])
+    k = math.cos(math.radians(sum(lat) / 2))
+    aspect = (lon[1] - lon[0]) * k / (lat[1] - lat[0])
+    if aspect < ASPECT_RANGE[0]:
+        widen(lon, ASPECT_RANGE[0] * (lat[1] - lat[0]) / k)
+    elif aspect > ASPECT_RANGE[1]:
+        widen(lat, (lon[1] - lon[0]) * k / ASPECT_RANGE[1])
+    if region.frame:  # shift (and if need be cut) into the frame
+        for span, (f0, f1) in ((lon, region.frame[0]), (lat, region.frame[1])):
+            w = min(span[1] - span[0], f1 - f0)
+            start = min(max(span[0], f0), f1 - w)
+            span[0], span[1] = start, start + w
     return (max(lon[0], -180.0), min(lon[1], 180.0)), (max(lat[0], -85.0), min(lat[1], 85.0))
 
 
@@ -523,8 +540,8 @@ def x1(ctx: Context, gazetteer: dict, countries: dict[str, dict]):
                                                                      "linestyle": (0, (3, 2))})] if country_only else [])),
     ]
     grouped = any(p.group for p in layout.places)
-    first = ("Experimentelle Zusatzgrafik (Fassung 2), keine Standardgrafik. Lage = Wohnort; Kontakte eines Ortes um den Ortspunkt"
-             + (f"; „und Umgebung“: Orte bis {UMGEBUNG_KM:.0f} km Abstand oder auf der Karte zusammenfallend" if grouped else "")
+    first = (f"Experimentelle Zusatzgrafik (Fassung {X1_VERSION}), keine Standardgrafik. Lage = Wohnort; Kontakte eines Ortes um den Ortspunkt"
+             + (f"; „und Umgebung“: Orte bis {UMGEBUNG_KM:.0f} km Luftlinie" if grouped else "") + "; Panels mit eigenem Maßstab"
              + ". Keine Verbindungslinien (siehe G2). Karte: Natural Earth.")
     missing = []
     if layout.unresolved:
@@ -553,12 +570,12 @@ def x1(ctx: Context, gazetteer: dict, countries: dict[str, dict]):
         ax.plot(*zip(start, p.hub), color="#7B8590", linewidth=0.6, zorder=3, gid="leader")  # through the free ring slot
         ax.add_patch(Circle(p.hub, 0.05, facecolor=POINT, edgecolor="white", linewidth=0.8, zorder=3.6, gid="place-point"))
         x0, y0, x1_, y1 = p.box
-        ax.add_patch(FancyBboxPatch((x0, y0), x1_ - x0, y1 - y0, boxstyle="round,pad=0,rounding_size=0.04", facecolor="white",
-                                    edgecolor="#B8C0C8", linewidth=0.6, zorder=7, gid="place-box"))
+        ax.add_patch(FancyBboxPatch((x0, y0), x1_ - x0, y1 - y0, boxstyle="round,pad=0,rounding_size=0.03", facecolor="white",
+                                    alpha=0.92, edgecolor="#CBD2D9", linewidth=0.5, zorder=7, gid="place-box"))
         ax.text(x0 + BOX_PAD, y1 - BOX_PAD, p.title, fontsize=BOX_PT, fontweight="bold", color=INK, ha="left", va="top", zorder=8)
         if p.sub:
-            ax.text(x0 + BOX_PAD, y0 + BOX_PAD, p.sub, fontsize=BOX_SUB_PT, color=MUTED, ha="left", va="bottom", zorder=8,
-                    linespacing=1.15)
+            ax.text(x0 + BOX_PAD, y0 + BOX_PAD, p.sub, fontsize=BOX_SUB_PT, color="#7B8590", ha="left", va="bottom", zorder=8,
+                    linespacing=1.1)
     draw_nodes(ax, layout.positions, {cid: relation_fill(ctx.case, cid) for cid in layout.positions}, zorder=5)
     return p_.figure
 

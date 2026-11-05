@@ -106,15 +106,25 @@ def test_near_places_form_a_place_group_und_umgebung(case, tmp_path):
     assert [name for name, _ in giessen.places] == ["Gießen", "Wetzlar"]  # 26 km from Marburg: a group of its own
     berlin = next(p for p in layout.places if p.places[0][0] == "Berlin")
     assert not berlin.group and berlin.title == "Berlin" and not berlin.sub
+    bogota = next(p for p in layout.places if p.places[0][0] == "Bogotá")
+    assert [name for name, _ in bogota.places] == ["Bogotá"]  # Medellín (about 240 km) is never "Umgebung", even if symbols collide
+    assert any(p.places == [("Medellín", 1)] for p in layout.places)
 
 
-def test_germany_is_the_largest_panel_europe_is_narrow_and_america_follows_the_contacts(case, tmp_path):
+def test_extents_follow_the_contacts_and_germany_stays_the_largest_panel(case, tmp_path):
     layout = x1_layout(context(case), gazetteer(tmp_path), countries())
     panels = {p.region.key: p for p in layout.panels}
     assert panels["germany"].height > panels["europe"].height and panels["germany"].height > panels["americas"].height
     assert all(p.y + p.height == pytest.approx(layout.height) for p in layout.panels)  # top-aligned
-    assert panels["europe"].lon == (-10.5, 19.5)  # Portugal to a little east of Germany
-    assert panels["americas"].lat[1] > 43.65  # 002 has a contact in Toronto: the panel reaches north
+    for p in layout.places:  # every place inside its panel, with room around it
+        lat, lon = p.anchor
+        pn = panels[p.region]
+        assert pn.lon[0] < lon < pn.lon[1] and pn.lat[0] < lat < pn.lat[1]
+    de = panels["germany"]
+    assert 5.5 <= de.lon[0] and de.lon[1] <= 15.5 and 47.0 <= de.lat[0] and de.lat[1] <= 55.3  # Germany stays Germany
+    assert de.lon[1] - de.lon[0] >= 9.0 - 1e-9  # ... and recognisable
+    assert panels["europe"].lon[1] < 19.5  # 002: Spain and France only, no empty Eastern Europe
+    assert panels["americas"].lat[1] > 43.65  # 002 has a contact in Toronto
     rows = read_rows(case, "contacts.csv")
     for row in rows:
         if row["residence_country_iso3"] in ("USA", "CAN"):
@@ -122,8 +132,22 @@ def test_germany_is_the_largest_panel_europe_is_narrow_and_america_follows_the_c
     rows[0].update(residence_place="Kyjiw", residence_country="Ukraine", residence_country_iso3="UKR")
     write_rows(case, "contacts.csv", rows)
     panels = {p.region.key: p for p in x1_layout(context(case), gazetteer(tmp_path), countries()).panels}
-    assert panels["americas"].lat == (-56.0, 33.0)  # nothing north of Mexico: Mexico to South America only
+    assert panels["americas"].lat[1] < 25  # only South America: no North America shown
     assert panels["europe"].lon[1] > 30.52  # an eastern contact widens Europe
+
+
+def test_a_panel_without_contacts_shows_its_default_extent(tmp_path):
+    folder = copy_002(tmp_path / "tree")
+    rows = [r for r in read_rows(folder, "contacts.csv") if r["residence_country_iso3"] not in ("ESP", "FRA")]
+    write_rows(folder, "contacts.csv", rows)
+    ids = {r["contact_id"] for r in rows}
+    for table, keys in (("communication.csv", ("contact_id",)), ("group_memberships.csv", ("contact_id",)),
+                        ("alter_connections.csv", ("contact_a", "contact_b"))):
+        write_rows(folder, table, [r for r in read_rows(folder, table) if all(r[k] in ids for k in keys)],
+                   header=list(read_rows(folder, table)[0]))
+    layout = x1_layout(context(folder), gazetteer(tmp_path), countries())
+    europe = next(p for p in layout.panels if p.region.key == "europe")
+    assert (europe.lon, europe.lat, europe.count) == ((-10.5, 19.5), (35.0, 59.0), 0)
 
 
 def test_place_boxes_sit_off_the_nodes_and_their_leader_runs_through_a_free_slot(case, tmp_path):
@@ -194,7 +218,7 @@ def test_x1_has_no_ties_but_place_boxes_points_and_pale_discs(case, tmp_path):
     assert gids.count("place-disc") == sum(1 for p in layout.places if len(p.members) > 1)
     texts = " ".join(t.get_text() for t in figure.findobj(Text))
     assert "X1 · Geografische Verteilung des persönlichen Netzwerks" in texts and "TESTFALL 002*" in texts
-    assert "Fassung 2" in texts and "keine Standardgrafik" in texts and "Keine Verbindungslinien" in texts
+    assert "Fassung 2.1" in texts and "keine Standardgrafik" in texts and "Keine Verbindungslinien" in texts
     assert "Marburg und Umgebung · n = 14" in texts
 
 
@@ -213,7 +237,7 @@ def test_render_x1_writes_into_experimental_and_leaves_graphics_alone(tmp_path):
         f"{SYNTHETIC_CODE}_X1_geografische_verteilung.png", f"{SYNTHETIC_CODE}_X1_geografische_verteilung.svg"]
     assert not (case / "graphics").exists()  # the standard figures are not touched
     record = json.loads((folders["workspace"] / "runs" / result.run_id / "run_record.json").read_text(encoding="utf-8"))
-    assert record["standard_figure"] is False and record["version"] == 2 and record["unresolved"] == ["A22"] and str(folders["intake"]) not in json.dumps(record)
+    assert record["standard_figure"] is False and record["version"] == "2.1" and record["unresolved"] == ["A22"] and str(folders["intake"]) not in json.dumps(record)
 
 
 def test_render_x1_needs_the_basemap_and_a_valid_directory(tmp_path):
