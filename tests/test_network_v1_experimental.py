@@ -1,0 +1,198 @@
+"""Experimental figure X1 (geographic distribution): layout rules, drawing, output location. Synthetic data only: case
+002, a tiny artificial basemap and a place directory of its invented places."""
+
+from __future__ import annotations
+
+import json
+import math
+
+import pytest
+from matplotlib.patches import PathPatch
+from matplotlib.text import Text
+
+from mares.core.refs import StorageRef
+from mares.network_v0.figures.style import rc
+from mares.network_v1.case import read_case
+from mares.network_v1.experimental import (
+    BASEMAP, GAZETTEER, NODE_R, X1Error, place_labels, read_gazetteer, render_x1, x1, x1_layout,
+)
+from mares.network_v1.figures.base import Context
+from mares.network_v1.testcases import SYNTHETIC_CODE
+from mares.network_v1.validate import validate
+from network_v1_fixtures import copy_002, machine, read_rows, roots_for, write_rows
+
+# country: (continent, German name, label point lat, lon, half size of the square in degrees)
+COUNTRIES = {
+    "DEU": ("Europe", "Deutschland", 51.0, 10.0, 4.0), "ESP": ("Europe", "Spanien", 40.0, -4.0, 4.0),
+    "FRA": ("Europe", "Frankreich", 46.5, 2.5, 4.0), "COL": ("South America", "Kolumbien", 4.0, -73.0, 5.0),
+    "ECU": ("South America", "Ecuador", -1.5, -78.0, 2.0), "USA": ("North America", "Vereinigte Staaten", 39.0, -98.0, 15.0),
+    "CAN": ("North America", "Kanada", 56.0, -100.0, 12.0), "JPN": ("Asia", "Japan", 36.0, 138.0, 3.0),
+}
+PLACES = {  # public coordinates of the invented places of case 002 (as in pilots/network_v1_map)
+    ("Marburg", "DEU"): (50.81, 8.77), ("Wehrda", "DEU"): (50.84, 8.76), ("Cölbe", "DEU"): (50.85, 8.78),
+    ("Lahntal", "DEU"): (50.87, 8.69), ("Kirchhain", "DEU"): (50.83, 8.92), ("Gießen", "DEU"): (50.58, 8.68),
+    ("Wetzlar", "DEU"): (50.56, 8.50), ("Kassel", "DEU"): (51.31, 9.48), ("Frankfurt am Main", "DEU"): (50.11, 8.68),
+    ("Berlin", "DEU"): (52.52, 13.40), ("Madrid", "ESP"): (40.42, -3.70), ("Barcelona", "ESP"): (41.39, 2.17),
+    ("Lyon", "FRA"): (45.76, 4.84), ("Bogotá", "COL"): (4.71, -74.07), ("Medellín", "COL"): (6.24, -75.58),
+    ("Quito", "ECU"): (-0.18, -78.47), ("Miami", "USA"): (25.76, -80.19), ("Toronto", "CAN"): (43.65, -79.38),
+}
+
+
+def basemap() -> dict:
+    features = []
+    for iso, (continent, name, lat, lon, h) in COUNTRIES.items():
+        ring = [[lon - h, lat - h], [lon + h, lat - h], [lon + h, lat + h], [lon - h, lat + h], [lon - h, lat - h]]
+        features.append({"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [ring]},
+                         "properties": {"ADM0_A3": iso, "CONTINENT": continent, "NAME_DE": name, "LABEL_X": lon, "LABEL_Y": lat}})
+    return {"type": "FeatureCollection", "features": features}
+
+
+def gazetteer_text(places=PLACES) -> str:
+    return "place;country_iso3;lat;lon;basis\n" + "".join(f"{p};{iso};{lat};{lon};synthetic\n" for (p, iso), (lat, lon) in places.items())
+
+
+def countries() -> dict:
+    return {f["properties"]["ADM0_A3"]: f for f in basemap()["features"]}
+
+
+def gazetteer(tmp_path, places=PLACES) -> dict:
+    path = tmp_path / "gazetteer.csv"
+    path.write_text(gazetteer_text(places), encoding="utf-8")
+    return read_gazetteer(path)
+
+
+def context(folder):
+    case = read_case(folder)
+    return Context(case, validate(case).derived)
+
+
+@pytest.fixture
+def case(tmp_path):
+    return copy_002(tmp_path / "tree")
+
+
+def test_panels_are_america_europe_germany_from_left_to_right(case, tmp_path):
+    layout = x1_layout(context(case), gazetteer(tmp_path), countries())
+    assert [p.region.key for p in layout.panels] == ["americas", "europe", "germany"]
+    xs = [p.x for p in layout.panels]
+    assert xs == sorted(xs) and all(a.x + a.width < b.x for a, b in zip(layout.panels, layout.panels[1:]))
+    assert {p.region.key: p.count for p in layout.panels} == {"americas": 7, "europe": 3, "germany": 21}
+
+
+def test_every_assignable_contact_is_placed_once_and_nodes_never_overlap(case, tmp_path):
+    ctx = context(case)
+    layout = x1_layout(ctx, gazetteer(tmp_path), countries())
+    assert layout.unresolved == ["A22"] and not layout.not_in_gazetteer  # A22: ambiguous place, not drawn
+    assert set(layout.positions) == set(ctx.case.contact_ids) - {"A22"}
+    points = list(layout.positions.values())
+    for i, (x0, y0) in enumerate(points):
+        for x1_, y1 in points[i + 1:]:
+            assert math.hypot(x1_ - x0, y1 - y0) >= 2 * NODE_R
+    for cl in layout.clusters:  # every node inside the panel of its region
+        panel = next(p for p in layout.panels if p.region.key == cl.region)
+        for cid in cl.members:
+            x, y = layout.positions[cid]
+            assert panel.x < x < panel.x + panel.width and panel.y < y < panel.y + panel.height
+
+
+def test_places_very_close_on_the_map_form_one_named_place_group(case, tmp_path):
+    layout = x1_layout(context(case), gazetteer(tmp_path), countries())
+    marburg = next(cl for cl in layout.clusters if cl.places[0][0] == "Marburg")
+    names = [p for p, _ in marburg.places]
+    assert names[0] == "Marburg" and {"Wehrda", "Cölbe", "Lahntal", "Kirchhain"} <= set(names)
+    assert marburg.label.startswith(f"Marburg u. a. · {len(marburg.members)}") and "Wehrda" in marburg.label
+    assert all(len(cl.places) == 1 for cl in layout.clusters if cl.places[0][0] in ("Berlin", "Madrid", "Toronto"))
+
+
+def test_a_contact_known_only_by_country_sits_at_the_country_point_marked_as_unsharp(case, tmp_path):
+    rows = read_rows(case, "contacts.csv")
+    for row in rows:
+        if row["residence_place"] == "Toronto":
+            row["residence_place"] = ""
+            cid = row["contact_id"]
+    write_rows(case, "contacts.csv", rows)
+    ctx = context(case)
+    layout = x1_layout(ctx, gazetteer(tmp_path), countries())
+    cluster = next(cl for cl in layout.clusters if cid in cl.members)
+    assert cluster.country_only and cluster.anchor == (56.0, -100.0) and "nur Land" in cluster.label  # never a city
+    with rc():
+        figure = x1(ctx, gazetteer(tmp_path), countries())
+    assert "nur Wohnland bekannt (Lage unscharf)" in " ".join(t.get_text() for t in figure.findobj(Text))
+
+
+def test_a_place_missing_in_the_directory_is_named_not_guessed(case, tmp_path):
+    places = {k: v for k, v in PLACES.items() if k[0] != "Lyon"}
+    ctx = context(case)
+    layout = x1_layout(ctx, gazetteer(tmp_path, places), countries())
+    lyon = [c.id for c in ctx.case.contacts if c.residence_place == "Lyon"]
+    assert layout.not_in_gazetteer == lyon and not set(lyon) & set(layout.positions)
+    with rc():
+        figure = x1(ctx, gazetteer(tmp_path, places), countries())
+    texts = " ".join(t.get_text() for t in figure.findobj(Text))
+    assert f"Ort ohne Koordinaten im Ortsverzeichnis: {lyon[0]}." in texts and "Wohnort nicht darstellbar: A22." in texts
+
+
+def test_further_regions_appear_only_when_needed_between_america_and_europe(case, tmp_path):
+    rows = read_rows(case, "contacts.csv")
+    rows[-1].update(residence_place="", residence_country="Japan", residence_country_iso3="JPN")
+    write_rows(case, "contacts.csv", rows)
+    layout = x1_layout(context(case), gazetteer(tmp_path), countries())
+    assert [p.region.key for p in layout.panels] == ["americas", "asia", "europe", "germany"]
+
+
+def test_x1_has_no_ties_and_labels_stay_off_the_nodes(case, tmp_path):
+    ctx = context(case)
+    with rc():
+        figure = x1(ctx, gazetteer(tmp_path), countries())
+    ax = figure.axes[0]
+    assert not [p for p in ax.patches if isinstance(p, PathPatch)]  # no contact-contact ties
+    assert {line.get_gid() for line in ax.lines} <= {"leader", "label-leader"}  # only lines to the true place point / to a label
+    texts = " ".join(t.get_text() for t in figure.findobj(Text))
+    assert "X1 · Geografische Verteilung des persönlichen Netzwerks" in texts and "TESTFALL 002*" in texts
+    assert "keine Standardgrafik" in texts and "Keine Verbindungslinien" in texts
+    layout = x1_layout(ctx, gazetteer(tmp_path), countries())
+    for box, _edge in place_labels(layout):
+        for x, y in layout.positions.values():
+            assert not (box[0] < x + NODE_R and x - NODE_R < box[2] and box[1] < y + NODE_R and y - NODE_R < box[3])
+
+
+def test_render_x1_writes_into_experimental_and_leaves_graphics_alone(tmp_path):
+    folders = machine(tmp_path)
+    case = copy_002(folders["intake"])
+    gaz = folders["intake"] / GAZETTEER
+    gaz.parent.mkdir(parents=True)
+    gaz.write_text(gazetteer_text(), encoding="utf-8")
+    base = folders["workspace"] / BASEMAP
+    base.parent.mkdir(parents=True)
+    base.write_text(json.dumps(basemap()), encoding="utf-8")
+    result = render_x1(roots_for(folders), StorageRef("INTAKE", f"network_v1/pilots/{SYNTHETIC_CODE}"))
+    assert result.status == "COMPLETED"
+    assert sorted(p.name for p in (case / "experimental").iterdir()) == [
+        f"{SYNTHETIC_CODE}_X1_geografische_verteilung.png", f"{SYNTHETIC_CODE}_X1_geografische_verteilung.svg"]
+    assert not (case / "graphics").exists()  # the standard figures are not touched
+    record = json.loads((folders["workspace"] / "runs" / result.run_id / "run_record.json").read_text(encoding="utf-8"))
+    assert record["standard_figure"] is False and record["unresolved"] == ["A22"] and str(folders["intake"]) not in json.dumps(record)
+
+
+def test_render_x1_needs_the_basemap_and_a_valid_directory(tmp_path):
+    folders = machine(tmp_path)
+    copy_002(folders["intake"])
+    with pytest.raises(X1Error):
+        render_x1(roots_for(folders), StorageRef("INTAKE", f"network_v1/pilots/{SYNTHETIC_CODE}"))
+    bad = tmp_path / "bad.csv"
+    bad.write_text("place;country_iso3;lat;lon;basis\nMarburg;DEU;north;8.77;x\n", encoding="utf-8")
+    with pytest.raises(X1Error):
+        read_gazetteer(bad)
+
+
+def test_the_command_line_draws_x1_for_one_case(tmp_path, capsys):
+    from mares.network_v1.cli import main
+
+    folders = machine(tmp_path)
+    copy_002(folders["intake"])
+    (folders["intake"] / GAZETTEER).parent.mkdir(parents=True)
+    (folders["intake"] / GAZETTEER).write_text(gazetteer_text(), encoding="utf-8")
+    (folders["workspace"] / BASEMAP).parent.mkdir(parents=True)
+    (folders["workspace"] / BASEMAP).write_text(json.dumps(basemap()), encoding="utf-8")
+    code = main(["experimental-x1", "--case", f"INTAKE:network_v1/pilots/{SYNTHETIC_CODE}", "--formats", "png"], roots=roots_for(folders))
+    assert code == 0 and "X1 COMPLETED" in capsys.readouterr().out
