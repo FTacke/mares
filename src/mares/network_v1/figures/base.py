@@ -95,9 +95,13 @@ def relation_fill(case: Case, contact_id: str) -> str | None:
 
 
 def relation_entries(case: Case) -> list[tuple]:
-    """Legend entries of the relation types -- same order, labels and colours in every figure."""
-    entries: list[tuple] = [("dot", label, RELATION_COLORS[code]) for code, label in codes.RELATION_TYPE.items()]
-    if any(relation_fill(case, cid) is None for cid in case.contact_ids):
+    """Legend entries of the relation types that occur in the case -- in the fixed order of table A, each with its fixed
+    colour, so a type looks the same in every case and every figure; a type that no contact has is left out. Contacts
+    without a valid relation type are never put into a type: they get the entry 'keine Angabe' (white, dotted rim)."""
+    fills = [relation_fill(case, cid) for cid in case.contact_ids]
+    entries: list[tuple] = [("dot", label, RELATION_COLORS[code]) for code, label in codes.RELATION_TYPE.items()
+                            if RELATION_COLORS[code] in fills]
+    if None in fills:
         entries.append(("dot", "keine Angabe", None))
     return entries
 

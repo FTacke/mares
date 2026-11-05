@@ -6,6 +6,7 @@ import json
 import math
 from collections import Counter
 
+import numpy as np
 import pytest
 from matplotlib.collections import PathCollection
 from matplotlib.colors import to_hex
@@ -109,9 +110,86 @@ def test_relation_palette_is_the_agreed_one():
 
 
 def test_relation_legend_has_the_same_order_labels_and_colours_everywhere(ctx):
+    entries = relation_entries(ctx.case)  # 002 has no 'Sonstige Beziehung'
+    assert [e[1] for e in entries] == list(codes.RELATION_TYPE.values())[:5]
+    assert [e[2] for e in entries] == list(RELATION_COLORS.values())[:5]
+
+
+def _with_relation_types(tmp_path, mapping):
+    """A copy of 002 whose relation types are replaced (code -> code, '' = no answer)."""
+    case = copy_002(tmp_path / "tree")
+    rows = read_rows(case, "contacts.csv")
+    for row in rows:
+        row["relation_type"] = mapping.get(row["relation_type"], row["relation_type"])
+    write_rows(case, "contacts.csv", rows)
+    data = read_case(case)
+    return Context(data, validate(data).derived, geo(tmp_path))
+
+
+def test_the_relation_legend_shows_only_the_types_of_the_case_in_the_fixed_order_and_colours(tmp_path):
+    ctx = _with_relation_types(tmp_path, {"5": "1"})  # family, partner, friend, acquaintance only
     entries = relation_entries(ctx.case)
-    assert [e[1] for e in entries] == list(codes.RELATION_TYPE.values())
-    assert [e[2] for e in entries] == list(RELATION_COLORS.values())
+    assert [e[1] for e in entries] == ["Familie", "Partner:in", "Freund:in", "Bekannte:r"]
+    assert [e[2] for e in entries] == [RELATION_COLORS[c] for c in "1234"]  # a type keeps its colour whatever else occurs
+    only = _with_relation_types(tmp_path / "b", {"1": "4", "2": "4", "3": "4", "5": "4"})
+    assert relation_entries(only.case) == [("dot", "Bekannte:r", RELATION_COLORS["4"])]
+
+
+def test_contacts_without_a_valid_relation_type_stay_marked_and_every_figure_renders(tmp_path):
+    ctx = _with_relation_types(tmp_path, {"1": "", "2": "NS", "3": "", "4": "KA", "5": ""})
+    assert relation_entries(ctx.case) == [("dot", "keine Angabe", None)]  # never put into one of the six types
+    for spec in FIGURES:
+        if spec.missing(ctx):
+            continue
+        with rc():
+            texts = [t.get_text() for t in spec.draw(ctx).findobj(Text)]
+        if "Beziehungstyp" in texts:
+            assert "keine Angabe" in texts and not set(codes.RELATION_TYPE.values()) & set(texts), spec.code
+    mixed = _with_relation_types(tmp_path / "b", {"2": ""})
+    assert [e[1] for e in relation_entries(mixed.case)] == ["Familie", "Freund:in", "Bekannte:r", "Professionell / institutionell",
+                                                           "keine Angabe"]
+
+
+def _main_content(figure):
+    """What a figure shows in its main area (inch coordinates): nodes with their colours, texts, lines, patches."""
+    ax = figure.axes[0]
+    nodes = sorted((tuple(np.round(o, 6)), tuple(np.round(c, 6))) for coll in ax.collections
+                   for o, c in zip(coll.get_offsets(), coll.get_facecolors()))
+    texts = sorted((t.get_text(), tuple(np.round(t.get_position(), 6))) for t in ax.texts)
+    lines = sorted(tuple(np.round(line.get_xydata(), 6).ravel()) for line in ax.lines)
+    patches = sorted((type(p).__name__, p.get_gid() or "", tuple(np.round(p.get_facecolor(), 6))) for p in ax.patches)
+    return nodes, texts, lines, patches
+
+
+def test_only_the_relation_legend_changes_never_the_nodes_or_the_drawing(ctx, monkeypatch):
+    from mares.network_v1.figures import maps, matrices, networks
+
+    def all_six(case):
+        return [("dot", label, RELATION_COLORS[code]) for code, label in codes.RELATION_TYPE.items()]
+
+    for spec in FIGURES:
+        with rc():
+            now = spec.draw(ctx)
+        with monkeypatch.context() as m:
+            for module in (networks, matrices, maps):
+                m.setattr(module, "relation_entries", all_six)
+            with rc():
+                before = spec.draw(ctx)
+        assert _main_content(now) == _main_content(before), spec.code  # same nodes, colours, labels, lines
+        legend = [t.get_text() for t in now.findobj(Text)]
+        if "Beziehungstyp" in legend:
+            assert "Sonstige Beziehung" not in legend and "Familie" in legend, spec.code
+        assert now.get_figheight() <= before.get_figheight() + 1e-9, spec.code  # the legend never needs more room
+
+
+def test_a_legend_with_fewer_types_needs_less_room():
+    from mares.network_v1.figures.base import _bottom_rows
+
+    four = [("Beziehungstyp", [("dot", label, RELATION_COLORS[c]) for c, label in list(codes.RELATION_TYPE.items())[:4]])]
+    six = [("Beziehungstyp", [("dot", label, RELATION_COLORS[c]) for c, label in codes.RELATION_TYPE.items()])]
+    width = lambda sections: max(x for row in _bottom_rows(sections, 30.0) for x, _, _ in row)  # noqa: E731
+    assert width(four) < width(six)
+    assert base.bottom_legend_height(four, 4.0) < base.bottom_legend_height(six, 4.0)
 
 
 def test_there_are_exactly_two_legend_layouts(ctx):
