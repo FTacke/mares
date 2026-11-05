@@ -14,7 +14,7 @@ from typing import Callable
 from mares.network_v0.figures.style import rc, save_figure
 
 from ..places import Area
-from .base import Context, file_name
+from .base import TITLES, Context, file_name
 from .maps import x1
 from .matrices import p1, p2, p3, p4, p5
 from .networks import g1, g2, g3
@@ -47,23 +47,23 @@ def _x1_missing(ctx: Context) -> str | None:
 
 
 FIGURES: tuple[FigureSpec, ...] = (
-    FigureSpec("G1", "persoenliches_netz", "Persönliches Beziehungsnetz", ("A: Nähe", "A: Beziehungstyp"), g1,
+    FigureSpec("G1", "persoenliches_netz", TITLES["G1"], ("A: Nähe", "A: Beziehungstyp"), g1,
                lambda ctx: _no(ctx, lambda c: c.closeness.recorded, "keine erhobene persönliche Nähe")),
-    FigureSpec("G2", "geografisches_netz", "Geografisches Beziehungsnetz", ("A: Wohnort, Wohnland", "C: bestätigte Verbindungen"), g2,
+    FigureSpec("G2", "geografisches_netz", TITLES["G2"], ("A: Wohnort, Wohnland", "C: bestätigte Verbindungen"), g2,
                lambda ctx: "kein Wohnort zuordenbar" if _all_unresolved(ctx) else None),
-    FigureSpec("P1", "wohnort_naehe", "Wohnortbereich und persönliche Nähe", ("A: Wohnort, Wohnland", "A: Nähe"), p1,
+    FigureSpec("P1", "wohnort_naehe", TITLES["P1"], ("A: Wohnort, Wohnland", "A: Nähe"), p1,
                lambda ctx: "kein Wohnort zuordenbar" if _all_unresolved(ctx) else _no(ctx, lambda c: c.closeness.recorded, "keine erhobene persönliche Nähe")),
-    FigureSpec("P2", "wohnort_haeufigkeit", "Wohnortbereich und Kontakthäufigkeit", ("A: Wohnort, Wohnland", "A: Kontakthäufigkeit"), p2,
+    FigureSpec("P2", "wohnort_haeufigkeit", TITLES["P2"], ("A: Wohnort, Wohnland", "A: Kontakthäufigkeit"), p2,
                lambda ctx: "kein Wohnort zuordenbar" if _all_unresolved(ctx) else _no(ctx, lambda c: c.contact_frequency.recorded, "keine erhobene Kontakthäufigkeit")),
-    FigureSpec("P3", "wohnort_kommunikation", "Kommunikationsformen nach Wohnortbereich", ("A: Wohnort, Wohnland", "B: Kommunikationsformen"), p3,
+    FigureSpec("P3", "wohnort_kommunikation", TITLES["P3"], ("A: Wohnort, Wohnland", "B: Kommunikationsformen"), p3,
                lambda ctx: None if any(b.forms.recorded for b in ctx.case.communication.values()) else "keine erhobenen Kommunikationsformen"),
-    FigureSpec("P4", "wohnort_sprachen", "Sprachen nach Wohnortbereich", ("A: Wohnort, Wohnland", "B: Sprachen, andere Sprachen"), p4,
+    FigureSpec("P4", "wohnort_sprachen", TITLES["P4"], ("A: Wohnort, Wohnland", "B: Sprachen, andere Sprachen"), p4,
                lambda ctx: None if any(b.languages.recorded for b in ctx.case.communication.values()) else "keine erhobenen Sprachen"),
-    FigureSpec("P5", "funktionen_naehe", "Beziehungsfunktionen und persönliche Nähe", ("A: Bedeutung/Funktionen", "A: Nähe"), p5,
+    FigureSpec("P5", "funktionen_naehe", TITLES["P5"], ("A: Bedeutung/Funktionen", "A: Nähe"), p5,
                lambda ctx: _no(ctx, lambda c: c.functions.recorded, "keine erhobenen Beziehungsfunktionen")),
-    FigureSpec("G3", "gruppen_zugehoerigkeit", "Gruppenstruktur und Zugehörigkeit", ("C: Gruppen, Mitglieder, Status, Zugehörigkeit", "C: bestätigte Verbindungen"), g3,
+    FigureSpec("G3", "gruppen_zugehoerigkeit", TITLES["G3"], ("C: Gruppen, Mitglieder, Status, Zugehörigkeit", "C: bestätigte Verbindungen"), g3,
                lambda ctx: None if ctx.case.groups else "keine Gruppen erhoben"),
-    FigureSpec("X1", "geografische_verteilung", "Geografische Verteilung des persönlichen Netzwerks",
+    FigureSpec("X1", "geografische_verteilung", TITLES["X1"],
                ("A: Wohnort, Wohnland", "A: Beziehungstyp", "Ortsverzeichnis", "Basiskarte"), x1, lambda ctx: _x1_missing(ctx)),
 )
 FORMATS = ("png", "svg")

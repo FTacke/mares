@@ -162,8 +162,6 @@ def _main_content(figure):
 
 
 def test_only_the_relation_legend_changes_never_the_nodes_or_the_drawing(ctx, monkeypatch):
-    from mares.network_v1.figures import maps, matrices, networks
-
     def all_six(case):
         return [("dot", label, RELATION_COLORS[code]) for code, label in codes.RELATION_TYPE.items()]
 
@@ -171,8 +169,7 @@ def test_only_the_relation_legend_changes_never_the_nodes_or_the_drawing(ctx, mo
         with rc():
             now = spec.draw(ctx)
         with monkeypatch.context() as m:
-            for module in (networks, matrices, maps):
-                m.setattr(module, "relation_entries", all_six)
+            m.setattr(base, "relation_entries", all_six)  # the one shared component
             with rc():
                 before = spec.draw(ctx)
         assert _main_content(now) == _main_content(before), spec.code  # same nodes, colours, labels, lines
@@ -219,9 +216,9 @@ def test_every_figure_has_badge_footer_and_at_most_two_notes(ctx):
             figure = spec.draw(ctx)
         texts = [t.get_text() for t in figure.texts]
         assert texts.count("TESTFALL 002* · SYNTHETISCH") == 1, spec.code
-        footer = "MARES · network_v1 · 32 Kontakte" + ("" if spec.code == "X1" else " · 5 Gruppen")  # X1: no group count
-        assert footer in texts, spec.code
-        assert len(texts) <= 6, spec.code  # title, subtitle (not in X1), badge, footer and at most two notes
+        assert "MARES · network_v1 · 32 Kontakte" in texts, spec.code  # one footer: no groups, no quality, no version
+        assert texts[0] == base.TITLES[spec.code] and not any(t.startswith(spec.code) for t in texts), spec.code  # no code
+        assert len(texts) <= 5, spec.code  # title, badge, footer and at most two notes -- no subtitle
         assert not any("Tabelle" in t for t in texts), spec.code  # no method details in titles and notes
 
 
@@ -252,8 +249,8 @@ def test_g1_shows_no_contact_contact_ties(ctx):
     assert not [p for p in ax.patches if isinstance(p, PathPatch)] and not ax.lines
     texts = " ".join(t.get_text() for t in figure.findobj(Text))
     assert "Verbindung" not in texts and "Kontaktpaare" not in texts
-    assert "Winkelbereiche ordnen die Kontakte nach Beziehungstyp" in texts
-    assert "Die genaue Position innerhalb eines Sektors hat keine zusätzliche inhaltliche Bedeutung." in texts
+    assert "1 sehr nah · 2 nah ·\n3 weniger nah ·\n4 außerhalb der Kreise" in texts and "Zwischenwerte: 1,5 · 2,5 · 3,5" in texts
+    assert "Winkelbereiche" not in texts and "Abstand zu Ego" not in texts  # no method note
     assert not [p for p in ax.patches if type(p).__name__ in ("Wedge", "Rectangle", "Polygon")]  # no sector lines or areas
 
 
@@ -357,7 +354,7 @@ def test_g2_unresolved_residence_with_a_confirmed_tie_keeps_the_tie(tmp_path):
     ties = [p for p in figure.axes[0].patches if isinstance(p, PathPatch) and p.get_gid() == "tie"]
     assert len(ties) == len(ctx_.derived.confirmed_edges) == 36
     texts = " ".join(t.get_text() for t in figure.findobj(Text))
-    assert "ohne Bereich (1)" in texts and "Wohnort nicht zuordenbar (keinem Bereich zugeordnet):" in texts
+    assert "zwischen Bereichen · ohne Bereich" in texts and "Wohnort nicht zuordenbar:" in texts
 
 
 def test_g2_without_unresolved_contacts_has_five_bands(tmp_path):
@@ -421,7 +418,7 @@ def test_g3_labels_are_id_name_count_and_the_number(ctx):
     for word in ("Zugehörigkeit", "Kontakte", "Sehr stark", "Stark", "Mittel", "Wenig", "Überhaupt nicht"):
         assert word not in joined  # no repeated words in the map
     legend = " ".join(t.get_text() for t in figure.findobj(Text))
-    assert "1 = sehr stark bis 5 = überhaupt nicht; der markierte Punkt zeigt den erhobenen Wert" in legend
+    assert "Zugehörigkeit: 1 sehr stark – 5 überhaupt nicht" in legend
     assert "Umrandung" not in legend
 
 
@@ -513,7 +510,9 @@ def test_g3_missing_belonging_is_named_and_marks_no_dot(tmp_path):
     assert "KA" in texts and "5" not in texts  # the kind of missing answer, never a value
     filled = [d for d in _scale_dots(ax) if d.get_gid() == "scale-on"]
     assert len(filled) == len(ctx_.case.groups) - 1
-    assert "kein Wert (KA = keine Antwort): kein Punkt markiert" in " ".join(t.get_text() for t in figure.findobj(Text))
+    legend = [t.get_text() for t in figure.findobj(Text)]
+    assert "KA = keine Antwort" in legend and "Zugehörigkeit: 1 sehr stark – 5 überhaupt nicht" in legend
+    assert not any("NS =" in t or "n. e. =" in t for t in legend)  # only the codes that occur
 
 
 def test_g3_ties_are_confirmed_pairs_only(ctx):
@@ -548,7 +547,7 @@ def test_point_matrices_have_no_area_column_for_unresolved_residences(ctx):
         with rc():
             figure = spec.draw(ctx)
         texts = " ".join(t.get_text() for t in figure.findobj(Text))
-        assert "nicht zuordenbar (nicht dargestellt): A22" in texts and "nicht\nzuordenbar" not in texts, code
+        assert "Wohnort nicht zuordenbar: A22." in texts and "nicht\nzuordenbar" not in texts, code
 
 
 def test_point_matrix_dots_never_overlap(ctx):
@@ -629,3 +628,64 @@ def test_p5_shows_nothing_of_it_only_when_answered(ctx, tmp_path):
         texts = [t.get_text() for t in spec.draw(context(folder)).findobj(Text)]
     assert not any(t.startswith("Nichts davon") for t in texts)
     assert Counter(t for t in texts if t.startswith("keine Angabe"))  # missing answers stay a column of their own
+
+
+
+# --------------------------------------------------------------------------------------- editorial standard ---
+def _texts(spec, ctx) -> list[str]:
+    with rc():
+        return [t.get_text() for t in spec.draw(ctx).findobj(Text)]
+
+
+def test_every_figure_has_its_title_only_one_footer_and_no_subtitle(ctx):
+    for spec in FIGURES:
+        texts = _texts(spec, ctx)
+        assert spec.title == base.TITLES[spec.code] and texts.count(spec.title) == 1, spec.code
+        assert not any(t.startswith(f"{spec.code} ·") for t in texts), spec.code
+        assert "Gruppen" not in " ".join(t for t in texts if t.startswith("MARES")), spec.code
+        assert "Datenqualität" not in " ".join(texts), spec.code
+
+
+def test_the_reduced_texts_of_every_figure(ctx):
+    texts = {spec.code: " ".join(_texts(spec, ctx)) for spec in FIGURES}
+    for code in ("G2", "G3"):  # the coverage of pairs stays in the run record, not in the figure
+        assert "Kontaktpaare" not in texts[code] and "fehlende Linien" not in texts[code], code
+    assert "innerhalb eines Bereichs" in texts["G2"] and "zwischen Bereichen" in texts["G2"]
+    assert "gleicher Wohnort / gleiches Wohnland" in texts["G2"] and "(" not in texts["G2"].split("Verbindungen")[1].split("gleicher")[0]
+    assert "Kategorien, keine Entfernungen" not in texts["G2"] + texts["P1"]
+    assert "gemeinsame Mitgliedschaft" not in texts["G3"] and "der markierte Punkt" not in texts["G3"]
+    assert "getrennte Merkmale" not in texts["P1"] and "geordnete Kategorie" not in texts["P2"]
+    assert "Mehrfachnennungen möglich." in texts["P5"] and "Funktionsspalten" not in texts["P5"]
+    for code in ("P3", "P4"):  # one heat legend
+        for part in ("Farbintensität = Anteil im Wohnortbereich (0–100 %)", "Zahl = Kontakte · Mehrfachnennungen möglich",
+                     "n = 1: neutral", "n = Kontakte mit Angabe im jeweiligen Wohnortbereich"):
+            assert part in texts[code], (code, part)
+        assert "„nein“" not in texts[code]
+    assert "Mehrfachnennungen möglich; Anteile summieren sich nicht auf 100 %." in texts["P4"]
+    for code in ("P1", "P2", "P3", "P4", "G2"):
+        assert "Wohnort nicht zuordenbar: A22." in texts[code], code
+    assert "Wohnort nicht darstellbar: A22." in texts["X1"]
+
+
+def test_g1_explains_the_dashed_rings_even_without_intermediate_values(tmp_path):
+    folder = copy_002(tmp_path)
+    rows = read_rows(folder, "contacts.csv")
+    for row in rows:
+        if row["closeness"] in ("1,5", "2,5", "3,5", "2-3"):
+            row["closeness"] = row["closeness"][0]
+    write_rows(folder, "contacts.csv", rows)
+    with rc():
+        texts = " ".join(t.get_text() for t in g1(context(folder)).findobj(Text))
+    assert "Zwischenwerte: 1,5 · 2,5 · 3,5" in texts and "4 außerhalb der Kreise" in texts  # the rings are always drawn
+
+
+def test_missing_answers_are_named_alike_and_never_counted_as_no(tmp_path):
+    folder = copy_002(tmp_path)
+    rows = read_rows(folder, "communication.csv")
+    rows[0]["communication_forms"] = ""
+    write_rows(folder, "communication.csv", rows)
+    ctx_ = context(folder)
+    p3 = next(s for s in FIGURES if s.code == "P3")
+    with rc():
+        texts = [t.get_text() for t in p3.draw(ctx_).findobj(Text)]
+    assert "keine Angabe" in texts and "ohne Angabe" not in texts

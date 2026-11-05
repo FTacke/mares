@@ -4,8 +4,10 @@
   the Okabe-Ito family, neutral grey for 'Sonstige Beziehung'. Geographic areas and groups are pale backgrounds only, so
   they never compete with the nodes. P3 and P4 share one quiet blue scale for shares.
 * **Typography and sizes** in points and inches, so every figure uses the same title, labels, node and dot sizes.
-* **The page** (:func:`page`): title and (optional) subtitle, case badge top right, the main area (most of the page), one of the
-  two legend layouts (``side`` or ``bottom``), at most two short notes and a one-line footer.
+* **The page** (:func:`page`): the title of the figure (:data:`TITLES`, never its code, no subtitle), case badge top
+  right, the main area (most of the page), one of the two legend layouts (``side`` or ``bottom``), at most two short
+  notes and the common one-line footer.
+* **Shared wording**: :data:`MISSING_LABEL` for a missing answer, :meth:`Context.unresolved_note`, :data:`HEAT_LEGEND`.
 * **Two matrix blocks**: :func:`point_matrix` (P1, P2, P5) and :func:`heat_matrix` (P3, P4).
 
 Rendering primitives (bundled font, deterministic files, contrast helpers) come from the v0 style module; they are
@@ -36,7 +38,6 @@ from ..places import AREA_LABELS, AREA_ORDER, Area
 
 # ------------------------------------------------------------------------------------------------ typography ---
 TITLE_PT = 16.0
-SUBTITLE_PT = 10.5
 LABEL_PT = 9.5  # category labels, column headers
 ID_PT = 7.6  # contact IDs next to matrix dots
 NODE_ID_PT = 7.0  # contact IDs inside network nodes
@@ -47,8 +48,7 @@ BADGE_PT = 9.0
 
 # --------------------------------------------------------------------------------------------- page (inches) ---
 MARGIN_X = 0.4
-HEADER_H = 0.95
-HEADER_H_TITLE_ONLY = 0.62  # a page without subtitle (X1)
+HEADER_H = 0.62  # title and case badge; no subtitle
 FOOTER_H = 0.32
 NOTE_LINE_H = 0.19
 GAP = 0.14
@@ -94,6 +94,22 @@ def relation_fill(case: Case, contact_id: str) -> str | None:
     return RELATION_COLORS.get(cell.value) if cell.recorded else None
 
 
+# ------------------------------------------------------------------------------------------------ wording ---
+TITLES = {  # the visible title of every figure; the code (G1 ...) stays in register, file names and documentation
+    "G1": "Persönliches Beziehungsnetz",
+    "G2": "Geografisches Beziehungsnetz",
+    "G3": "Gruppenstruktur und Zugehörigkeit",
+    "P1": "Wohnortbereich und persönliche Nähe",
+    "P2": "Wohnortbereich und Kontakthäufigkeit",
+    "P3": "Kommunikationsformen nach Wohnortbereich",
+    "P4": "Sprachen nach Wohnortbereich",
+    "P5": "Beziehungsfunktionen und persönliche Nähe",
+    "X1": "Geografische Verteilung des persönlichen Netzwerks",
+}
+MISSING_LABEL = "keine Angabe"  # a missing answer, in every figure (never counted as 'no')
+BRACKET_LABEL = "Marburg und Mittelhessen"  # above the first two residence areas (G2, P1-P4)
+
+
 def relation_entries(case: Case) -> list[tuple]:
     """Legend entries of the relation types that occur in the case -- in the fixed order of table A, each with its fixed
     colour, so a type looks the same in every case and every figure; a type that no contact has is left out. Contacts
@@ -102,8 +118,13 @@ def relation_entries(case: Case) -> list[tuple]:
     entries: list[tuple] = [("dot", label, RELATION_COLORS[code]) for code, label in codes.RELATION_TYPE.items()
                             if RELATION_COLORS[code] in fills]
     if None in fills:
-        entries.append(("dot", "keine Angabe", None))
+        entries.append(("dot", MISSING_LABEL, None))
     return entries
+
+
+def relation_section(case: Case) -> tuple[str, list[tuple]]:
+    """The legend section of the relation types, as every figure with contact colours shows it."""
+    return "Beziehungstyp", relation_entries(case)
 
 
 # ------------------------------------------------------------------------------------------------ case context ---
@@ -139,15 +160,11 @@ class Context:
     def unresolved(self) -> list[str]:
         return [cid for cid in self.case.contact_ids if self.derived.area(cid) is Area.UNRESOLVED]
 
-    def unresolved_note(self, where: str = "nicht dargestellt") -> str:
-        ids = self.unresolved()
-        return f"Wohnort nicht zuordenbar ({where}): {', '.join(ids)}." if ids else ""
-
-    def coverage_line(self) -> str:
-        cov = self.derived.coverage
-        if not cov.pairs:
-            return ""
-        return f"Kontaktpaare: {cov.pairs} · bestätigt {cov.confirmed} · verneint {cov.denied} · unbekannt {cov.unknown}."
+    def unresolved_note(self, ids: Sequence[str] | None = None) -> str:
+        """'Wohnort nicht zuordenbar: A07, A12.' for the contacts a figure does not show for lack of a residence area
+        (by default all unresolved ones); empty if there are none."""
+        ids = self.unresolved() if ids is None else list(ids)
+        return f"Wohnort nicht zuordenbar: {', '.join(ids)}." if ids else ""
 
 
 def case_badge(ctx: Context) -> str:
@@ -161,12 +178,9 @@ def case_badge(ctx: Context) -> str:
 
 
 def footer_line(ctx: Context) -> str:
-    n_groups = len(ctx.case.groups)
-    line = f"MARES · network_v1 · {len(ctx.case.contacts)} Kontakte · {n_groups} Gruppen"
-    quality = ctx.case.metadata.get("data_quality")
-    if not ctx.is_test and quality:
-        line += f" · Datenqualität: {quality}"
-    return line
+    """The same footer on every figure: the number of contacts recorded in the case. Data quality, review state and
+    provenance stay in the metadata and run records (the badge marks test cases)."""
+    return f"MARES · network_v1 · {len(ctx.case.contacts)} Kontakte"
 
 
 def file_name(case_code: str, figure_code: str, name: str, ext: str) -> str:
@@ -316,10 +330,9 @@ class Page:
     notes: list[str] = field(default_factory=list)
 
 
-def page(ctx: Context, title: str, subtitle: str | None, *, main_w: float, main_h: float, legend: str, sections,
-         notes: Sequence[str] = (), footer: str | None = None) -> Page:
-    """The common page of every figure. ``legend`` is ``side`` (right of the main area) or ``bottom`` (below it).
-    Without ``subtitle`` the header is lower; ``footer`` replaces the common footer line (X1)."""
+def page(ctx: Context, code: str, *, main_w: float, main_h: float, legend: str, sections, notes: Sequence[str] = ()) -> Page:
+    """The common page of every figure: title of ``code`` from :data:`TITLES`, badge, main area, legend, notes, footer.
+    ``legend`` is ``side`` (right of the main area) or ``bottom`` (below it)."""
     notes = [n for n in notes if n][:2]
     notes_h = len(notes) * NOTE_LINE_H + (0.04 if notes else 0)
     if legend == "side":
@@ -331,7 +344,7 @@ def page(ctx: Context, title: str, subtitle: str | None, *, main_w: float, main_
     else:
         raise ValueError(f"legend must be 'side' or 'bottom', not {legend!r}")
     bottom_block = FOOTER_H + notes_h + (legend_h + GAP if legend_h else 0)
-    height = (HEADER_H if subtitle is not None else HEADER_H_TITLE_ONLY) + main_h + GAP + bottom_block
+    height = HEADER_H + main_h + GAP + bottom_block
     figure = new_figure(width, height)
 
     def axes(x: float, y: float, w: float, h: float) -> Axes:
@@ -350,9 +363,7 @@ def page(ctx: Context, title: str, subtitle: str | None, *, main_w: float, main_
         legend_ax = axes(MARGIN_X, FOOTER_H + notes_h, main_w, legend_h)
         draw_legend(legend_ax, sections, "bottom")
 
-    figure.text(MARGIN_X / width, 1 - 0.2 / height, title, fontsize=TITLE_PT, fontweight="bold", color=INK, ha="left", va="top")
-    if subtitle is not None:
-        figure.text(MARGIN_X / width, 1 - 0.58 / height, subtitle, fontsize=SUBTITLE_PT, color=MUTED, ha="left", va="top")
+    figure.text(MARGIN_X / width, 1 - 0.2 / height, TITLES[code], fontsize=TITLE_PT, fontweight="bold", color=INK, ha="left", va="top")
     badge = case_badge(ctx)
     style = ({"facecolor": TEST_RED, "edgecolor": "none"} if ctx.is_test else {"facecolor": "#FFFFFF", "edgecolor": INK})
     figure.text(1 - MARGIN_X / width, 1 - 0.22 / height, badge, fontsize=BADGE_PT, fontweight="bold",
@@ -360,7 +371,7 @@ def page(ctx: Context, title: str, subtitle: str | None, *, main_w: float, main_
     for i, note in enumerate(reversed(notes)):
         figure.text(MARGIN_X / width, (FOOTER_H + 0.02 + i * NOTE_LINE_H) / height, note, fontsize=NOTE_PT, color=INK,
                     ha="left", va="bottom")
-    figure.text(MARGIN_X / width, 0.1 / height, footer_line(ctx) if footer is None else footer, fontsize=FOOT_PT, color=MUTED, ha="left", va="bottom")
+    figure.text(MARGIN_X / width, 0.1 / height, footer_line(ctx), fontsize=FOOT_PT, color=MUTED, ha="left", va="bottom")
     return Page(figure, main, main_w, main_h, legend_ax, notes)
 
 
@@ -514,7 +525,7 @@ def _headers(ax: Axes, xs: dict, col_w: float, columns: Sequence[tuple[object, s
         x0, x1 = xs[Area.MARBURG] + 0.1, xs[Area.MITTELHESSEN] + col_w - 0.1
         y = top + 0.08
         ax.plot([x0, x0, x1, x1], [y - 0.06, y, y, y - 0.06], color=MUTED, linewidth=0.8)
-        ax.text((x0 + x1) / 2, y + 0.04, "Marburg und Mittelhessen", ha="center", va="bottom", fontsize=LABEL_PT - 0.5, color=MUTED)
+        ax.text((x0 + x1) / 2, y + 0.04, BRACKET_LABEL, ha="center", va="bottom", fontsize=LABEL_PT - 0.5, color=MUTED)
     if y_title:
         ax.text(0, top - HEADER_ROWS_H + 0.06, y_title, ha="left", va="bottom", fontsize=LABEL_PT, fontweight="bold", color=INK)
 
@@ -681,7 +692,7 @@ def heat_matrix(
             y -= CELL_H
     if any(missing.values()):
         y -= 0.12
-        ax.text(ROW_LABEL_W - 0.14, y - CELL_H / 2, "ohne Angabe", ha="right", va="center", fontsize=LABEL_PT, color=MUTED, style="italic")
+        ax.text(ROW_LABEL_W - 0.14, y - CELL_H / 2, MISSING_LABEL, ha="right", va="center", fontsize=LABEL_PT, color=MUTED, style="italic")
         for ckey in keys:
             k = missing.get(ckey, 0)
             ax.add_patch(FancyBboxPatch((xs[ckey] + 0.1, y - CELL_H + 0.08), col_w - 0.2, CELL_H - 0.16,
@@ -694,9 +705,10 @@ def heat_matrix(
 
 HEAT_LEGEND = [
     (None, [
-        ("ramp", "Farbintensität = Anteil im jeweiligen Wohnortbereich (0–100 %)", None),
+        ("ramp", "Farbintensität = Anteil im Wohnortbereich (0–100 %)", None),
+        ("text", "Zahl = Kontakte · Mehrfachnennungen möglich", None),
         ("area", "n = 1: neutral", {"facecolor": HEAT_NEUTRAL, "edgecolor": CELL_RIM, "linewidth": 0.6}),
-        ("text", "Zahlen = Anzahl der Kontakte · leer = keine Nennung · Mehrfachnennungen möglich", None),
+        ("text", "n = Kontakte mit Angabe im jeweiligen Wohnortbereich", None),
     ]),
 ]
 
@@ -706,6 +718,6 @@ def closeness_rows(include_missing: bool) -> list[tuple[object, str]]:
         (v, f"{codes.closeness_label(v)}" + (f" · {codes.CLOSENESS[v]}" if v == int(v) else "")) for v in codes.CLOSENESS_LEVELS
     ]
     if include_missing:
-        rows.append(("missing", "keine Angabe"))
+        rows.append(("missing", MISSING_LABEL))
     return rows
 

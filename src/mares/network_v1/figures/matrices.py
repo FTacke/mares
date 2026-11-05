@@ -18,8 +18,8 @@ from collections import Counter
 from .. import codes
 from ..places import Area
 from .base import (
-    AREA_TINTS, HEAT_LEGEND, MISSING_GAP, Context, Item, area_columns, area_gaps, closeness_rows, heat_height, heat_matrix, page,
-    point_geometry, point_matrix, relation_entries, relation_fill,
+    AREA_TINTS, HEAT_LEGEND, MISSING_GAP, MISSING_LABEL, Context, Item, area_columns, area_gaps, closeness_rows, heat_height, heat_matrix, page,
+    point_geometry, point_matrix, relation_fill, relation_section,
 )
 
 MATRIX_W = 11.5  # main area width of every matrix figure (inches)
@@ -34,18 +34,18 @@ def _area_counts(ctx: Context) -> Counter:
     return Counter(ctx.derived.area(cid) for cid in ctx.resolved())
 
 
-def _area_point_figure(ctx: Context, *, title: str, subtitle: str, y_title: str, rows: list, row_of, notes: list[str]):
+def _area_point_figure(ctx: Context, *, code: str, y_title: str, rows: list, row_of):
     """P1 and P2: area columns, one dot per resolved contact in the row of its answer."""
     columns = area_columns()
     keys = [k for k, _ in columns]
     items = [Item(cid, ctx.derived.area(cid), row_of(ctx.case.contact(cid)), relation_fill(ctx.case, cid)) for cid in ctx.resolved()]
     if any(i.row == "missing" for i in items):
-        rows = rows + [("missing", "keine Angabe")]
+        rows = rows + [("missing", MISSING_LABEL)]
     row_gaps = {len(rows) - 1: MISSING_GAP} if rows[-1][0] == "missing" else {}
     gaps = area_gaps(keys)
     geometry = point_geometry(columns, rows, items, MATRIX_W, gaps, row_gaps, bracket=True)
-    p = page(ctx, title, subtitle, main_w=MATRIX_W, main_h=geometry.height, legend="bottom",
-             sections=[("Beziehungstyp", relation_entries(ctx.case))], notes=notes + [ctx.unresolved_note()])
+    p = page(ctx, code, main_w=MATRIX_W, main_h=geometry.height, legend="bottom",
+             sections=[relation_section(ctx.case)], notes=[ctx.unresolved_note()])
     point_matrix(p.main, MATRIX_W, geometry, columns, rows, items, gaps=gaps, row_gaps=row_gaps, column_counts=_area_counts(ctx),
                  tints=AREA_TINTS, y_title=y_title)
     return p.figure
@@ -53,20 +53,14 @@ def _area_point_figure(ctx: Context, *, title: str, subtitle: str, y_title: str,
 
 def p1(ctx: Context):
     return _area_point_figure(
-        ctx, title="P1 · Wohnortbereich und persönliche Nähe", subtitle="Wie nah stehen Kontakte an verschiedenen Wohnorten?",
-        y_title="Persönliche Nähe", rows=closeness_rows(False), row_of=lambda c: _closeness_key(c.closeness),
-        notes=["Wohnortbereiche sind Kategorien, keine Entfernungen; persönliche Nähe und Wohnort sind getrennte Merkmale."],
-    )
+        ctx, code="P1", y_title="Persönliche Nähe", rows=closeness_rows(False), row_of=lambda c: _closeness_key(c.closeness))
 
 
 def p2(ctx: Context):
     rows = list(codes.CONTACT_FREQUENCY.items())
     return _area_point_figure(
-        ctx, title="P2 · Wohnortbereich und Kontakthäufigkeit", subtitle="Wie häufig besteht Kontakt zu Personen an verschiedenen Wohnorten?",
-        y_title="Kontakthäufigkeit", rows=rows,
-        row_of=lambda c: c.contact_frequency.value if c.contact_frequency.recorded else "missing",
-        notes=["Kontakthäufigkeit ist eine geordnete Kategorie; die Zeilenabstände sind keine gemessenen Zeitabstände."],
-    )
+        ctx, code="P2", y_title="Kontakthäufigkeit", rows=rows,
+        row_of=lambda c: c.contact_frequency.value if c.contact_frequency.recorded else "missing")
 
 
 def _matrix_counts(ctx: Context, values_of) -> tuple[Counter, Counter, Counter]:
@@ -86,11 +80,11 @@ def _matrix_counts(ctx: Context, values_of) -> tuple[Counter, Counter, Counter]:
     return counts, bases, missing
 
 
-def _heat_figure(ctx: Context, *, title: str, subtitle: str, sections, values_of, notes: list[str]):
+def _heat_figure(ctx: Context, *, code: str, sections, values_of, notes: list[str]):
     counts, bases, missing = _matrix_counts(ctx, values_of)
     with_missing = any(missing.values())
     height = heat_height(sections, with_missing)
-    p = page(ctx, title, subtitle, main_w=MATRIX_W, main_h=height, legend="bottom", sections=HEAT_LEGEND,
+    p = page(ctx, code, main_w=MATRIX_W, main_h=height, legend="bottom", sections=HEAT_LEGEND,
              notes=notes + [ctx.unresolved_note()])
     heat_matrix(p.main, MATRIX_W, height, area_columns(), sections, counts, bases, missing)
     return p.figure
@@ -112,10 +106,7 @@ def p3(ctx: Context):
 
     sections = [(title, [(code, codes.COMMUNICATION_FORMS[code]) for code in keys]) for title, keys in COMMUNICATION_SECTIONS]
     return _heat_figure(
-        ctx, title="P3 · Kommunikationsformen nach Wohnortbereich", subtitle="Auf welchen Wegen wird mit Kontakten an verschiedenen Wohnorten kommuniziert?",
-        sections=sections, values_of=forms,
-        notes=["n = Kontakte des Bereichs mit Angabe; fehlende Angaben stehen getrennt und zählen nie als „nein“."],
-    )
+        ctx, code="P3", sections=sections, values_of=forms, notes=[])
 
 
 def language_rows(ctx: Context) -> tuple[list[tuple[str, str]], dict[str, tuple[str, ...]]]:
@@ -149,15 +140,13 @@ def language_rows(ctx: Context) -> tuple[list[tuple[str, str]], dict[str, tuple[
 def p4(ctx: Context):
     rows, keys = language_rows(ctx)
     return _heat_figure(
-        ctx, title="P4 · Sprachen nach Wohnortbereich", subtitle="In welchen Sprachen wird mit Kontakten an verschiedenen Wohnorten kommuniziert?",
-        sections=[(None, rows)], values_of=lambda cid: keys.get(cid),
-        notes=["Mehrsprachige Kontakte zählen in jeder verwendeten Sprache; Anteile summieren sich daher nicht zu 100 %."],
-    )
+        ctx, code="P4", sections=[(None, rows)], values_of=lambda cid: keys.get(cid),
+        notes=["Mehrfachnennungen möglich; Anteile summieren sich nicht auf 100 %."])
 
 
 FUNCTION_LABELS = {
     "1": "Persönlicher\nRückhalt / Rat", "2": "Gemeinsame\nAktivitäten /\nGespräche", "3": "Praktische Hilfe\nim Alltag",
-    "4": "Sprachliche Hilfe /\nÜbersetzung", "5": "Sonstiges", "0": "Nichts davon", "missing": "keine Angabe",
+    "4": "Sprachliche Hilfe /\nÜbersetzung", "5": "Sonstiges", "0": "Nichts davon", "missing": MISSING_LABEL,
 }
 
 
@@ -179,9 +168,8 @@ def p5(ctx: Context):
     if "0" in keys and "missing" in keys:
         gaps[keys.index("missing")] = 0.15
     geometry = point_geometry(columns, rows, items, MATRIX_W, gaps, row_gaps, bracket=False)
-    p = page(ctx, "P5 · Beziehungsfunktionen und persönliche Nähe", "Welche Funktionen haben nahe und weniger nahe Kontakte?",
-             main_w=MATRIX_W, main_h=geometry.height, legend="bottom", sections=[("Beziehungstyp", relation_entries(ctx.case))],
-             notes=["Mehrfachnennungen möglich; Kontakte können in mehreren Funktionsspalten erscheinen."])
+    p = page(ctx, "P5", main_w=MATRIX_W, main_h=geometry.height, legend="bottom", sections=[relation_section(ctx.case)],
+             notes=["Mehrfachnennungen möglich."])
     point_matrix(p.main, MATRIX_W, geometry, columns, rows, items, gaps=gaps, row_gaps=row_gaps, column_counts=Counter(i.column for i in items),
                  y_title="Persönliche Nähe")
     return p.figure

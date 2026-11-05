@@ -27,7 +27,7 @@ from matplotlib import patheffects
 from matplotlib.patches import Circle, FancyBboxPatch, Polygon
 
 from ..places import Area, norm
-from .base import INK, LABEL_PT, MUTED, NODE_PT, Context, draw_nodes, page, relation_entries, relation_fill, text_width
+from .base import INK, LABEL_PT, MUTED, NODE_PT, Context, draw_nodes, page, relation_fill, relation_section, text_width
 
 GAZETTEER = "network_v1/reference/gazetteer.csv"  # in the root of the case
 BASEMAP = "cache/basemaps/ne_50m_admin_0_countries.geojson"  # in WORKSPACE
@@ -701,7 +701,7 @@ def x1(ctx: Context, gazetteer: dict | None = None, countries: dict[str, dict] |
     country_only = any(p.country_only for p in layout.places)
     others = any(p.others for p in layout.places)
     sections = [
-        ("Beziehungstyp", relation_entries(ctx.case)),
+        relation_section(ctx.case),
         (None, [("dot", "Wohnort (Ortspunkt)", POINT)]
                + ([("text", "○ weiterer Ort einer Ortsgruppe", None)] if others else [])
                + ([("area", "nur Wohnland bekannt (Lage unscharf)", {"facecolor": "none", "edgecolor": MUTED, "linewidth": 0.8,
@@ -709,8 +709,7 @@ def x1(ctx: Context, gazetteer: dict | None = None, countries: dict[str, dict] |
     ]
     not_shown = [cid for cid in ctx.case.contact_ids if cid in set(layout.unresolved + layout.not_in_gazetteer)]
     notes = [f"Wohnort nicht darstellbar: {', '.join(not_shown)}." if not_shown else "", "Kartengrundlage: Natural Earth."]
-    p_ = page(ctx, "Geografische Verteilung des persönlichen Netzwerks", None, main_w=MAIN_W, main_h=layout.height,
-              legend="bottom", sections=sections, notes=notes, footer=f"MARES · network_v1 · {len(ctx.case.contacts)} Kontakte")
+    p_ = page(ctx, "X1", main_w=MAIN_W, main_h=layout.height, legend="bottom", sections=sections, notes=notes)
     ax = p_.main
     ax.set_zorder(2)  # nodes above the map panels
     ax.patch.set_alpha(0.0)

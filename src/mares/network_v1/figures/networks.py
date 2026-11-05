@@ -21,8 +21,9 @@ from .. import codes
 from ..codes import Missing
 from ..places import AREA_LABELS, AREA_ORDER, Area, norm
 from .base import (
-    AREA_TINTS, GROUP_COLORS, INK, LABEL_PT, LEGEND_PT, MUTED, NODE_PT, TIE, TIE_BETWEEN, Context, draw_nodes, force_layout,
-    initial_circle, ordinal_dots, page, relation_entries, relation_fill, ring_segments, scale_width, text_width,
+    AREA_TINTS, BRACKET_LABEL, GROUP_COLORS, INK, LABEL_PT, LEGEND_PT, MISSING_LABEL, MUTED, NODE_PT, TIE, TIE_BETWEEN, Context,
+    draw_nodes, force_layout, initial_circle, ordinal_dots, page, relation_fill, relation_section, ring_segments, scale_width,
+    text_width,
 )
 
 EGO_FILL = "#1F2933"
@@ -134,16 +135,13 @@ def g1_layout(ctx: Context) -> dict[str, tuple[float, float]]:
 def g1(ctx: Context):
     """Closeness and relation type only. Contact-contact ties are shown in G2 and G3, not here."""
     sections = [
-        ("Beziehungstyp", relation_entries(ctx.case)),
-        ("Persönliche Nähe", [
-            ("line", "1 sehr nah · 2 nah ·\n3 weniger nah · 4 außerhalb",{"color": "#9AA5B1", "linewidth": 1.0}),
-            ("line", "Zwischenwerte 1,5 · 2,5 · 3,5", {"color": "#C3CAD1", "linewidth": 0.7, "linestyle": (0, (2, 3))}),
+        relation_section(ctx.case),
+        ("Persönliche Nähe", [  # the dashed rings are always drawn, so their line always explains them
+            ("line", "1 sehr nah · 2 nah ·\n3 weniger nah ·\n4 außerhalb der Kreise", {"color": "#9AA5B1", "linewidth": 1.0}),
+            ("line", "Zwischenwerte: 1,5 · 2,5 · 3,5", {"color": "#C3CAD1", "linewidth": 0.7, "linestyle": (0, (2, 3))}),
         ]),
     ]
-    notes = ["Abstand zu Ego = persönliche Nähe; Winkelbereiche ordnen die Kontakte nach Beziehungstyp. "
-             "Die genaue Position innerhalb eines Sektors hat keine zusätzliche inhaltliche Bedeutung."]
-    p = page(ctx, "G1 · Persönliches Beziehungsnetz", "Kontakte nach persönlicher Nähe und Beziehungstyp",
-             main_w=G1_SIZE, main_h=G1_SIZE, legend="side", sections=sections, notes=notes)
+    p = page(ctx, "G1", main_w=G1_SIZE, main_h=G1_SIZE, legend="side", sections=sections)
     ax = p.main
     without = any(codes.closeness_value(c.closeness) is None for c in ctx.case.contacts)
     lim = (MISSING_RADIUS if without else max(codes.CLOSENESS_LEVELS)) + 0.45  # the outer arc only when it is needed
@@ -159,7 +157,7 @@ def g1(ctx: Context):
     positions = g1_layout(ctx)
     if without:
         ax.add_patch(Circle((0, 0), MISSING_RADIUS, fill=False, edgecolor="#C9CED3", linewidth=0.6, linestyle=(0, (1, 3))))
-        ax.text(0, -MISSING_RADIUS - 0.22, "Nähe ohne Angabe", fontsize=LABEL_PT - 1.5, color=MUTED, ha="center", va="top", style="italic")
+        ax.text(0, -MISSING_RADIUS - 0.22, MISSING_LABEL, fontsize=LABEL_PT - 1.5, color=MUTED, ha="center", va="top", style="italic")
     ax.add_patch(Circle((0, 0), 0.36, facecolor=EGO_FILL, edgecolor="white", zorder=5))
     ax.text(0, 0, "Ego", color="white", fontsize=LABEL_PT - 1, ha="center", va="center", fontweight="bold", zorder=6)
     draw_nodes(ax, positions, _fills(ctx, positions))
@@ -417,30 +415,25 @@ def g2_layout(ctx: Context) -> G2Layout:
                     [c for c in unresolved if c not in linked])
 
 
-UNPLACED_LABEL = "Wohnort nicht zuordenbar (keinem Bereich zugeordnet):"
+UNPLACED_LABEL = "Wohnort nicht zuordenbar:"
 
 
 def g2(ctx: Context):
     layout = g2_layout(ctx)
     edges = _edges(ctx)
     area = {cid: ctx.derived.area(cid) for cid in ctx.case.contact_ids}
-    within = sum(1 for a, b in edges if area[a] is area[b] and area[a] is not Area.UNRESOLVED)
-    unassigned = sum(1 for a, b in edges if Area.UNRESOLVED in (area[a], area[b]))
-    between = len(edges) - within - unassigned
-    other = f" · ohne Bereich ({unassigned})" if unassigned else ""
+    unassigned = any(Area.UNRESOLVED in (area[a], area[b]) for a, b in edges)  # dashed like ties between areas
     sections = [
-        ("Beziehungstyp", relation_entries(ctx.case)),
+        relation_section(ctx.case),
         ("Verbindungen", [
-            ("line", f"im selben Bereich ({within})", {"color": TIE, "linewidth": 1.0}),
-            ("line", f"zwischen Bereichen ({between}){other}", {"color": TIE_BETWEEN, "linewidth": 0.8, "linestyle": (0, (4, 2.5))}),
+            ("line", "innerhalb eines Bereichs", {"color": TIE, "linewidth": 1.0}),
+            ("line", "zwischen Bereichen" + (" · ohne Bereich" if unassigned else ""),
+             {"color": TIE_BETWEEN, "linewidth": 0.8, "linestyle": (0, (4, 2.5))}),
         ]),
-        (None, [("area", "gleicher Wohnort bzw. Wohnland", {"facecolor": "#FFFFFF", "edgecolor": "#B8C0C8", "linewidth": 0.7})]),
+        (None, [("area", "gleicher Wohnort / gleiches Wohnland", {"facecolor": "#FFFFFF", "edgecolor": "#B8C0C8", "linewidth": 0.7})]),
     ]
-    hidden = f" Wohnort nicht zuordenbar: {', '.join(layout.not_shown)}." if layout.not_shown else ""
-    notes = ["Wohnortbereiche sind Kategorien, keine Entfernungen; Flächen bündeln Kontakte mit gleichem Wohnort bzw. Wohnland." + hidden,
-             "Linien zeigen bestätigte Verbindungen; fehlende Linien bedeuten nicht zwangsläufig keinen Kontakt. " + ctx.coverage_line()]
-    p = page(ctx, "G2 · Geografisches Beziehungsnetz", "Kontakte nach Wohnortbereich und bestätigte Verbindungen zwischen ihnen",
-             main_w=G2_W, main_h=layout.height, legend="bottom", sections=sections, notes=notes)
+    p = page(ctx, "G2", main_w=G2_W, main_h=layout.height, legend="bottom", sections=sections,
+             notes=[ctx.unresolved_note(layout.not_shown)])
     ax = p.main
     counts = defaultdict(int)
     for a in area.values():
@@ -454,7 +447,7 @@ def g2(ctx: Context):
     m0, m1 = layout.bands[Area.MARBURG][0] + 0.1, layout.bands[Area.MITTELHESSEN][1] - 0.1
     yb = layout.height - BRACKET_H_G2 + 0.06
     ax.plot([m0, m0, m1, m1], [yb - 0.06, yb, yb, yb - 0.06], color=MUTED, linewidth=0.8)
-    ax.text((m0 + m1) / 2, yb + 0.04, "Marburg und Mittelhessen", ha="center", va="bottom", fontsize=LABEL_PT - 0.5, color=MUTED)
+    ax.text((m0 + m1) / 2, yb + 0.04, BRACKET_LABEL, ha="center", va="bottom", fontsize=LABEL_PT - 0.5, color=MUTED)
     if layout.isolated_top is not None:
         y = layout.isolated_top
         ax.plot([0, G2_W], [y, y], color="#B8C0C8", linewidth=0.7, linestyle=(0, (3, 3)), zorder=1)
@@ -818,21 +811,18 @@ def membership_marked(ctx: Context) -> list[str]:
 def g3(ctx: Context):
     colors = {g.id: GROUP_COLORS[i % len(GROUP_COLORS)] for i, g in enumerate(ctx.case.groups)}
     marked = membership_marked(ctx)
-    scale = [("scale", "1 = sehr stark bis 5 = überhaupt nicht; der markierte Punkt zeigt den erhobenen Wert", "2")]
+    scale = [("scale", "Zugehörigkeit: 1 sehr stark – 5 überhaupt nicht", "2")]
     missing = sorted({g.belonging.missing for g in ctx.case.groups if not g.belonging.value}, key=list(MISSING_SHORT).index)
-    if missing:
-        named = ", ".join(f"{MISSING_SHORT[m]} = {codes.MISSING_LABELS[m].split(' (')[0]}" for m in missing)
-        scale.append(("scale", f"kein Wert ({named}): kein Punkt markiert", None))
+    if missing:  # only the short codes that occur, with an empty scale
+        named = " · ".join(f"{MISSING_SHORT[m]} = {codes.MISSING_LABELS[m].split(' (')[0]}" for m in missing)
+        scale.append(("scale", named, None))
     sections = [
-        ("Beziehungstyp", relation_entries(ctx.case)),
-        ("Zugehörigkeit zu einer Gruppe", scale),
+        relation_section(ctx.case),
+        (None, scale),
         (None, [("line", "bestätigte Verbindung", {"color": TIE, "linewidth": 1.0})]
                + ([("ring", "Mitglied mehrerer Gruppen", [GROUP_COLORS[0], GROUP_COLORS[1]])] if marked else [])),
     ]
-    notes = ["Gruppen umfassen die von Ego zugeordneten Kontakte; gemeinsame Mitgliedschaft ist keine Verbindung.",
-             ctx.coverage_line()]
-    p = page(ctx, "G3 · Gruppenstruktur und Zugehörigkeit", "Von Ego benannte Gruppen, ihre Mitglieder und Egos Zugehörigkeit",
-             main_w=G3_W, main_h=G3_H, legend="bottom", sections=sections, notes=notes)
+    p = page(ctx, "G3", main_w=G3_W, main_h=G3_H, legend="bottom", sections=sections)
     ax = p.main
     positions, span = g3_positions(ctx)
     pads = group_pads(ctx)

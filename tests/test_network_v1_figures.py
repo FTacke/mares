@@ -91,18 +91,15 @@ def test_no_labels_of_persons_in_any_figure(tmp_path):
         texts = " ".join(t.get_text() for t in figure.findobj(Text))
         assert "Pseudonym-Xq" not in texts, spec.code
         assert "TESTFALL 002* · SYNTHETISCH" in texts  # case badge on every figure
-        if spec.code == "X1":  # the map counts contacts only: groups are no dimension of it
-            assert "MARES · network_v1 · 32 Kontakte" in texts and "Gruppen" not in texts
-        else:
-            assert "MARES · network_v1 · 32 Kontakte · 5 Gruppen" in texts  # the same footer on every other figure
+        assert "MARES · network_v1 · 32 Kontakte" in texts and "5 Gruppen" not in texts  # the same short footer everywhere
 
 
-def test_coverage_is_stated_on_network_figures(ctx):
+def test_the_coverage_of_pairs_stays_in_the_data_not_in_the_figures(ctx):
+    assert ctx.derived.coverage.unknown == 454  # unchanged derivation; reported in run record and validation report
     for spec in FIGURES:
-        if spec.code in ("G2", "G3"):  # G1 shows no ties, so it states no coverage
-            with rc():
-                texts = " ".join(t.get_text() for t in spec.draw(ctx).findobj(Text))
-            assert "unbekannt 454" in texts, spec.code
+        with rc():
+            texts = " ".join(t.get_text() for t in spec.draw(ctx).findobj(Text))
+        assert "unbekannt 454" not in texts and "Kontaktpaare" not in texts, spec.code
 
 
 def test_a_figure_without_data_is_skipped_with_a_reason(tmp_path):
