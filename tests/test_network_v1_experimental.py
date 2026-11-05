@@ -211,6 +211,36 @@ def test_a_panel_without_contacts_shows_its_default_extent(tmp_path):
     assert (europe.lon, europe.lat, europe.count) == ((-10.5, 19.5), (35.0, 59.0), 0)
 
 
+def test_every_box_belongs_to_its_place_point_at_a_glance(case, tmp_path):
+    from mares.network_v1.experimental import _box_point, _gap, _segment_hits_box, _segment_hits_disc, _segments_cross
+
+    layout = x1_layout(context(case), gazetteer(tmp_path), countries())
+    leaders = [(_box_point(p.box, *p.hub), p.hub) for p in layout.places]
+    for i, p in enumerate(layout.places):
+        start, hub = leaders[i]
+        others = [o for o in layout.places if o is not p and o.region == p.region]
+        for o in others:
+            assert not _segment_hits_disc(start, hub, o.hub, o.radius), (p.title, o.title)  # never under another disc
+            assert not _segment_hits_box(start, hub, o.box), (p.title, o.title)  # never under another box
+            assert _gap(p.box, o) >= _gap(p.box, p), (p.title, o.title)  # nearer to its own group than to any other
+        for j, (a, b) in enumerate(leaders):
+            assert j == i or not _segments_cross(start, hub, a, b), (p.title, layout.places[j].title)
+    titles = {p.places[0][0]: p for p in layout.places}
+    assert titles["Marburg"].box != titles["Gießen"].box
+
+
+def test_leaders_are_drawn_above_every_fill(case, tmp_path):
+    with rc():
+        figure = x1(context(case), gazetteer(tmp_path), countries())
+    ax = figure.axes[0]
+    leader = min(line.get_zorder() for line in ax.lines if line.get_gid() == "leader")
+    fills = [p.get_zorder() for p in ax.patches if p.get_gid() == "place-disc"] + [line.get_zorder() for line in ax.lines
+                                                                                   if line.get_gid() == "offset"]
+    assert leader > max(fills)
+    point = min(p.get_zorder() for p in ax.patches if p.get_gid() == "place-point")
+    assert point > leader  # the place point marks the end of its leader
+
+
 def test_place_boxes_sit_off_the_nodes_and_their_leader_runs_through_a_free_slot(case, tmp_path):
     layout = x1_layout(context(case), gazetteer(tmp_path), countries())
     boxes = [p.box for p in layout.places]
@@ -279,7 +309,7 @@ def test_x1_has_no_ties_but_place_boxes_points_and_pale_discs(case, tmp_path):
     assert gids.count("place-disc") == sum(1 for p in layout.places if len(p.members) > 1)
     texts = " ".join(t.get_text() for t in figure.findobj(Text))
     assert "X1 · Geografische Verteilung des persönlichen Netzwerks" in texts and "TESTFALL 002*" in texts
-    assert "Fassung 2.3" in texts and "keine Standardgrafik" in texts and "keine Verbindungslinien" in texts
+    assert "Fassung 2.4" in texts and "keine Standardgrafik" in texts and "keine Verbindungslinien" in texts
     assert "Marburg und Umgebung · n = 14" in texts and "Gießen und Umgebung · n = 4" in texts
     assert gids.count("true-point") >= sum(len(p.others) for p in layout.places)  # other places of a group stay visible
 
@@ -299,7 +329,7 @@ def test_render_x1_writes_into_experimental_and_leaves_graphics_alone(tmp_path):
         f"{SYNTHETIC_CODE}_X1_geografische_verteilung.png", f"{SYNTHETIC_CODE}_X1_geografische_verteilung.svg"]
     assert not (case / "graphics").exists()  # the standard figures are not touched
     record = json.loads((folders["workspace"] / "runs" / result.run_id / "run_record.json").read_text(encoding="utf-8"))
-    assert record["standard_figure"] is False and record["version"] == "2.3" and record["unresolved"] == ["A22"] and str(folders["intake"]) not in json.dumps(record)
+    assert record["standard_figure"] is False and record["version"] == "2.4" and record["unresolved"] == ["A22"] and str(folders["intake"]) not in json.dumps(record)
 
 
 def test_render_x1_needs_the_basemap_and_a_valid_directory(tmp_path):

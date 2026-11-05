@@ -39,7 +39,7 @@ from .places import Area, norm
 from .run import check_case_ref
 from .validate import FAILED, validate
 
-X1_CODE, X1_NAME, X1_VERSION = "X1", "geografische_verteilung", "2.3"
+X1_CODE, X1_NAME, X1_VERSION = "X1", "geografische_verteilung", "2.4"
 EXPERIMENTAL_DIR = "experimental"
 GAZETTEER = "network_v1/reference/gazetteer.csv"  # in the root of the case
 BASEMAP = "cache/basemaps/ne_50m_admin_0_countries.geojson"  # in WORKSPACE
@@ -95,7 +95,7 @@ REGIONS = (
            frame=((5.5, 15.5), (47.0, 55.3))),
 )
 ALWAYS = ("germany", "europe", "americas")
-ASPECT_RANGE = (0.65, 1.5)  # width : height of a panel (degrees, latitude-corrected); a narrower extent is widened
+ASPECT_RANGE = (0.8, 1.5)  # width : height of a panel (degrees, latitude-corrected); a narrower extent is widened
 CONTINENT_REGION = {"North America": "americas", "South America": "americas", "Africa": "africa", "Asia": "asia", "Oceania": "oceania"}
 
 
@@ -178,6 +178,7 @@ class Place:
     key: tuple[str, str] | None = None  # place directory key of the (head) place
     parent: tuple[str, str] | None = None  # group_with of the place directory
     others: list[tuple[float, float]] = field(default_factory=list)  # true points (inches) of the other places of a group
+    wrap: bool = False  # title in two lines (place / country and number) where one line does not fit
 
     @property
     def group(self) -> bool:
@@ -193,7 +194,11 @@ class Place:
         if self.country_only:
             return f"{name} · nur Land bekannt{count}"
         country = f" · {self.country}" if self.country and self.region != "germany" else ""
-        return f"{name}{' und Umgebung' if self.group else ''}{country}{count}"
+        head = f"{name}{' und Umgebung' if self.group else ''}"
+        tail = f"{country}{count}"
+        if self.wrap and tail:
+            return f"{head}\n{tail[3:]}"
+        return head + tail
 
     @property
     def sub(self) -> str:
@@ -219,8 +224,8 @@ class Place:
         return self.ring + NODE_R + (DISC_PAD if len(self.members) > 1 or self.country_only else 0.02)
 
     def box_size(self) -> tuple[float, float]:
-        w = text_width(self.title, BOX_PT, bold=True)
-        h = BOX_PT / 72 * 1.25
+        w = max(text_width(line, BOX_PT, bold=True) for line in self.title.split("\n"))
+        h = BOX_PT / 72 * 1.25 * (self.title.count("\n") + 1)
         if self.sub:
             w = max(w, max(text_width(line, BOX_SUB_PT) for line in self.sub.split("\n")))
             h += (self.sub.count("\n") + 1) * BOX_SUB_PT / 72 * 1.2 + 0.02
@@ -361,32 +366,73 @@ def _separate(places: list[Place], panel: Panel) -> None:
 BOX_DISTANCES = (0.12, 0.3, 0.55, 0.85)  # inches between a disc and its place box
 
 
+def _segments_cross(p1, p2, q1, q2) -> bool:
+    def side(a, b, c):
+        return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0])
+    return side(p1, p2, q1) * side(p1, p2, q2) < 0 and side(q1, q2, p1) * side(q1, q2, p2) < 0
+
+
+def _segment_hits_box(p1, p2, box) -> bool:
+    x0, y0, x1, y1 = box
+    if any(x0 < x < x1 and y0 < y < y1 for x, y in (p1, p2)):
+        return True
+    corners = [(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
+    return any(_segments_cross(p1, p2, corners[i], corners[(i + 1) % 4]) for i in range(4))
+
+
 def _place_boxes(places: list[Place], panels: list[Panel]) -> None:
-    """A box per place beside its disc, in eight directions and four distances: not on any disc, place point, panel title
-    or other box, inside its panel, its leader not across another disc; close to its place."""
+    """A box per place beside its disc, in eight directions and four distances, so that box and place point belong together
+    at a glance: the box not on any disc, place point, panel title or other box, inside its panel; its leader not across
+    another place's disc, another box or another leader; and the box closer to its own place point than to any other.
+    Larger places choose first; the asymmetric positions follow from these rules, not from place names."""
     taken = [pn.title_box() for pn in panels]
+    leaders: list[tuple[tuple[float, float], tuple[float, float]]] = []
     for p in places:
         panel = next(pn for pn in panels if pn.region.key == p.region)
-        w, h = p.box_size()
+        others = [o for o in places if o is not p and o.region == p.region]
         best = None
-        for rank, d in enumerate(BOX_DISTANCES):
-            for k in range(8):
-                t = math.pi / 2 - math.pi / 4 * k  # N, NE, E, ... clockwise
-                ux, uy = round(math.cos(t), 9), round(math.sin(t), 9)
-                bx = p.hub[0] + ux * (p.radius + d) + (w / 2 * (1 if ux > 0 else -1) if ux else 0.0)
-                by = p.hub[1] + uy * (p.radius + d) + (h / 2 * (1 if uy > 0 else -1) if uy else 0.0)
-                box = (bx - w / 2, by - h / 2, bx + w / 2, by + h / 2)
-                inside = (panel.x + 0.04 <= box[0] and box[2] <= panel.x + panel.width - 0.04 and panel.y + 0.04 <= box[1]
-                          and box[3] <= panel.y + panel.height - 0.04)
-                start = _box_point(box, *p.hub)
-                discs = sum(_box_hits_disc(box, o.hub, o.radius + 0.03) for o in places if o.region == p.region)
-                crossing = sum(_segment_hits_disc(start, p.hub, o.hub, o.radius) for o in places if o is not p and o.region == p.region)
-                boxes = sum(_overlaps(box, q) for q in taken)
-                cost = discs * 10 + boxes * 10 + crossing * 6 + (0 if inside else 25) + rank * 1.5 + k * 0.01
-                if best is None or cost < best[0]:
-                    best = (cost, box, math.atan2(start[1] - p.hub[1], start[0] - p.hub[0]))
-        _, p.box, p.gap = best
+        for wrap in (False, True):  # the two-line title only where it places better
+            p.wrap = wrap
+            if wrap and "\n" not in p.title:
+                continue
+            w, h = p.box_size()
+            best = _box_candidates(p, panel, places, others, taken, leaders, w, h, wrap, best)
+        _, p.box, p.gap, start, p.wrap = best
         taken.append(p.box)
+        leaders.append((start, p.hub))
+
+
+def _box_candidates(p, panel, places, others, taken, leaders, w, h, wrap, best):
+    """Score the box positions of one title variant; keep the best so far (cost, box, leader angle, start, wrap)."""
+    for rank, d in enumerate(BOX_DISTANCES):
+        for k in range(8):
+            t = math.pi / 2 - math.pi / 4 * k  # N, NE, E, ... clockwise
+            ux, uy = round(math.cos(t), 9), round(math.sin(t), 9)
+            bx = p.hub[0] + ux * (p.radius + d) + (w / 2 * (1 if ux > 0 else -1) if ux else 0.0)
+            by = p.hub[1] + uy * (p.radius + d) + (h / 2 * (1 if uy > 0 else -1) if uy else 0.0)
+            box = (bx - w / 2, by - h / 2, bx + w / 2, by + h / 2)
+            inside = (panel.x + 0.04 <= box[0] and box[2] <= panel.x + panel.width - 0.04 and panel.y + 0.04 <= box[1]
+                      and box[3] <= panel.y + panel.height - 0.04)
+            start = _box_point(box, *p.hub)
+            discs = sum(_box_hits_disc(box, o.hub, o.radius + 0.03) for o in places if o.region == p.region)
+            crossing = sum(_segment_hits_disc(start, p.hub, o.hub, o.radius + 0.02) for o in others)
+            boxes = sum(_overlaps(box, q) for q in taken)
+            over_box = sum(_segment_hits_box(start, p.hub, q) for q in taken)  # the leader would vanish under a box
+            under_box = sum(_segment_hits_box(a_, b_, box) for a_, b_ in leaders)  # the box would hide a leader
+            lines = sum(_segments_cross(start, p.hub, a_, b_) for a_, b_ in leaders)
+            ambiguous = sum(_gap(box, o) < _gap(box, p) for o in others)  # nearer to another group than to its own
+            cost = (discs * 10 + boxes * 10 + crossing * 12 + over_box * 10 + under_box * 10 + lines * 10 + ambiguous * 15
+                    + (0 if inside else 25) + rank * 1.5 + k * 0.01)
+            cost += 1.0 if wrap else 0.0
+            if best is None or cost < best[0]:
+                best = (cost, box, math.atan2(start[1] - p.hub[1], start[0] - p.hub[0]), start, wrap)
+    return best
+
+
+def _gap(box, p: Place) -> float:
+    """Distance between a box and the edge of a place's disc (what the eye compares)."""
+    x, y = _box_point(box, *p.hub)
+    return math.hypot(x - p.hub[0], y - p.hub[1]) - p.radius
 
 
 def _ring_positions(p: Place, order: list[str]) -> dict[str, tuple[float, float]]:
@@ -585,13 +631,13 @@ def x1(ctx: Context, gazetteer: dict, countries: dict[str, dict]):
                                 linestyle=(0, (3, 2)) if p.country_only else "solid", zorder=2.6))
         if math.hypot(p.hub[0] - p.point[0], p.hub[1] - p.point[1]) > 0.02:  # the place gave way: dotted line to its true point
             ax.plot(*zip(p.point, p.hub), color="#8A939C", linewidth=0.6, linestyle=(0, (1, 1.5)), zorder=3, gid="offset")
-            ax.add_patch(Circle(p.point, 0.03, facecolor="white", edgecolor=POINT, linewidth=0.8, zorder=3.5, gid="true-point"))
+            ax.add_patch(Circle(p.point, 0.03, facecolor="white", edgecolor=POINT, linewidth=0.8, zorder=4.6, gid="true-point"))
         start = _box_point(p.box, *p.hub)
-        ax.plot(*zip(start, p.hub), color="#7B8590", linewidth=0.6, zorder=3, gid="leader")  # through the free ring slot
+        ax.plot(*zip(start, p.hub), color="#6B7580", linewidth=0.7, zorder=4.5, gid="leader")  # above all fills, through the free slot
         for q in p.others:  # the other places of a group keep their true point: not everyone lives in the head place
             if math.hypot(q[0] - p.hub[0], q[1] - p.hub[1]) > 0.02:
-                ax.add_patch(Circle(q, 0.03, facecolor="white", edgecolor=POINT, linewidth=0.8, zorder=3.5, gid="true-point"))
-        ax.add_patch(Circle(p.hub, 0.05, facecolor=POINT, edgecolor="white", linewidth=0.8, zorder=3.6, gid="place-point"))
+                ax.add_patch(Circle(q, 0.03, facecolor="white", edgecolor=POINT, linewidth=0.8, zorder=4.6, gid="true-point"))
+        ax.add_patch(Circle(p.hub, 0.05, facecolor=POINT, edgecolor="white", linewidth=0.8, zorder=4.7, gid="place-point"))
         x0, y0, x1_, y1 = p.box
         ax.add_patch(FancyBboxPatch((x0, y0), x1_ - x0, y1 - y0, boxstyle="round,pad=0,rounding_size=0.03", facecolor="white",
                                     alpha=0.92, edgecolor="#CBD2D9", linewidth=0.5, zorder=7, gid="place-box"))
