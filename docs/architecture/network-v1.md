@@ -87,7 +87,7 @@ residence_country; residence_country_iso3; comment`
 4. Verbindungen zwischen Gruppen und zu ungruppierten Kontakten stehen als Einzelpaare in `alter_connections.csv`.
 5. Alle Aussagen zu einem Paar werden abgeglichen: 1 neben 0 ist ein **Widerspruch** (Fehler, nie stillschweigend aufgelöst); `?` neben 1 oder 0 widerspricht nicht; gleichlautende Mehrfachangaben sind ein Hinweis.
 6. Ein Paar ohne Aussage ist unbekannt, nie 0. Jedes abgeleitete Paar behält seine Quellen (`derived/pairs.csv` im Lauf).
-7. Abdeckung = bestätigte + verneinte Paare von allen n(n−1)/2 Paaren; sie steht auf jeder Netzwerkgrafik.
+7. Abdeckung = bestätigte + verneinte Paare von allen n(n−1)/2 Paaren; sie steht im Prüfbericht (`validation_report.md`, „Abdeckung der Kontaktpaare“) und im Run-Record (`coverage`), nicht in den Grafiken (§5.7).
 
 ### 2.5 Fehlende und nicht anwendbare Angaben ([`codes.py`](../../src/mares/network_v1/codes.py))
 
@@ -140,16 +140,16 @@ Alles Gemeinsame steht an einer Stelle: [`figures/base.py`](../../src/mares/netw
 ### 5.1 Wissenschaftliche Regeln
 
 Nur erhobene oder regelbasiert eindeutig ableitbare Werte; Linien nur für bestätigte Paare, nie aus bloßer Gruppenzugehörigkeit; eine fehlende
-Linie heißt nicht „kein Kontakt“, und jede Grafik mit Verbindungslinien (G2, G3) nennt die Abdeckung; persönliche Nähe und Wohnortbereich bleiben getrennte Achsen;
+Linie heißt nicht „kein Kontakt“ (die Abdeckung der Paare steht im Prüfbericht und Run-Record); persönliche Nähe und Wohnortbereich bleiben getrennte Achsen;
 ordinale Codes als Kategorien in Codierrichtung (1 oben bzw. am stärksten), nie als Messachse; Mehrfachnennungen mehrfach gezählt; fehlende
 Angaben getrennt von „nein“ und von „0 · Nichts davon“; keine Namen; Layouts deterministisch (gleiche Daten → byteidentische Dateien);
 Layoutlagen haben keine Bedeutung.
 
 ### 5.2 Seite
 
-Titel und knapper Untertitel oben links, Fallkennzeichnung oben rechts, darunter die Hauptdarstellung (sie bekommt den Großteil der Fläche),
-eine der zwei Legenden, höchstens zwei kurze Hinweise, eine Fußzeile `MARES · network_v1 · <n> Kontakte · <n> Gruppen` (bei echten Fällen
-zusätzlich die Datenqualität). Die Herkunft eines Werts steht in dieser Dokumentation, nicht in Achsenbeschriftungen. Schriftgrößen,
+Titel oben links (ohne Grafikcode, kein Untertitel), Fallkennzeichnung oben rechts, darunter die Hauptdarstellung (sie bekommt den
+Großteil der Fläche), eine der zwei Legenden, höchstens zwei kurze Hinweise, eine Fußzeile `MARES · network_v1 · <n> Kontakte` (§5.7).
+Die Herkunft eines Werts steht in dieser Dokumentation, nicht in Achsenbeschriftungen. Schriftgrößen,
 Knoten- und Punktgrößen und Abstände sind Konstanten in `base.py`.
 
 ### 5.3 Farben
@@ -180,16 +180,41 @@ Legende die Farbskala.
 Fünf Darstellungsbereiche in fester Reihenfolge Marburg (Stadt) → übriges Mittelhessen → übriges Deutschland → übriges Europa → außerhalb
 Europas; die ersten beiden tragen die gemeinsame Klammer „Marburg und Mittelhessen“. Vor „außerhalb Europas“ steht ein etwas größerer
 Abstand – ein Kategorienschritt, keine Entfernung. **„Nicht zuordenbar“ ist keine Region:** keine Spalte, kein gleichrangiges Band. In den
-Matrizen wird der Kontakt in einem Hinweis genannt („Wohnort nicht zuordenbar (nicht dargestellt): A22“). In G2 gilt dasselbe für Kontakte
-ohne bestätigte Verbindung („Wohnort nicht zuordenbar: A17.“); hat ein solcher Kontakt bestätigte Verbindungen, steht er unter den Bändern
-in einer Zeile ohne Fläche und Rahmen („Wohnort nicht zuordenbar (keinem Bereich zugeordnet):“), damit keine Verbindung verloren geht – die
-Legende zählt diese Linien getrennt („ohne Bereich“).
+Matrizen wird der Kontakt in einem Hinweis genannt („Wohnort nicht zuordenbar: A22.“). In G2 gilt dasselbe für Kontakte ohne bestätigte
+Verbindung; hat ein solcher Kontakt bestätigte Verbindungen, steht er unter den Bändern in einer Zeile ohne Fläche und Rahmen („Wohnort
+nicht zuordenbar:“), damit keine Verbindung verloren geht – die Legende nennt diese Linien („zwischen Bereichen · ohne Bereich“).
 
 ### 5.6 Fallkennzeichnung und Dateinamen
 
 Oben rechts, aus den Metadaten: Testfälle `TESTFALL <Nummer>* · SYNTHETISCH` bzw. `· FIKTIONALISIERT` (rot hinterlegt), echte Fälle
 `FALL · <display_code>` oder, ohne `display_code`, `FALL · MARES-<Nummer>`. Nie ein Name, nie der lange Ordnername. Dateien:
 `<Fallcode>_<Grafikcode>_<Bezeichnung>.png` (optional `.svg`).
+
+### 5.7 Redaktionelle Regeln für alle neun Grafiken
+
+Begründung: [`ADR-0018`](../decisions/ADR-0018_2026-11-05_netzwerk-v1-redaktioneller-standard.md); jeder sichtbare Text mit Herkunft:
+[`network-v1-visualization-text-inventory.md`](network-v1-visualization-text-inventory.md).
+
+- **Titel** nur inhaltlich, aus einer Tabelle (`base.TITLES`, dieselbe für das Register); die Codes G1 … X1 stehen in Register,
+  Dateinamen, Metadaten und Dokumentation, nie im sichtbaren Titel. **Kein Untertitel.**
+- **Fußzeile** einheitlich `MARES · network_v1 · <n> Kontakte` (alle erfassten Kontakte des Falls). Gruppenzahl, Datenqualität,
+  Prüfstatus und Provenienz stehen in Metadaten, Prüfbericht und Run-Record; Testfälle kennzeichnet das Fallkennzeichen.
+- **Fehlende Angaben** heißen überall `keine Angabe`; Kontakte, die mangels Wohnortbereich nicht dargestellt werden, nennt
+  `Wohnort nicht zuordenbar: <IDs>.`, in X1 `Wohnort nicht darstellbar: <IDs>.` (auch Orte ohne Ortsverzeichniseintrag). Hinweise
+  erscheinen nur, wenn die Bedingung zutrifft.
+- **Legenden** erklären Zeichen, keine Methode. Die Heatmap-Legende von P3/P4 ist eine gemeinsame Definition (`base.HEAT_LEGEND`) und
+  nennt die Bezugsgröße („n = Kontakte mit Angabe im jeweiligen Wohnortbereich“).
+- **Methodische Erläuterungen** stehen hier, nicht in den Grafiken. Sie gelten unverändert, auch wo die Grafik sie nicht mehr nennt:
+  - G1: Abstand zu Ego = persönliche Nähe; die Winkelbereiche ordnen nach Beziehungstyp, die Lage innerhalb eines Sektors hat keine
+    Bedeutung (§6).
+  - G2, P1–P4: Wohnortbereiche sind Kategorien, keine Entfernungen; persönliche Nähe und Wohnort sind getrennte Merkmale (§5.1, §5.5).
+  - G2, G3: Linien zeigen bestätigte Paare; eine fehlende Linie heißt nicht „kein Kontakt“; gemeinsame Gruppenmitgliedschaft ist keine
+    Verbindung (§2.4). Die Abdeckung der Paare (bestätigt, verneint, unbekannt) steht im Prüfbericht und im Run-Record.
+  - G3: Die Punktskala zeigt genau den erhobenen Wert der Zugehörigkeit, eine einzelne Selbsteinschätzung, nicht die interne Vernetzung.
+  - P2: Kontakthäufigkeit ist eine geordnete Kategorie; Zeilenabstände sind keine gemessenen Zeitabstände.
+  - P3/P4: fehlende Angaben stehen getrennt und zählen nie als „nein“; P4: Mehrsprachige zählen in jeder Sprache.
+  - P5: Ein Kontakt erscheint in jeder seiner Funktionsspalten.
+  - X1: Panels mit eigenem Maßstab; Kontakte schematisch neben dem Ortspunkt; „und Umgebung“ nach dem Ortsverzeichnis (§6.1).
 
 ## 6. Die neun Standardgrafiken ([`figures/`](../../src/mares/network_v1/figures/__init__.py))
 
@@ -200,14 +225,14 @@ Reihenfolge im Register: G1, G2, P1, P2, P3, P4, P5, G3, X1. Alle sichtbaren Tex
 
 | Code | Datei | Darstellung | Legende |
 |---|---|---|---|
-| G1 | `G1_persoenliches_netz` | **nur Nähe und Beziehungstyp, keine Kontakt-Kontakt-Linien** (die zeigen G2 und G3). Ego im Zentrum, Abstand = erhobene Nähe (Ringe 1–4 durchgezogen, 1,5/2,5/3,5 gestrichelt); **Winkelsektoren nach Beziehungstyp**: feste Folge Familie, Partner:in, Freund:in, Bekannte:r, Professionell/institutionell, Sonstige, (keine Angabe), gegen den Uhrzeigersinn ab der Ringbeschriftung oben; Sektorbreite ∝ Zahl der Kontakte des Typs, fehlende Typen ohne Breite, aber an ihrem Platz in der Folge; auf jedem Ring die Kontakte eines Typs über ihren Sektor verteilt (ID-Reihenfolge) und nur so weit auseinandergeschoben, dass sich keine Knoten berühren (Reihenfolge bleibt). Keine Sektorlinien, keine Hintergrundflächen. Nur der Winkel ist Layout, kein Kontakt wird auf einen anderen Nähewert verschoben; Ringzahlen bleiben frei; Kontakte ohne Nähe auf einem äußeren Bogen (nur bei Bedarf). Hinweis: „Abstand zu Ego = persönliche Nähe; Winkelbereiche ordnen die Kontakte nach Beziehungstyp. Die genaue Position innerhalb eines Sektors hat keine zusätzliche inhaltliche Bedeutung.“ | side |
+| G1 | `G1_persoenliches_netz` | **nur Nähe und Beziehungstyp, keine Kontakt-Kontakt-Linien** (die zeigen G2 und G3). Ego im Zentrum, Abstand = erhobene Nähe (Ringe 1–4 durchgezogen, 1,5/2,5/3,5 gestrichelt); **Winkelsektoren nach Beziehungstyp**: feste Folge Familie, Partner:in, Freund:in, Bekannte:r, Professionell/institutionell, Sonstige, (keine Angabe), gegen den Uhrzeigersinn ab der Ringbeschriftung oben; Sektorbreite ∝ Zahl der Kontakte des Typs, fehlende Typen ohne Breite, aber an ihrem Platz in der Folge; auf jedem Ring die Kontakte eines Typs über ihren Sektor verteilt (ID-Reihenfolge) und nur so weit auseinandergeschoben, dass sich keine Knoten berühren (Reihenfolge bleibt). Keine Sektorlinien, keine Hintergrundflächen. Nur der Winkel ist Layout, kein Kontakt wird auf einen anderen Nähewert verschoben; Ringzahlen bleiben frei; Kontakte ohne Nähe auf einem äußeren Bogen (nur bei Bedarf). Legende „Persönliche Nähe“: „1 sehr nah · 2 nah · 3 weniger nah · 4 außerhalb der Kreise“ und „Zwischenwerte: 1,5 · 2,5 · 3,5“; kein Hinweis (die Lesart steht in §5.7) | side |
 | G2 | `G2_geografisches_netz` | Bänder je Bereich (Breite folgt der Kontaktzahl); darin **geografische Untergruppen**: übriges Mittelhessen und übriges Deutschland nach Wohnort, Ausland nach Wohnland – mehrere Kontakte in einer hellen, fein umrandeten Fläche mit „Ort · Anzahl“ darüber, ein einzelner Kontakt ohne Fläche mit dem Ortsnamen darüber; Marburg ohne weitere Untergliederung. Verbundene Kontakte einer Untergruppe liegen auf einer Ellipse (keine Linie läuft durch einen dritten Knoten). Sitzen drei oder mehr Untergruppen nebeneinander, steht jede zweite tiefer (keine Linie durch einen fremden Knoten, keine Ortsbeschriftung auf einer Linie). Linien im Bereich durchgezogen, zwischen Bereichen dünn, hell, gestrichelt. Unbekannte Wohnorte: nie ein Band (§5.5). Untere Zone: Kontakte ohne bestätigte Verbindung (keine Aussage über tatsächliche Kontakte). Untergruppen sind nur gemeinsame Geografie, keine sozialen Gruppen | bottom |
 | P1 | `P1_wohnort_naehe` | Punktmatrix Bereich × Nähe (1, 1,5 … 4; „keine Angabe“ nur bei Bedarf) | bottom |
 | P2 | `P2_wohnort_haeufigkeit` | derselbe Baustein, Zeilen = Kontakthäufigkeit 1–5 | bottom |
-| P3 | `P3_wohnort_kommunikation` | Heatmap; Zelle = Anzahl der Kontakte, Farbe = Anteil an n des Bereichs; 0 = leere weiße Zelle; Spalte mit n = 1 neutral; Zeilen ohne Codes, visuell gegliedert (persönlich · synchron auf Distanz: Video, Telefon · asynchron: Sprach-, Textnachrichten · weitere Formen), keine Summen; „ohne Angabe“ nur wenn vorhanden | bottom (Farbskala) |
+| P3 | `P3_wohnort_kommunikation` | Heatmap; Zelle = Anzahl der Kontakte, Farbe = Anteil an n des Bereichs; 0 = leere weiße Zelle; Spalte mit n = 1 neutral; Zeilen ohne Codes, visuell gegliedert (persönlich · synchron auf Distanz: Video, Telefon · asynchron: Sprach-, Textnachrichten · weitere Formen), keine Summen; „keine Angabe“ nur wenn vorhanden; Legende: Farbintensität, Zahl, n = 1, Bezugsgröße n (§5.7) | bottom (Farbskala) |
 | P4 | `P4_wohnort_sprachen` | derselbe Baustein; Zeilen Spanisch, Deutsch, Englisch, Portugiesisch und **jede** benannte weitere Sprache; M/S bleiben im Datenmodell, ohne eigene Grafik | bottom (Farbskala) |
 | P5 | `P5_funktionen_naehe` | Punktmatrix Funktionen × Nähe, Bezeichnungen ohne Codes, n je Spalte; „Nichts davon“ und „keine Angabe“ nur, wenn sie vorkommen, abgesetzt | bottom |
-| G3 | `G3_gruppen_zugehoerigkeit` | **eine** große Gruppenkarte: Kontakte als Knoten, die von Ego benannten Gruppen als Umrandungen mit heller Fläche; alle Umrandungen gleich stark. Beschriftung als Block aus zwei Zeilen: `C04 · <Bezeichnung> (3)` und darunter `○●○○○ 2` – **fünfstufige Punktskala** (1 links … 5 rechts), genau der erhobene Wert gefüllt, daneben die Zahl; kein „Zugehörigkeit“, keine verbalen Stufen, kein „Kontakte“ je Gruppe (die Legende erklärt die Skala einmal: „1 = sehr stark bis 5 = überhaupt nicht; der markierte Punkt zeigt den erhobenen Wert“). Ohne Wert kein Punkt gefüllt, statt der Zahl das Kürzel des Fehlens (`KA`, `NS`, `NA`, `n. e.`), in der Legende aufgelöst. Die Bezeichnung erscheint wie erhoben, nur ohne Testdaten-Zusatz („(fiktive Bezeichnung)“, „(synthetisch)“) und bei mehr als 34 Zeichen gekürzt – nur in der Darstellung, die Daten bleiben unverändert. Die Skala zeigt eine einzelne Selbsteinschätzung, nicht die interne Vernetzung. **Platzierung:** der Block liegt unmittelbar außerhalb der eigenen Umrandung (Kandidaten rundum in festem Abstand), nicht auf Knoten, Verbindungen, anderen Beschriftungen, Umrandungslinien oder fremden Gruppenflächen; die Flächen der Gruppen, die eine eingebettete Gruppe umschließen, zählen für deren Beschriftung nicht als fremd. Ist kein naher Platz frei, verbindet eine kurze feine Linie in der Gruppenfarbe Block und Umrandung (deren Kreuzungen mit fremden Umrandungen zählen mit). Links und rechts der Karte bleibt Platz für Beschriftungen am Rand. Eine ganz in anderen liegende Gruppe bekommt eine engere Umrandung und keinen eigenen Ankerplatz (ihre Mitglieder liegen in der Schnittfläche der umgebenden Gruppen). Farbige Ringe nur für Mehrfachmitglieder, deren Mitgliedschaften die Umrandungen nicht schon zeigen (nicht bei eingebetteten Gruppen). Nichtmitglieder werden aus fremden Umrandungen geschoben; ungruppierte Kontakte mit Verbindungen außen, ohne Gruppe und ohne Verbindung in einer Zeile unten („keiner Gruppe zugeordnet, keine bestätigte Verbindung:“). T/P/N/NS wirken nur über die abgeleiteten Linien | bottom |
+| G3 | `G3_gruppen_zugehoerigkeit` | **eine** große Gruppenkarte: Kontakte als Knoten, die von Ego benannten Gruppen als Umrandungen mit heller Fläche; alle Umrandungen gleich stark. Beschriftung als Block aus zwei Zeilen: `C04 · <Bezeichnung> (3)` und darunter `○●○○○ 2` – **fünfstufige Punktskala** (1 links … 5 rechts), genau der erhobene Wert gefüllt, daneben die Zahl; kein „Zugehörigkeit“, keine verbalen Stufen, kein „Kontakte“ je Gruppe (die Legende erklärt die Skala einmal: „Zugehörigkeit: 1 sehr stark – 5 überhaupt nicht“). Ohne Wert kein Punkt gefüllt, statt der Zahl das Kürzel des Fehlens (`KA`, `NS`, `NA`, `n. e.`), in der Legende aufgelöst. Die Bezeichnung erscheint wie erhoben, nur ohne Testdaten-Zusatz („(fiktive Bezeichnung)“, „(synthetisch)“) und bei mehr als 34 Zeichen gekürzt – nur in der Darstellung, die Daten bleiben unverändert. Die Skala zeigt eine einzelne Selbsteinschätzung, nicht die interne Vernetzung. **Platzierung:** der Block liegt unmittelbar außerhalb der eigenen Umrandung (Kandidaten rundum in festem Abstand), nicht auf Knoten, Verbindungen, anderen Beschriftungen, Umrandungslinien oder fremden Gruppenflächen; die Flächen der Gruppen, die eine eingebettete Gruppe umschließen, zählen für deren Beschriftung nicht als fremd. Ist kein naher Platz frei, verbindet eine kurze feine Linie in der Gruppenfarbe Block und Umrandung (deren Kreuzungen mit fremden Umrandungen zählen mit). Links und rechts der Karte bleibt Platz für Beschriftungen am Rand. Eine ganz in anderen liegende Gruppe bekommt eine engere Umrandung und keinen eigenen Ankerplatz (ihre Mitglieder liegen in der Schnittfläche der umgebenden Gruppen). Farbige Ringe nur für Mehrfachmitglieder, deren Mitgliedschaften die Umrandungen nicht schon zeigen (nicht bei eingebetteten Gruppen). Nichtmitglieder werden aus fremden Umrandungen geschoben; ungruppierte Kontakte mit Verbindungen außen, ohne Gruppe und ohne Verbindung in einer Zeile unten („keiner Gruppe zugeordnet, keine bestätigte Verbindung:“). T/P/N/NS wirken nur über die abgeleiteten Linien | bottom |
 | X1 | `X1_geografische_verteilung` | Karte: wo die Kontakte leben – Panels Amerika · Europa (ohne Deutschland) · Deutschland (weitere Regionen bei Bedarf), Ortspunkt an der wahren Lage, die Kontakte daneben nach Beziehungstyp gefärbt, keine Verbindungslinien; Einzelheiten §6.1 | bottom |
 
 Ausgelegt und an den Testfällen geprüft für 22 und 32 Kontakte mit 5–6 Gruppen; für 30–40 Kontakte vorgesehen, mit mehr nicht geprüft.
