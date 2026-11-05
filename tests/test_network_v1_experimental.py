@@ -36,7 +36,7 @@ PLACES = {  # public coordinates of the invented places of case 002 (as in pilot
     ("Berlin", "DEU"): (52.52, 13.40), ("Madrid", "ESP"): (40.42, -3.70), ("Barcelona", "ESP"): (41.39, 2.17),
     ("Lyon", "FRA"): (45.76, 4.84), ("Bogotá", "COL"): (4.71, -74.07), ("Medellín", "COL"): (6.24, -75.58),
     ("Quito", "ECU"): (-0.18, -78.47), ("Miami", "USA"): (25.76, -80.19), ("Toronto", "CAN"): (43.65, -79.38),
-    ("Kyjiw", "UKR"): (50.45, 30.52),
+    ("Kyjiw", "UKR"): (50.45, 30.52), ("Chía", "COL"): (4.86, -74.06),
 }
 
 
@@ -49,17 +49,23 @@ def basemap() -> dict:
     return {"type": "FeatureCollection", "features": features}
 
 
-def gazetteer_text(places=PLACES) -> str:
-    return "place;country_iso3;lat;lon;basis\n" + "".join(f"{p};{iso};{lat};{lon};synthetic\n" for (p, iso), (lat, lon) in places.items())
+NOT_CENTRES = {"Wehrda", "Cölbe", "Lahntal", "Chía"}  # district / surrounding municipalities; every other place is a centre
+
+
+def gazetteer_text(places=PLACES, *, centre_column=True) -> str:
+    if not centre_column:
+        return "place;country_iso3;lat;lon;basis\n" + "".join(f"{p};{iso};{lat};{lon};synthetic\n" for (p, iso), (lat, lon) in places.items())
+    return "place;country_iso3;lat;lon;basis;centre\n" + "".join(
+        f"{p};{iso};{lat};{lon};synthetic;{0 if p in NOT_CENTRES else 1}\n" for (p, iso), (lat, lon) in places.items())
 
 
 def countries() -> dict:
     return {f["properties"]["ADM0_A3"]: f for f in basemap()["features"]}
 
 
-def gazetteer(tmp_path, places=PLACES) -> dict:
+def gazetteer(tmp_path, places=PLACES, *, centre_column=True) -> dict:
     path = tmp_path / "gazetteer.csv"
-    path.write_text(gazetteer_text(places), encoding="utf-8")
+    path.write_text(gazetteer_text(places, centre_column=centre_column), encoding="utf-8")
     return read_gazetteer(path)
 
 
@@ -97,18 +103,52 @@ def test_every_assignable_contact_is_placed_once_and_nodes_never_overlap(case, t
             assert panel.x < x < panel.x + panel.width and panel.y < y < panel.y + panel.height
 
 
-def test_near_places_form_a_place_group_und_umgebung(case, tmp_path):
+def test_only_non_centres_join_the_nearest_centre_as_und_umgebung(case, tmp_path):
     layout = x1_layout(context(case), gazetteer(tmp_path), countries())
+    names = {p.places[0][0]: [n for n, _ in p.places] for p in layout.places}
+    assert names["Marburg"] == ["Marburg", "Cölbe", "Lahntal", "Wehrda"]  # district and surrounding municipalities
     marburg = next(p for p in layout.places if p.places[0][0] == "Marburg")
-    assert {name for name, _ in marburg.places} == {"Marburg", "Wehrda", "Cölbe", "Lahntal", "Kirchhain"}  # all within 20 km
-    assert marburg.title == f"Marburg und Umgebung · n = {len(marburg.members)}" and marburg.sub.startswith("Marburg 10 · ")
-    giessen = next(p for p in layout.places if p.places[0][0] == "Gießen")
-    assert [name for name, _ in giessen.places] == ["Gießen", "Wetzlar"]  # 26 km from Marburg: a group of its own
+    assert marburg.title == "Marburg und Umgebung · n = 13" and marburg.sub == "Marburg 10 · Cölbe · Lahntal · Wehrda"
+    for centre in ("Gießen", "Wetzlar", "Kirchhain", "Kassel", "Bogotá", "Medellín"):
+        assert names[centre] == [centre]  # independent town centres stay apart, also within 20 km (Gießen–Wetzlar 13 km)
     berlin = next(p for p in layout.places if p.places[0][0] == "Berlin")
     assert not berlin.group and berlin.title == "Berlin" and not berlin.sub
-    bogota = next(p for p in layout.places if p.places[0][0] == "Bogotá")
-    assert [name for name, _ in bogota.places] == ["Bogotá"]  # Medellín (about 240 km) is never "Umgebung", even if symbols collide
-    assert any(p.places == [("Medellín", 1)] for p in layout.places)
+
+
+def test_without_centre_information_nothing_is_grouped(case, tmp_path):
+    layout = x1_layout(context(case), gazetteer(tmp_path, centre_column=False), countries())
+    assert not any(p.group for p in layout.places)  # unknown = a centre: conservative
+
+
+def test_a_non_centre_joins_only_the_nearest_centre_no_chains(case, tmp_path):
+    places = {**PLACES, ("Wehrda", "DEU"): (50.70, 8.73)}  # now between Marburg (12 km) and Gießen (15 km)
+    layout = x1_layout(context(case), gazetteer(tmp_path, places), countries())
+    names = {p.places[0][0]: [n for n, _ in p.places] for p in layout.places}
+    assert "Wehrda" in names["Marburg"] and names["Gießen"] == ["Gießen"]
+
+
+def test_an_invalid_centre_value_is_an_error(tmp_path):
+    bad = tmp_path / "bad.csv"
+    bad.write_text("place;country_iso3;lat;lon;basis;centre\nMarburg;DEU;50.81;8.77;x;ja\n", encoding="utf-8")
+    with pytest.raises(X1Error):
+        read_gazetteer(bad)
+
+
+def test_place_boxes_name_the_country_outside_germany_only(case, tmp_path):
+    rows = read_rows(case, "contacts.csv")
+    medellin = next(r for r in rows if r["residence_place"] == "Medellín")
+    medellin["residence_place"] = "Chía"  # about 17 km from Bogotá: a place group abroad
+    write_rows(case, "contacts.csv", rows)
+    layout = x1_layout(context(case), gazetteer(tmp_path), countries())
+    titles = {p.places[0][0]: p.title for p in layout.places}
+    assert titles["Bogotá"] == "Bogotá und Umgebung · Kolumbien · n = 4"  # group abroad: with the country
+    assert titles["Madrid"] == "Madrid · Spanien" and titles["Toronto"] == "Toronto · Kanada"  # single places abroad
+    assert titles["Berlin"] == "Berlin" and titles["Marburg"].startswith("Marburg und Umgebung · n = ")  # Germany: no country
+    rows = read_rows(case, "contacts.csv")
+    next(r for r in rows if r["residence_place"] == "Toronto")["residence_place"] = ""
+    write_rows(case, "contacts.csv", rows)
+    only = next(p for p in x1_layout(context(case), gazetteer(tmp_path), countries()).places if p.country_only)
+    assert only.title == "Kanada · nur Land bekannt"  # the country is the name already, not repeated
 
 
 def test_extents_follow_the_contacts_and_germany_stays_the_largest_panel(case, tmp_path):
@@ -218,8 +258,8 @@ def test_x1_has_no_ties_but_place_boxes_points_and_pale_discs(case, tmp_path):
     assert gids.count("place-disc") == sum(1 for p in layout.places if len(p.members) > 1)
     texts = " ".join(t.get_text() for t in figure.findobj(Text))
     assert "X1 · Geografische Verteilung des persönlichen Netzwerks" in texts and "TESTFALL 002*" in texts
-    assert "Fassung 2.1" in texts and "keine Standardgrafik" in texts and "Keine Verbindungslinien" in texts
-    assert "Marburg und Umgebung · n = 14" in texts
+    assert "Fassung 2.2" in texts and "keine Standardgrafik" in texts and "keine Verbindungslinien" in texts
+    assert "Marburg und Umgebung · n = 13" in texts
 
 
 def test_render_x1_writes_into_experimental_and_leaves_graphics_alone(tmp_path):
@@ -237,7 +277,7 @@ def test_render_x1_writes_into_experimental_and_leaves_graphics_alone(tmp_path):
         f"{SYNTHETIC_CODE}_X1_geografische_verteilung.png", f"{SYNTHETIC_CODE}_X1_geografische_verteilung.svg"]
     assert not (case / "graphics").exists()  # the standard figures are not touched
     record = json.loads((folders["workspace"] / "runs" / result.run_id / "run_record.json").read_text(encoding="utf-8"))
-    assert record["standard_figure"] is False and record["version"] == "2.1" and record["unresolved"] == ["A22"] and str(folders["intake"]) not in json.dumps(record)
+    assert record["standard_figure"] is False and record["version"] == "2.2" and record["unresolved"] == ["A22"] and str(folders["intake"]) not in json.dumps(record)
 
 
 def test_render_x1_needs_the_basemap_and_a_valid_directory(tmp_path):
