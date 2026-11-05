@@ -167,7 +167,13 @@ Farbe bedeutet in Knoten immer nur den Beziehungstyp – nie Region, Nähe oder 
 ### 5.4 Legenden
 
 Genau zwei Layouts: `side` (senkrecht rechts, G1) und `bottom` (waagerecht unter der Grafik, alle übrigen). Reihenfolge, Bezeichnungen und
-Farben der Beziehungstypen sind überall gleich und stammen aus `codes.RELATION_TYPE`. P3/P4 zeigen in der Legende die Farbskala.
+Farben der Beziehungstypen sind überall gleich und stammen aus `codes.RELATION_TYPE`. **Die Beziehungstyp-Legende zeigt nur die Typen,
+die im Fall vorkommen** – in der festen Reihenfolge der Tabelle A, jeder Typ mit seiner festen Farbe, unabhängig davon, welche anderen
+vorkommen; ein Typ, den kein Kontakt des Falls hat, entfällt. Kontakte ohne gültigen Beziehungstyp werden keinem Typ zugeschlagen: weißer
+Knoten mit gepunktetem Rand und der Eintrag „keine Angabe“. Ermittelt einmal je Fall in der gemeinsamen Komponente
+(`base.relation_entries`), gleich für G1, G2, G3, P1, P2, P5 und X1; Knotenfarben und Grafik bleiben davon unberührt
+([`ADR-0017`](../decisions/ADR-0017_2026-11-05_netzwerk-v1-dynamische-beziehungstyp-legende.md)). P3/P4 zeigen in der
+Legende die Farbskala.
 
 ### 5.5 Geografie in Grafiken
 
