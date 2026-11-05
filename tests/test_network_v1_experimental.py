@@ -14,7 +14,7 @@ from mares.core.refs import StorageRef
 from mares.network_v0.figures.style import rc
 from mares.network_v1.case import read_case
 from mares.network_v1.experimental import (
-    BASEMAP, GAZETTEER, NODE_R, X1Error, place_labels, read_gazetteer, render_x1, x1, x1_layout,
+    BASEMAP, GAZETTEER, NODE_R, X1Error, read_gazetteer, render_x1, x1, x1_layout,
 )
 from mares.network_v1.figures.base import Context
 from mares.network_v1.testcases import SYNTHETIC_CODE
@@ -27,6 +27,7 @@ COUNTRIES = {
     "FRA": ("Europe", "Frankreich", 46.5, 2.5, 4.0), "COL": ("South America", "Kolumbien", 4.0, -73.0, 5.0),
     "ECU": ("South America", "Ecuador", -1.5, -78.0, 2.0), "USA": ("North America", "Vereinigte Staaten", 39.0, -98.0, 15.0),
     "CAN": ("North America", "Kanada", 56.0, -100.0, 12.0), "JPN": ("Asia", "Japan", 36.0, 138.0, 3.0),
+    "UKR": ("Europe", "Ukraine", 49.0, 31.0, 4.0),
 }
 PLACES = {  # public coordinates of the invented places of case 002 (as in pilots/network_v1_map)
     ("Marburg", "DEU"): (50.81, 8.77), ("Wehrda", "DEU"): (50.84, 8.76), ("Cölbe", "DEU"): (50.85, 8.78),
@@ -35,6 +36,7 @@ PLACES = {  # public coordinates of the invented places of case 002 (as in pilot
     ("Berlin", "DEU"): (52.52, 13.40), ("Madrid", "ESP"): (40.42, -3.70), ("Barcelona", "ESP"): (41.39, 2.17),
     ("Lyon", "FRA"): (45.76, 4.84), ("Bogotá", "COL"): (4.71, -74.07), ("Medellín", "COL"): (6.24, -75.58),
     ("Quito", "ECU"): (-0.18, -78.47), ("Miami", "USA"): (25.76, -80.19), ("Toronto", "CAN"): (43.65, -79.38),
+    ("Kyjiw", "UKR"): (50.45, 30.52),
 }
 
 
@@ -88,20 +90,59 @@ def test_every_assignable_contact_is_placed_once_and_nodes_never_overlap(case, t
     for i, (x0, y0) in enumerate(points):
         for x1_, y1 in points[i + 1:]:
             assert math.hypot(x1_ - x0, y1 - y0) >= 2 * NODE_R
-    for cl in layout.clusters:  # every node inside the panel of its region
+    for cl in layout.places:  # every node inside the panel of its region
         panel = next(p for p in layout.panels if p.region.key == cl.region)
         for cid in cl.members:
             x, y = layout.positions[cid]
             assert panel.x < x < panel.x + panel.width and panel.y < y < panel.y + panel.height
 
 
-def test_places_very_close_on_the_map_form_one_named_place_group(case, tmp_path):
+def test_near_places_form_a_place_group_und_umgebung(case, tmp_path):
     layout = x1_layout(context(case), gazetteer(tmp_path), countries())
-    marburg = next(cl for cl in layout.clusters if cl.places[0][0] == "Marburg")
-    names = [p for p, _ in marburg.places]
-    assert names[0] == "Marburg" and {"Wehrda", "Cölbe", "Lahntal", "Kirchhain"} <= set(names)
-    assert marburg.label.startswith(f"Marburg u. a. · {len(marburg.members)}") and "Wehrda" in marburg.label
-    assert all(len(cl.places) == 1 for cl in layout.clusters if cl.places[0][0] in ("Berlin", "Madrid", "Toronto"))
+    marburg = next(p for p in layout.places if p.places[0][0] == "Marburg")
+    assert {name for name, _ in marburg.places} == {"Marburg", "Wehrda", "Cölbe", "Lahntal", "Kirchhain"}  # all within 20 km
+    assert marburg.title == f"Marburg und Umgebung · n = {len(marburg.members)}" and marburg.sub.startswith("Marburg 10 · ")
+    giessen = next(p for p in layout.places if p.places[0][0] == "Gießen")
+    assert [name for name, _ in giessen.places] == ["Gießen", "Wetzlar"]  # 26 km from Marburg: a group of its own
+    berlin = next(p for p in layout.places if p.places[0][0] == "Berlin")
+    assert not berlin.group and berlin.title == "Berlin" and not berlin.sub
+
+
+def test_germany_is_the_largest_panel_europe_is_narrow_and_america_follows_the_contacts(case, tmp_path):
+    layout = x1_layout(context(case), gazetteer(tmp_path), countries())
+    panels = {p.region.key: p for p in layout.panels}
+    assert panels["germany"].height > panels["europe"].height and panels["germany"].height > panels["americas"].height
+    assert all(p.y + p.height == pytest.approx(layout.height) for p in layout.panels)  # top-aligned
+    assert panels["europe"].lon == (-10.5, 19.5)  # Portugal to a little east of Germany
+    assert panels["americas"].lat[1] > 43.65  # 002 has a contact in Toronto: the panel reaches north
+    rows = read_rows(case, "contacts.csv")
+    for row in rows:
+        if row["residence_country_iso3"] in ("USA", "CAN"):
+            row.update(residence_place="Bogotá", residence_country="Kolumbien", residence_country_iso3="COL")
+    rows[0].update(residence_place="Kyjiw", residence_country="Ukraine", residence_country_iso3="UKR")
+    write_rows(case, "contacts.csv", rows)
+    panels = {p.region.key: p for p in x1_layout(context(case), gazetteer(tmp_path), countries()).panels}
+    assert panels["americas"].lat == (-56.0, 33.0)  # nothing north of Mexico: Mexico to South America only
+    assert panels["europe"].lon[1] > 30.52  # an eastern contact widens Europe
+
+
+def test_place_boxes_sit_off_the_nodes_and_their_leader_runs_through_a_free_slot(case, tmp_path):
+    layout = x1_layout(context(case), gazetteer(tmp_path), countries())
+    boxes = [p.box for p in layout.places]
+    for i, box in enumerate(boxes):
+        for other in boxes[i + 1:]:
+            assert not (box[0] < other[2] and other[0] < box[2] and box[1] < other[3] and other[1] < box[3])
+        for x, y in layout.positions.values():
+            assert not (box[0] < x + NODE_R and x - NODE_R < box[2] and box[1] < y + NODE_R and y - NODE_R < box[3])
+    for p in layout.places:
+        if len(p.members) < 2:
+            continue
+        sx, sy = min(max(p.hub[0], p.box[0]), p.box[2]), min(max(p.hub[1], p.box[1]), p.box[3])
+        for cid in p.members:  # the leader from the box to the place point passes no node of its place
+            x, y = layout.positions[cid]
+            dx, dy = p.hub[0] - sx, p.hub[1] - sy
+            t = max(0.0, min(1.0, ((x - sx) * dx + (y - sy) * dy) / (dx * dx + dy * dy)))
+            assert math.hypot(sx + t * dx - x, sy + t * dy - y) > NODE_R * 0.9, (p.places[0][0], cid)
 
 
 def test_a_contact_known_only_by_country_sits_at_the_country_point_marked_as_unsharp(case, tmp_path):
@@ -113,8 +154,8 @@ def test_a_contact_known_only_by_country_sits_at_the_country_point_marked_as_uns
     write_rows(case, "contacts.csv", rows)
     ctx = context(case)
     layout = x1_layout(ctx, gazetteer(tmp_path), countries())
-    cluster = next(cl for cl in layout.clusters if cid in cl.members)
-    assert cluster.country_only and cluster.anchor == (56.0, -100.0) and "nur Land" in cluster.label  # never a city
+    cluster = next(cl for cl in layout.places if cid in cl.members)
+    assert cluster.country_only and cluster.anchor == (56.0, -100.0) and "nur Land bekannt" in cluster.title  # never a city
     with rc():
         figure = x1(ctx, gazetteer(tmp_path), countries())
     assert "nur Wohnland bekannt (Lage unscharf)" in " ".join(t.get_text() for t in figure.findobj(Text))
@@ -140,20 +181,21 @@ def test_further_regions_appear_only_when_needed_between_america_and_europe(case
     assert [p.region.key for p in layout.panels] == ["americas", "asia", "europe", "germany"]
 
 
-def test_x1_has_no_ties_and_labels_stay_off_the_nodes(case, tmp_path):
+def test_x1_has_no_ties_but_place_boxes_points_and_pale_discs(case, tmp_path):
     ctx = context(case)
     with rc():
         figure = x1(ctx, gazetteer(tmp_path), countries())
     ax = figure.axes[0]
     assert not [p for p in ax.patches if isinstance(p, PathPatch)]  # no contact-contact ties
-    assert {line.get_gid() for line in ax.lines} <= {"leader", "label-leader"}  # only lines to the true place point / to a label
+    assert {line.get_gid() for line in ax.lines} <= {"leader", "offset"}  # box leaders and lines to a true place point only
+    layout = x1_layout(ctx, gazetteer(tmp_path), countries())
+    gids = [p.get_gid() for p in ax.patches]
+    assert gids.count("place-box") == gids.count("place-point") == len(layout.places)
+    assert gids.count("place-disc") == sum(1 for p in layout.places if len(p.members) > 1)
     texts = " ".join(t.get_text() for t in figure.findobj(Text))
     assert "X1 · Geografische Verteilung des persönlichen Netzwerks" in texts and "TESTFALL 002*" in texts
-    assert "keine Standardgrafik" in texts and "Keine Verbindungslinien" in texts
-    layout = x1_layout(ctx, gazetteer(tmp_path), countries())
-    for box, _edge in place_labels(layout):
-        for x, y in layout.positions.values():
-            assert not (box[0] < x + NODE_R and x - NODE_R < box[2] and box[1] < y + NODE_R and y - NODE_R < box[3])
+    assert "Fassung 2" in texts and "keine Standardgrafik" in texts and "Keine Verbindungslinien" in texts
+    assert "Marburg und Umgebung · n = 14" in texts
 
 
 def test_render_x1_writes_into_experimental_and_leaves_graphics_alone(tmp_path):
@@ -171,7 +213,7 @@ def test_render_x1_writes_into_experimental_and_leaves_graphics_alone(tmp_path):
         f"{SYNTHETIC_CODE}_X1_geografische_verteilung.png", f"{SYNTHETIC_CODE}_X1_geografische_verteilung.svg"]
     assert not (case / "graphics").exists()  # the standard figures are not touched
     record = json.loads((folders["workspace"] / "runs" / result.run_id / "run_record.json").read_text(encoding="utf-8"))
-    assert record["standard_figure"] is False and record["unresolved"] == ["A22"] and str(folders["intake"]) not in json.dumps(record)
+    assert record["standard_figure"] is False and record["version"] == 2 and record["unresolved"] == ["A22"] and str(folders["intake"]) not in json.dumps(record)
 
 
 def test_render_x1_needs_the_basemap_and_a_valid_directory(tmp_path):

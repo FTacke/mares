@@ -1,10 +1,12 @@
 """Experimental figures of network_v1 -- for evaluation only, not part of the eight standard figures.
 
-X1 · Geografische Verteilung: where the contacts live, on regional map panels (Amerika, Europa, Deutschland; further
-regions only when the data need them). No contact-contact and no ego lines; node colour = relation type, as in every
-network figure. Contacts of one place sit in a small radial cluster around the place point; a contact whose residence is
-known only by country sits at the country's label point inside a dashed ring (never at an invented city); contacts
-without a usable residence are named in a note and not drawn.
+X1 · Geografische Verteilung (version 2): where the contacts live, on regional map panels (Amerika, Europa, Deutschland;
+further regions only when the data need them). No contact-contact and no ego lines; node colour = relation type, as in
+every network figure. The contacts of one place -- or of a place group ("Marburg und Umgebung": places within
+UMGEBUNG_KM of each other or falling together on the map) -- sit in rings around the place point on a very pale disc; a
+small place box names the place and is tied to the point by a fine leader that runs through a gap in the rings. A
+contact whose residence is known only by country sits at the country's label point inside a dashed ring (never at an
+invented city); contacts without a usable residence are named in a note and not drawn.
 
 Positions come from a hand-kept place directory (``ROOT:network_v1/reference/gazetteer.csv``: ``place; country_iso3;
 lat; lon; basis``) in the same root as the case -- never from a geocoding service, so residence data never leave the
@@ -23,7 +25,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
-from matplotlib.patches import Circle, Polygon
+from matplotlib.patches import Circle, FancyBboxPatch, Polygon
 
 from mares.core import ids
 from mares.core.refs import StorageRef
@@ -36,28 +38,35 @@ from .places import Area, norm
 from .run import check_case_ref
 from .validate import FAILED, validate
 
-X1_CODE, X1_NAME = "X1", "geografische_verteilung"
+X1_CODE, X1_NAME, X1_VERSION = "X1", "geografische_verteilung", 2
 EXPERIMENTAL_DIR = "experimental"
 GAZETTEER = "network_v1/reference/gazetteer.csv"  # in the root of the case
 BASEMAP = "cache/basemaps/ne_50m_admin_0_countries.geojson"  # in WORKSPACE
 GAZETTEER_COLUMNS = ("place", "country_iso3", "lat", "lon", "basis")
 
 NODE_R = NODE_PT / 72 / 2  # node radius in inches
-NODE_STEP = 2 * NODE_R + 0.05  # centre distance of two nodes of one cluster
-SINGLE_RING_MAX = 10  # up to this many contacts one ring around the place point, more in concentric rings
-RING_R0 = 0.22  # radius of the innermost ring around the place point (inches); further rings one node step outside
-LABEL_LINE_W = 1.7  # inches; a longer place list of a place group wraps
-MERGE_IN = 0.12  # places closer than this on the map (inches, about 3 mm) form one place group
-MAIN_W = 14.0
+NODE_STEP = 2 * NODE_R + 0.035  # centre distance of two nodes of one place
+SINGLE_RING_MAX = 10  # up to this many contacts one ring around the place point, more in rings of 6, 12, ... slots
+RING_R0 = 0.22  # smallest ring radius (inches): the place point and the leader stay visible
+DISC_PAD = 0.07  # the pale disc of a place reaches this far beyond its nodes
+UMGEBUNG_KM = 20.0  # places at most this far apart form a place group ("… und Umgebung")
+MERGE_IN = 0.12  # ... and so do places closer than this on the map (inches, about 3 mm)
+MAIN_W = 14.5
 PANEL_GAP = 0.3
-PANEL_H_MAX = 5.6
-TITLE_H = 0.3  # room for the panel title inside the panel
+OTHER_SCALE = 0.8  # the other panels are this high relative to the Germany panel
+GERMANY_H_MAX = 7.0
+TITLE_H = 0.32  # room for the panel title inside the panel
+BOX_PT = LABEL_PT - 1.0  # first line of a place box
+BOX_SUB_PT = LABEL_PT - 2.5  # list of places of a place group
+BOX_LINE_W = 1.7  # inches; a longer place list wraps
+BOX_PAD = 0.05
 GERMANY = (Area.MARBURG, Area.MITTELHESSEN, Area.GERMANY_OTHER)
+POINT = "#1F2933"
 
 
 @dataclass(frozen=True)
 class Region:
-    """A map panel: its title and default extent (lon, lat). The extent grows when a contact lies outside it."""
+    """A map panel: title and default extent (lon, lat). The extent grows to take in every place of the case."""
 
     key: str
     title: str
@@ -66,17 +75,20 @@ class Region:
 
 
 # Panels from left to right: Amerika, further regions (only when the data need them), Europa, Deutschland. Amerika, Europa
-# and Deutschland are always shown, so every case has the same three panels.
+# and Deutschland are always shown. Amerika by default from Mexico to the south; it reaches north only for contacts in the
+# USA or Canada. Europa by default from Portugal to a little east of Germany.
 REGIONS = (
-    Region("americas", "Amerika", (-125.0, -32.0), (-56.0, 60.0)),
+    Region("americas", "Amerika", (-118.0, -34.0), (-56.0, 33.0)),
     Region("africa", "Afrika", (-20.0, 52.0), (-36.0, 38.0)),
     Region("asia", "Asien", (25.0, 150.0), (-10.0, 60.0)),
     Region("oceania", "Ozeanien", (110.0, 180.0), (-48.0, 0.0)),
     Region("other", "Weitere Regionen", (-180.0, 180.0), (-60.0, 80.0)),
-    Region("europe", "Europa (ohne Deutschland)", (-11.0, 32.0), (34.0, 61.0)),
+    Region("europe", "Europa (ohne Deutschland)", (-10.5, 19.5), (35.0, 59.0)),
     Region("germany", "Deutschland", (5.5, 15.5), (47.0, 55.3)),
 )
 ALWAYS = ("germany", "europe", "americas")
+EXTENT_MARGIN = 8.0  # degrees added beyond a place outside (or at the edge of) the default extent
+EXTENT_INSET = 1.0  # a place closer than this to the edge of the default extent widens it
 CONTINENT_REGION = {"North America": "americas", "South America": "americas", "Africa": "africa", "Asia": "asia", "Oceania": "oceania"}
 
 
@@ -112,58 +124,87 @@ def read_basemap(path: Path) -> dict[str, dict]:
 
 
 # -------------------------------------------------------------------------------------------------- layout ---
-def ring_sizes(k: int) -> list[tuple[float, int]]:
-    """(radius, number of nodes) of the rings for ``k`` contacts around a place point: inner rings full, the last one
-    with the rest. One contact sits on the point itself."""
+def ring_slots(k: int) -> list[tuple[float, int]]:
+    """(radius, slots) of the rings for ``k`` contacts. Every ring keeps one slot free for the leader of the place box;
+    a single contact sits on the place point (no ring)."""
     if k == 1:
         return [(0.0, 1)]
-    if k <= SINGLE_RING_MAX:  # one ring, just wide enough
-        return [(max(RING_R0, k * NODE_STEP / (2 * math.pi)), k)]
-    out, r = [], RING_R0
-    while k:
-        n = min(k, max(1, int(2 * math.pi * r / NODE_STEP)))
-        out.append((r, n))
-        k -= n
-        r += NODE_STEP
+    if k <= SINGLE_RING_MAX:
+        return [(max(RING_R0, (k + 1) * NODE_STEP / (2 * math.pi)), k + 1)]
+    out, left, j = [], k, 1
+    while left:
+        slots = 6 * j
+        n = min(left, slots - 1)
+        out.append((j * NODE_STEP, slots if n == slots - 1 else n + 1))
+        left -= n
+        j += 1
     return out
 
 
+def _km(a: tuple[float, float], b: tuple[float, float]) -> float:
+    (la1, lo1), (la2, lo2) = (tuple(map(math.radians, a)), tuple(map(math.radians, b)))
+    h = math.sin((la2 - la1) / 2) ** 2 + math.cos(la1) * math.cos(la2) * math.sin((lo2 - lo1) / 2) ** 2
+    return 2 * 6371.0 * math.asin(math.sqrt(h))
+
+
 @dataclass
-class Cluster:
-    """The contacts of one place -- or of a place group (places closer than MERGE_IN on the map), or of one country if
-    only the country is known -- around one anchor."""
+class Place:
+    """The contacts of one place -- or of a place group, or of one country if only the country is known."""
 
     region: str
-    places: list[tuple[str, int]]  # (place as recorded, number of contacts), largest first; the country name if country_only
+    places: list[tuple[str, int]]  # (place as recorded, contacts), largest first; the country name if country_only
     anchor: tuple[float, float]  # lat, lon of the largest place
     members: list[str]
     country_only: bool = False
-    point: tuple[float, float] = (0.0, 0.0)  # anchor in inches
-    centre: tuple[float, float] = (0.0, 0.0)  # cluster centre in inches (moved off the point if clusters collide)
+    point: tuple[float, float] = (0.0, 0.0)  # true place point in inches
+    hub: tuple[float, float] = (0.0, 0.0)  # centre of the rings (= point unless the place had to give way)
+    box: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)  # place box (inches)
+    gap: float = math.pi / 2  # direction of the leader from the hub (radians)
 
     @property
-    def label(self) -> str:
+    def group(self) -> bool:
+        return len(self.places) > 1
+
+    @property
+    def title(self) -> str:
         name, n = self.places[0]
+        total = len(self.members)
         if self.country_only:
-            return f"{name} · nur Land" + (f" · {n}" if n > 1 else "")
-        if len(self.places) == 1:
-            return name + (f" · {n}" if n > 1 else "")
+            return f"{name} · nur Land bekannt" + (f" · n = {total}" if total > 1 else "")
+        if self.group:
+            return f"{name} und Umgebung · n = {total}"
+        return name + (f" · n = {total}" if total > 1 else "")
+
+    @property
+    def sub(self) -> str:
+        """The places of a place group (multi-line), empty otherwise."""
+        if not self.group:
+            return ""
         parts = [f"{p} {c}" if c > 1 else p for p, c in self.places]
         lines = [parts[0]]
-        for part in parts[1:]:  # the place list in lines of at most LABEL_LINE_W
-            if text_width(f"{lines[-1]} · {part}", LABEL_PT - 1.5) > LABEL_LINE_W:
+        for part in parts[1:]:
+            if text_width(f"{lines[-1]} · {part}", BOX_SUB_PT) > BOX_LINE_W:
                 lines.append(part)
             else:
                 lines[-1] += f" · {part}"
-        return f"{name} u. a. · {len(self.members)}\n" + "\n".join(lines)
+        return "\n".join(lines)
 
     @property
     def ring(self) -> float:
-        return ring_sizes(len(self.members))[-1][0]
+        return ring_slots(len(self.members))[-1][0]
 
     @property
     def radius(self) -> float:
-        return self.ring + NODE_R + (0.1 if self.country_only else 0.03)
+        """Radius of the pale disc (and of the place in the collision tests)."""
+        return self.ring + NODE_R + (DISC_PAD if len(self.members) > 1 or self.country_only else 0.02)
+
+    def box_size(self) -> tuple[float, float]:
+        w = text_width(self.title, BOX_PT, bold=True)
+        h = BOX_PT / 72 * 1.35
+        if self.sub:
+            w = max(w, max(text_width(line, BOX_SUB_PT) for line in self.sub.split("\n")))
+            h += (self.sub.count("\n") + 1) * BOX_SUB_PT / 72 * 1.3
+        return w + 2 * BOX_PAD, h + 2 * BOX_PAD
 
 
 @dataclass
@@ -185,15 +226,23 @@ class Panel:
     def aspect(self) -> float:
         return (self.lon[1] - self.lon[0]) * self.k / (self.lat[1] - self.lat[0])
 
+    @property
+    def title(self) -> str:
+        return f"{self.region.title} · n = {self.count}"
+
     def to_in(self, lat: float, lon: float) -> tuple[float, float]:
         return (self.x + (lon - self.lon[0]) / (self.lon[1] - self.lon[0]) * self.width,
                 self.y + (lat - self.lat[0]) / (self.lat[1] - self.lat[0]) * self.height)
+
+    def title_box(self) -> tuple[float, float, float, float]:
+        top = self.y + self.height
+        return self.x, top - TITLE_H, self.x + text_width(self.title, LABEL_PT, bold=True) + 0.2, top
 
 
 @dataclass
 class X1Layout:
     panels: list[Panel]
-    clusters: list[Cluster]
+    places: list[Place]
     positions: dict[str, tuple[float, float]]  # contact -> node centre (inches)
     unresolved: list[str] = field(default_factory=list)  # residence not assignable (places.py)
     not_in_gazetteer: list[str] = field(default_factory=list)  # a place without coordinates in the directory
@@ -213,27 +262,31 @@ def _region_of(ctx: Context, cid: str, countries: dict[str, dict]) -> str | None
     return None
 
 
-def _member_order(ctx: Context, members: list[str], place_rank: dict[str, int]) -> list[str]:
-    """Around the point: by place (largest first, in a place group), then by relation type (as in G1), then by ID."""
-    def key(cid):
-        cell = ctx.case.contact(cid).relation_type
-        return (place_rank.get(cid, 0), cell.value if cell.recorded else "9", cid)
-    return sorted(members, key=key)
+def _overlaps(a, b) -> bool:
+    return a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]
 
 
-def _ring_positions(c: Cluster) -> list[tuple[float, float]]:
-    out = []
-    for j, (r, n) in enumerate(ring_sizes(len(c.members))):
-        for i in range(n):
-            t = math.pi / 2 - 2 * math.pi * (i + 0.5 * j) / n  # clockwise from the top; every second ring turned by half a step
-            out.append((c.centre[0] + r * math.cos(t), c.centre[1] + r * math.sin(t)))
-    return out
+def _box_hits_disc(box, centre, r) -> bool:
+    x = min(max(centre[0], box[0]), box[2])
+    y = min(max(centre[1], box[1]), box[3])
+    return math.hypot(x - centre[0], y - centre[1]) < r
 
 
-def _merge(clusters: list[Cluster]) -> list[Cluster]:
-    """Place clusters of one panel whose points lie closer than MERGE_IN form one place group (single linkage), anchored
-    at the point of its largest place. Country-only clusters are never merged."""
-    parent = list(range(len(clusters)))
+def _segment_hits_disc(p, q, centre, r) -> bool:
+    (x0, y0), (x1, y1) = p, q
+    dx, dy = x1 - x0, y1 - y0
+    t = max(0.0, min(1.0, ((centre[0] - x0) * dx + (centre[1] - y0) * dy) / (dx * dx + dy * dy or 1e-12)))
+    return math.hypot(x0 + t * dx - centre[0], y0 + t * dy - centre[1]) < r
+
+
+def _box_point(box, x: float, y: float) -> tuple[float, float]:
+    return min(max(x, box[0]), box[2]), min(max(y, box[1]), box[3])
+
+
+def _group(places: list[Place]) -> list[Place]:
+    """Places of one panel within UMGEBUNG_KM of each other, or closer than MERGE_IN on the map, form one place group
+    (single linkage) at the point of its largest place. Country-only places are never grouped."""
+    parent = list(range(len(places)))
 
     def find(i):
         while parent[i] != i:
@@ -241,56 +294,129 @@ def _merge(clusters: list[Cluster]) -> list[Cluster]:
             i = parent[i]
         return i
 
-    for i, a in enumerate(clusters):
-        for j in range(i + 1, len(clusters)):
-            b = clusters[j]
+    for i, a in enumerate(places):
+        for j in range(i + 1, len(places)):
+            b = places[j]
             if a.country_only or b.country_only:
                 continue
-            if math.hypot(a.point[0] - b.point[0], a.point[1] - b.point[1]) < MERGE_IN:
+            near_map = math.hypot(a.point[0] - b.point[0], a.point[1] - b.point[1]) < MERGE_IN
+            if near_map or _km(a.anchor, b.anchor) <= UMGEBUNG_KM:
                 parent[find(j)] = find(i)
-    groups: dict[int, list[Cluster]] = {}
-    for i, c in enumerate(clusters):
-        groups.setdefault(find(i), []).append(c)
+    groups: dict[int, list[Place]] = {}
+    for i, p in enumerate(places):
+        groups.setdefault(find(i), []).append(p)
     out = []
     for parts in groups.values():
-        parts.sort(key=lambda c: (-len(c.members), c.places[0][0]))
+        parts.sort(key=lambda p: (-len(p.members), p.places[0][0]))
         head = parts[0]
-        out.append(Cluster(head.region, [pl for c in parts for pl in c.places], head.anchor, [m for c in parts for m in c.members],
-                           head.country_only, head.point, head.point))
-    return sorted(out, key=lambda c: (-len(c.members), c.places[0][0]))
+        out.append(Place(head.region, [pl for p in parts for pl in p.places], head.anchor, [m for p in parts for m in p.members],
+                         head.country_only, head.point, head.point))
+    return sorted(out, key=lambda p: (-len(p.members), p.places[0][0]))
 
 
-def _separate(clusters: list[Cluster], panel: Panel) -> None:
-    """Place the clusters of one panel without overlap: the largest first at its point, every further one at the free
-    position closest to its point (searched on a spiral around it), inside the panel and below its title. Deterministic."""
-    placed: list[Cluster] = []
-    for c in clusters:  # already ordered: largest first, then by label
-        r = c.radius
-        x0, x1 = panel.x + r + 0.04, panel.x + panel.width - r - 0.04
-        y0, y1 = panel.y + r + 0.04, panel.y + panel.height - TITLE_H - r - 0.04
-        px, py = min(max(c.point[0], x0), x1), min(max(c.point[1], y0), y1)
+def _separate(places: list[Place], panel: Panel) -> None:
+    """Place the discs of one panel without overlap: the largest first at its point, every further one at the free position
+    closest to its point (spiral search), inside the panel and below its title. Deterministic."""
+    done: list[Place] = []
+    title = panel.title_box()
+    for p in places:
+        r = p.radius
+        x0, x1 = panel.x + r + 0.05, panel.x + panel.width - r - 0.05
+        y0, y1 = panel.y + r + 0.05, panel.y + panel.height - r - 0.05
+        px, py = min(max(p.point[0], x0), x1), min(max(p.point[1], y0), y1)
         best = None
-        for step in range(400):
+        for step in range(500):
             d = step * 0.03
             n = 1 if step == 0 else 24
             for i in range(n):
                 t = math.pi / 2 + 2 * math.pi * i / n
                 x, y = px + d * math.cos(t), py + d * math.sin(t)
-                if not (x0 <= x <= x1 and y0 <= y <= y1):
+                if not (x0 <= x <= x1 and y0 <= y <= y1) or _box_hits_disc(title, (x, y), r + 0.04):
                     continue
-                if all(math.hypot(x - o.centre[0], y - o.centre[1]) >= r + o.radius + 0.06 for o in placed):
+                if all(math.hypot(x - o.hub[0], y - o.hub[1]) >= r + o.radius + 0.08 for o in done):
                     best = (x, y)
                     break
             if best:
                 break
-        c.centre = best or (px, py)
-        placed.append(c)
+        p.hub = best or (px, py)
+        done.append(p)
+
+
+BOX_DISTANCES = (0.12, 0.3, 0.55, 0.85)  # inches between a disc and its place box
+
+
+def _place_boxes(places: list[Place], panels: list[Panel]) -> None:
+    """A box per place beside its disc, in eight directions and four distances: not on any disc, place point, panel title
+    or other box, inside its panel, its leader not across another disc; close to its place."""
+    taken = [pn.title_box() for pn in panels]
+    for p in places:
+        panel = next(pn for pn in panels if pn.region.key == p.region)
+        w, h = p.box_size()
+        best = None
+        for rank, d in enumerate(BOX_DISTANCES):
+            for k in range(8):
+                t = math.pi / 2 - math.pi / 4 * k  # N, NE, E, ... clockwise
+                ux, uy = round(math.cos(t), 9), round(math.sin(t), 9)
+                bx = p.hub[0] + ux * (p.radius + d) + (w / 2 * (1 if ux > 0 else -1) if ux else 0.0)
+                by = p.hub[1] + uy * (p.radius + d) + (h / 2 * (1 if uy > 0 else -1) if uy else 0.0)
+                box = (bx - w / 2, by - h / 2, bx + w / 2, by + h / 2)
+                inside = (panel.x + 0.04 <= box[0] and box[2] <= panel.x + panel.width - 0.04 and panel.y + 0.04 <= box[1]
+                          and box[3] <= panel.y + panel.height - 0.04)
+                start = _box_point(box, *p.hub)
+                discs = sum(_box_hits_disc(box, o.hub, o.radius + 0.03) for o in places if o.region == p.region)
+                crossing = sum(_segment_hits_disc(start, p.hub, o.hub, o.radius) for o in places if o is not p and o.region == p.region)
+                boxes = sum(_overlaps(box, q) for q in taken)
+                cost = discs * 10 + boxes * 10 + crossing * 6 + (0 if inside else 25) + rank * 1.5 + k * 0.01
+                if best is None or cost < best[0]:
+                    best = (cost, box, math.atan2(start[1] - p.hub[1], start[0] - p.hub[0]))
+        _, p.box, p.gap = best
+        taken.append(p.box)
+
+
+def _ring_positions(p: Place, order: list[str]) -> dict[str, tuple[float, float]]:
+    """Nodes on the rings around the hub, the slot towards the place box left free for its leader."""
+    if len(order) == 1:
+        return {order[0]: p.hub}
+    out, i = {}, 0
+    for r, slots in ring_slots(len(order)):
+        for s in range(1, slots):  # slot 0 points at the box
+            if i == len(order):
+                break
+            t = p.gap - 2 * math.pi * s / slots  # clockwise from the leader
+            out[order[i]] = (p.hub[0] + r * math.cos(t), p.hub[1] + r * math.sin(t))
+            i += 1
+    return out
+
+
+def _member_order(ctx: Context, p: Place, rank: dict[str, int]) -> list[str]:
+    """By place (largest first, in a place group), then by relation type (as in G1), then by ID."""
+    def key(cid):
+        cell = ctx.case.contact(cid).relation_type
+        return (rank.get(cid, 0), cell.value if cell.recorded else "9", cid)
+    return sorted(p.members, key=key)
+
+
+def _extent(region: Region, points: list[tuple[float, float]]) -> tuple[tuple[float, float], tuple[float, float]]:
+    """The default extent, widened only where a place lies outside it or closer than EXTENT_INSET to its edge."""
+    lon0, lon1 = region.lon
+    lat0, lat1 = region.lat
+    for la, lo in points:
+        if lo < region.lon[0] + EXTENT_INSET:
+            lon0 = min(lon0, lo - EXTENT_MARGIN)
+        if lo > region.lon[1] - EXTENT_INSET:
+            lon1 = max(lon1, lo + EXTENT_MARGIN)
+        if la < region.lat[0] + EXTENT_INSET:
+            lat0 = min(lat0, la - EXTENT_MARGIN)
+        if la > region.lat[1] - EXTENT_INSET:
+            lat1 = max(lat1, la + EXTENT_MARGIN)
+    lon, lat = (lon0, lon1), (lat0, lat1)
+    return (max(lon[0], -180.0), min(lon[1], 180.0)), (max(lat[0], -85.0), min(lat[1], 85.0))
 
 
 def x1_layout(ctx: Context, gazetteer: dict, countries: dict[str, dict]) -> X1Layout:
-    """Clusters per place (or country), panels per region, node positions. Deterministic."""
+    """Places (or place groups, or countries), panels per region, place boxes and node positions. Deterministic."""
     unresolved, missing = [], []
-    found: dict[tuple, Cluster] = {}
+    found: dict[tuple, Place] = {}
     for c in ctx.case.contacts:
         region = _region_of(ctx, c.id, countries)
         if region is None:
@@ -310,46 +436,43 @@ def x1_layout(ctx: Context, gazetteer: dict, countries: dict[str, dict]) -> X1La
                 continue
             point = (props["LABEL_Y"], props["LABEL_X"])
             key, label, country_only = (region, "", iso), props.get("NAME_DE") or c.residence_country, True
-        found.setdefault(key, Cluster(region, [(label, 0)], point, [], country_only)).members.append(c.id)
-    clusters = sorted(found.values(), key=lambda cl: (-len(cl.members), cl.places[0][0]))
-    for cl in clusters:
-        cl.places = [(cl.places[0][0], len(cl.members))]
-    used = {cl.region for cl in clusters}
+        found.setdefault(key, Place(region, [(label, 0)], point, [], country_only)).members.append(c.id)
+    places = sorted(found.values(), key=lambda p: (-len(p.members), p.places[0][0]))
+    for p in places:
+        p.places = [(p.places[0][0], len(p.members))]
+    used = {p.region for p in places}
     panels = []
     for region in REGIONS:
-        if region.key not in ALWAYS and region.key not in used:
-            continue
-        lats = [cl.anchor[0] for cl in clusters if cl.region == region.key]
-        lons = [cl.anchor[1] for cl in clusters if cl.region == region.key]
-        lon = (min([region.lon[0]] + [x - 2 for x in lons]), max([region.lon[1]] + [x + 2 for x in lons]))
-        lat = (min([region.lat[0]] + [y - 2 for y in lats]), max([region.lat[1]] + [y + 2 for y in lats]))
-        panels.append(Panel(region, (max(lon[0], -180.0), min(lon[1], 180.0)), (max(lat[0], -85.0), min(lat[1], 85.0))))
-    height = min(PANEL_H_MAX, (MAIN_W - PANEL_GAP * (len(panels) - 1)) / sum(p.aspect for p in panels))
-    x = (MAIN_W - sum(p.aspect * height for p in panels) - PANEL_GAP * (len(panels) - 1)) / 2
-    for p in panels:
-        p.x, p.y, p.width, p.height = x, 0.0, p.aspect * height, height
-        p.count = sum(len(cl.members) for cl in clusters if cl.region == p.region.key)
-        x += p.width + PANEL_GAP
-    by_key = {p.region.key: p for p in panels}
-    for cl in clusters:
-        cl.point = cl.centre = by_key[cl.region].to_in(*cl.anchor)
-    merged = []
-    for p in panels:
-        merged += _merge([cl for cl in clusters if cl.region == p.region.key])
-    clusters = merged
-    for cl in clusters:
+        if region.key in ALWAYS or region.key in used:
+            lon, lat = _extent(region, [p.anchor for p in places if p.region == region.key])
+            panels.append(Panel(region, lon, lat))
+    scale = [1.0 if pn.region.key == "germany" else OTHER_SCALE for pn in panels]
+    height = min(GERMANY_H_MAX, (MAIN_W - PANEL_GAP * (len(panels) - 1)) / sum(pn.aspect * s for pn, s in zip(panels, scale)))
+    x = (MAIN_W - sum(pn.aspect * s * height for pn, s in zip(panels, scale)) - PANEL_GAP * (len(panels) - 1)) / 2
+    for pn, s in zip(panels, scale):  # top-aligned; Deutschland is the largest panel
+        pn.width, pn.height = pn.aspect * s * height, s * height
+        pn.x, pn.y = x, height - pn.height
+        pn.count = sum(len(p.members) for p in places if p.region == pn.region.key)
+        x += pn.width + PANEL_GAP
+    by_key = {pn.region.key: pn for pn in panels}
+    for p in places:
+        p.point = p.hub = by_key[p.region].to_in(*p.anchor)
+    grouped = []
+    for pn in panels:
+        grouped += _group([p for p in places if p.region == pn.region.key])
+    places = grouped
+    for pn in panels:
+        _separate([p for p in places if p.region == pn.region.key], pn)
+    _place_boxes(places, panels)
+    positions = {}
+    for p in places:
         rank, start = {}, 0
-        for i, (_place, n) in enumerate(cl.places):
-            for cid in cl.members[start:start + n]:
+        for i, (_name, n) in enumerate(p.places):
+            for cid in p.members[start:start + n]:
                 rank[cid] = i
             start += n
-        cl.members = _member_order(ctx, cl.members, rank)
-    for p in panels:
-        _separate([cl for cl in clusters if cl.region == p.region.key], p)
-    positions = {}
-    for cl in clusters:
-        positions.update(zip(cl.members, _ring_positions(cl)))
-    return X1Layout(panels, clusters, positions, unresolved, missing, height)
+        positions.update(_ring_positions(p, _member_order(ctx, p, rank)))
+    return X1Layout(panels, places, positions, unresolved, missing, height)
 
 
 # ------------------------------------------------------------------------------------------------- drawing ---
@@ -377,113 +500,67 @@ def _basemap(figure, main, panel: Panel, countries: dict[str, dict]) -> None:
     for spine in ax.spines.values():
         spine.set_edgecolor("#C9CED3")
         spine.set_linewidth(0.7)
-    home = "DEU" if panel.region.key == "germany" else None
     for iso, feature in countries.items():
-        fill = "#E1E6EB" if iso != home else "#ECEFF2"
-        if panel.region.key == "europe" and iso == "DEU":
+        fill = "#E1E6EB"
+        if panel.region.key == "germany" and iso == "DEU":
+            fill = "#E8ECF0"
+        elif panel.region.key == "europe" and iso == "DEU":
             fill = "#EEF1F4"  # shown in its own panel
         for ring in _rings(feature["geometry"]):
             ax.add_patch(Polygon(ring, closed=True, facecolor=fill, edgecolor="#FFFFFF", linewidth=0.5))
 
 
-def _label_box(x: float, y: float, text: str, size: float, ha: str, va: str) -> tuple[float, float, float, float]:
-    w, h = text_width(text, size) + 0.04, size / 72 * 1.3 * (text.count("\n") + 1)
-    x0 = x - w / 2 if ha == "center" else (x if ha == "left" else x - w)
-    y0 = y if va == "bottom" else (y - h if va == "top" else y - h / 2)
-    return x0, y0, x0 + w, y0 + h
-
-
-def _overlaps(a, b) -> bool:
-    return a[0] < b[2] and b[0] < a[2] and a[1] < b[3] and b[1] < a[3]
-
-
-LABEL_SIZE = LABEL_PT - 1.5
-LABEL_DISTANCES = (0.03, 0.2, 0.45, 0.75)  # inches between a cluster and its label; from 0.45 on with a fine line
-
-
-def _box_point(box, x: float, y: float) -> tuple[float, float]:
-    return min(max(x, box[0]), box[2]), min(max(y, box[1]), box[3])
-
-
-def place_labels(layout: X1Layout) -> list[tuple[tuple[float, float, float, float], tuple[float, float] | None]]:
-    """Per cluster (in layout order) a label box (inches) beside the cluster, in eight directions and four distances: the
-    one with no node, no place point, no panel title and no other label under it, inside its panel and close to its
-    cluster; otherwise the one with the fewest collisions. Second value: the point of the cluster edge a fine line goes
-    to (None when the label sits right at the cluster)."""
-    nodes = [(x - NODE_R, y - NODE_R, x + NODE_R, y + NODE_R) for x, y in layout.positions.values()]
-    points = [(cl.point[0] - 0.04, cl.point[1] - 0.04, cl.point[0] + 0.04, cl.point[1] + 0.04) for cl in layout.clusters]
-    discs = [(c.centre[0] - c.radius - 0.08, c.centre[1] - c.radius - 0.08, c.centre[0] + c.radius + 0.08, c.centre[1] + c.radius + 0.08)
-             for c in layout.clusters]
-    taken = [_label_box(pn.x + 0.08, pn.y + pn.height - 0.07, f"{pn.region.title} · n = {pn.count}", LABEL_PT, "left", "top")
-             for pn in layout.panels]
-    out = []
-    for cl in layout.clusters:
-        panel = next(pn for pn in layout.panels if pn.region.key == cl.region)
-        x0, y0, x1, y1 = _label_box(0, 0, cl.label, LABEL_SIZE, "left", "bottom")
-        w, h = x1 - x0, y1 - y0
-        cx, cy, r = cl.centre[0], cl.centre[1], cl.radius
-        best = None
-        for rank, d in enumerate(LABEL_DISTANCES):
-            for k in range(8):
-                t = math.pi / 2 - math.pi / 4 * k  # N, NE, E, ... clockwise
-                ux, uy = math.cos(t), math.sin(t)
-                ux, uy = (0.0 if abs(ux) < 1e-9 else ux), (0.0 if abs(uy) < 1e-9 else uy)
-                bx = cx + ux * (r + d) + (w / 2 * (1 if ux > 0 else -1) if ux else 0.0)
-                by = cy + uy * (r + d) + (h / 2 * (1 if uy > 0 else -1) if uy else 0.0)
-                box = (bx - w / 2, by - h / 2, bx + w / 2, by + h / 2)
-                inside = panel.x + 0.03 <= box[0] and box[2] <= panel.x + panel.width - 0.03 and panel.y + 0.03 <= box[1] \
-                    and box[3] <= panel.y + panel.height - 0.03
-                foreign = sum(_overlaps(box, q) for q, other in zip(discs, layout.clusters) if other is not cl)  # reads as theirs
-                cost = (sum(_overlaps(box, n) for n in nodes) * 10 + sum(_overlaps(box, q) for q in points) * 4 + foreign * 6
-                        + sum(_overlaps(box, q) for q in taken) * 10 + (0 if inside else 20) + rank * 1.5 + k * 0.01)
-                if best is None or cost < best[0]:
-                    best = (cost, box, rank, (cx + ux * r, cy + uy * r))
-        _, box, rank, edge = best
-        taken.append(box)
-        out.append((box, edge if LABEL_DISTANCES[rank] >= 0.45 else None))
-    return out
-
-
 def x1(ctx: Context, gazetteer: dict, countries: dict[str, dict]):
     layout = x1_layout(ctx, gazetteer, countries)
-    country_only = any(cl.country_only for cl in layout.clusters)
+    country_only = any(p.country_only for p in layout.places)
+    moved = any(math.hypot(p.hub[0] - p.point[0], p.hub[1] - p.point[1]) > 0.02 for p in layout.places)
     sections = [
         ("Beziehungstyp", relation_entries(ctx.case)),
-        (None, [("dot", "Wohnort (Ortspunkt)", "#1F2933")]
+        (None, [("dot", "Wohnort (Ortspunkt)", POINT)]
+               + ([("line", "ausgewichen: gepunktet zur wahren Lage (○)", {"color": "#8A939C", "linewidth": 0.8,
+                                                                         "linestyle": (0, (1, 1.5))})] if moved else [])
                + ([("area", "nur Wohnland bekannt (Lage unscharf)", {"facecolor": "none", "edgecolor": MUTED, "linewidth": 0.8,
                                                                      "linestyle": (0, (3, 2))})] if country_only else [])),
     ]
-    first = ("Experimentelle Zusatzgrafik, keine Standardgrafik. Lage = Wohnort; Kontakte eines Ortes um den Ortspunkt "
-             "gruppiert" + ("; auf der Karte sehr nahe Orte als Ortsgruppe („u. a.“)" if any(len(cl.places) > 1 for cl in layout.clusters)
-                            else "") + ". Keine Verbindungslinien (siehe G2). Karte: Natural Earth.")
+    grouped = any(p.group for p in layout.places)
+    first = ("Experimentelle Zusatzgrafik (Fassung 2), keine Standardgrafik. Lage = Wohnort; Kontakte eines Ortes um den Ortspunkt"
+             + (f"; „und Umgebung“: Orte bis {UMGEBUNG_KM:.0f} km Abstand oder auf der Karte zusammenfallend" if grouped else "")
+             + ". Keine Verbindungslinien (siehe G2). Karte: Natural Earth.")
     missing = []
     if layout.unresolved:
         missing.append(f"Wohnort nicht darstellbar: {', '.join(layout.unresolved)}.")
     if layout.not_in_gazetteer:
         missing.append(f"Ort ohne Koordinaten im Ortsverzeichnis: {', '.join(layout.not_in_gazetteer)}.")
-    p = page(ctx, f"{X1_CODE} · Geografische Verteilung des persönlichen Netzwerks",
-             "Wo leben die Kontakte? Wohnorte nach Region (experimentell)",
-             main_w=MAIN_W, main_h=layout.height, legend="bottom", sections=sections, notes=[first, " ".join(missing)])
-    ax = p.main
+    p_ = page(ctx, f"{X1_CODE} · Geografische Verteilung des persönlichen Netzwerks",
+              "Wo leben die Kontakte? Wohnorte nach Region (experimentell)",
+              main_w=MAIN_W, main_h=layout.height, legend="bottom", sections=sections, notes=[first, " ".join(missing)])
+    ax = p_.main
     ax.set_zorder(2)  # nodes above the map panels
     ax.patch.set_alpha(0.0)
     for panel in layout.panels:
-        _basemap(p.figure, ax, panel, countries)
-        ax.text(panel.x + 0.08, panel.y + panel.height - 0.07, f"{panel.region.title} · n = {panel.count}", fontsize=LABEL_PT,
-                fontweight="bold", color=INK, ha="left", va="top", zorder=8)
-    for cl in layout.clusters:
-        if cl.country_only:
-            ax.add_patch(Circle(cl.centre, cl.radius, fill=False, edgecolor=MUTED, linewidth=0.8, linestyle=(0, (3, 2)), zorder=3))
-        if math.hypot(cl.centre[0] - cl.point[0], cl.centre[1] - cl.point[1]) > 0.02:  # the cluster gave way: line to its point
-            ax.plot(*zip(cl.point, cl.centre), color="#8A939C", linewidth=0.5, zorder=3, gid="leader")
-        ax.add_patch(Circle(cl.point, 0.035, facecolor="#1F2933", edgecolor="none", zorder=3.5))
-    for cl, (box, anchor) in zip(layout.clusters, place_labels(layout)):
-        if anchor:  # a label away from its cluster: a fine line to the cluster's edge
-            ax.plot(*zip(anchor, _box_point(box, *anchor)), color="#AEB6BE", linewidth=0.5, zorder=3, gid="label-leader")
-        ax.text((box[0] + box[2]) / 2, (box[1] + box[3]) / 2, cl.label, fontsize=LABEL_SIZE, color=INK, ha="center", va="center",
-                zorder=8, multialignment="center", bbox={"boxstyle": "round,pad=0.06", "facecolor": "white", "alpha": 0.8, "edgecolor": "none"})
+        _basemap(p_.figure, ax, panel, countries)
+        ax.text(panel.x + 0.08, panel.y + panel.height - 0.08, panel.title, fontsize=LABEL_PT, fontweight="bold", color=INK,
+                ha="left", va="top", zorder=8)
+    for p in layout.places:
+        if len(p.members) > 1 or p.country_only:  # a very pale disc: these contacts belong to one place
+            ax.add_patch(Circle(p.hub, p.radius, facecolor="#FFFFFF", alpha=0.55, edgecolor="none", zorder=2.5, gid="place-disc"))
+            ax.add_patch(Circle(p.hub, p.radius, fill=False, edgecolor=MUTED if p.country_only else "#D3D9DF", linewidth=0.7,
+                                linestyle=(0, (3, 2)) if p.country_only else "solid", zorder=2.6))
+        if math.hypot(p.hub[0] - p.point[0], p.hub[1] - p.point[1]) > 0.02:  # the place gave way: dotted line to its true point
+            ax.plot(*zip(p.point, p.hub), color="#8A939C", linewidth=0.6, linestyle=(0, (1, 1.5)), zorder=3, gid="offset")
+            ax.add_patch(Circle(p.point, 0.03, facecolor="white", edgecolor=POINT, linewidth=0.8, zorder=3.5, gid="true-point"))
+        start = _box_point(p.box, *p.hub)
+        ax.plot(*zip(start, p.hub), color="#7B8590", linewidth=0.6, zorder=3, gid="leader")  # through the free ring slot
+        ax.add_patch(Circle(p.hub, 0.05, facecolor=POINT, edgecolor="white", linewidth=0.8, zorder=3.6, gid="place-point"))
+        x0, y0, x1_, y1 = p.box
+        ax.add_patch(FancyBboxPatch((x0, y0), x1_ - x0, y1 - y0, boxstyle="round,pad=0,rounding_size=0.04", facecolor="white",
+                                    edgecolor="#B8C0C8", linewidth=0.6, zorder=7, gid="place-box"))
+        ax.text(x0 + BOX_PAD, y1 - BOX_PAD, p.title, fontsize=BOX_PT, fontweight="bold", color=INK, ha="left", va="top", zorder=8)
+        if p.sub:
+            ax.text(x0 + BOX_PAD, y0 + BOX_PAD, p.sub, fontsize=BOX_SUB_PT, color=MUTED, ha="left", va="bottom", zorder=8,
+                    linespacing=1.15)
     draw_nodes(ax, layout.positions, {cid: relation_fill(ctx.case, cid) for cid in layout.positions}, zorder=5)
-    return p.figure
+    return p_.figure
 
 
 # ----------------------------------------------------------------------------------------------------- run ---
@@ -508,8 +585,8 @@ def render_x1(roots: Roots, case_ref: StorageRef, *, formats: tuple[str, ...] = 
     run_id = ids.new_run_id(datetime.now(timezone.utc))
     run_dir = roots.resolve(StorageRef("WORKSPACE", f"runs/{run_id}"), writable=True)
     run_dir.mkdir(parents=True, exist_ok=False)
-    record = {"format": "mares-run-record/v0-draft", "pipeline": "network_v1 experimental X1", "run_id": run_id,
-              "case": {"ref": f"{case_ref.root}:{case_ref.rel}", "code": case.code}, "standard_figure": False,
+    record = {"format": "mares-run-record/v0-draft", "pipeline": "network_v1 experimental X1", "version": X1_VERSION,
+              "run_id": run_id, "case": {"ref": f"{case_ref.root}:{case_ref.rel}", "code": case.code}, "standard_figure": False,
               "sources": {"gazetteer": f"{case_ref.root}:{GAZETTEER}", "basemap": f"WORKSPACE:{BASEMAP}",
                           "basemap_source": "Natural Earth 1:50m admin 0 countries (public domain)"}}
     if validation.status == FAILED:
@@ -526,7 +603,8 @@ def render_x1(roots: Roots, case_ref: StorageRef, *, formats: tuple[str, ...] = 
     outputs = [p.name for p in written]
     record.update(status="COMPLETED", outputs=[f"{EXPERIMENTAL_DIR}/{n}" for n in outputs],
                   placed=len(layout.positions), unresolved=layout.unresolved, not_in_gazetteer=layout.not_in_gazetteer,
-                  country_only=[cid for cl in layout.clusters if cl.country_only for cid in cl.members],
+                  country_only=[cid for p in layout.places if p.country_only for cid in p.members],
+                  place_groups=[[name for name, _ in p.places] for p in layout.places if p.group],
                   panels=[pn.region.key for pn in layout.panels])
     (run_dir / "run_record.json").write_text(json.dumps(record, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return X1Result(case_ref, "COMPLETED", outputs, run_id, layout)
