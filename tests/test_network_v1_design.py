@@ -1,4 +1,4 @@
-"""network_v1: coding key of the final survey sheet and the shared design system of the eight figures."""
+"""network_v1: coding key of the final survey sheet and the shared design system of the nine figures."""
 
 from __future__ import annotations
 
@@ -30,7 +30,7 @@ from mares.network_v1.figures.networks import (
 from mares.network_v1.places import Area
 from mares.network_v1.testcases import synthetic_source
 from mares.network_v1.validate import validate
-from network_v1_fixtures import copy_002, read_rows, write_rows
+from network_v1_fixtures import copy_002, geo, read_rows, write_rows
 
 
 def context(folder):
@@ -39,8 +39,9 @@ def context(folder):
 
 
 @pytest.fixture(scope="module")
-def ctx():
-    return context(synthetic_source())
+def ctx(tmp_path_factory):
+    case = read_case(synthetic_source())
+    return Context(case, validate(case).derived, geo(tmp_path_factory.mktemp("geo")))
 
 
 # ------------------------------------------------------------------------------- coding key (survey sheet) ---
@@ -140,8 +141,9 @@ def test_every_figure_has_badge_footer_and_at_most_two_notes(ctx):
             figure = spec.draw(ctx)
         texts = [t.get_text() for t in figure.texts]
         assert texts.count("TESTFALL 002* · SYNTHETISCH") == 1, spec.code
-        assert "MARES · network_v1 · 32 Kontakte · 5 Gruppen" in texts, spec.code
-        assert len(texts) <= 6, spec.code  # title, subtitle, badge, footer and at most two notes
+        footer = "MARES · network_v1 · 32 Kontakte" + ("" if spec.code == "X1" else " · 5 Gruppen")  # X1: no group count
+        assert footer in texts, spec.code
+        assert len(texts) <= 6, spec.code  # title, subtitle (not in X1), badge, footer and at most two notes
         assert not any("Tabelle" in t for t in texts), spec.code  # no method details in titles and notes
 
 

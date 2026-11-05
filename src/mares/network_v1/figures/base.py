@@ -1,10 +1,10 @@
-"""Design system of the eight network_v1 figures -- one place for everything they share.
+"""Design system of the nine network_v1 figures -- one place for everything they share.
 
 * **Palettes.** Colour of a contact = its relation type, in every figure (G1, G2, G3, P1, P2, P5): six fixed colours from
   the Okabe-Ito family, neutral grey for 'Sonstige Beziehung'. Geographic areas and groups are pale backgrounds only, so
   they never compete with the nodes. P3 and P4 share one quiet blue scale for shares.
 * **Typography and sizes** in points and inches, so every figure uses the same title, labels, node and dot sizes.
-* **The page** (:func:`page`): title and subtitle, case badge top right, the main area (most of the page), one of the
+* **The page** (:func:`page`): title and (optional) subtitle, case badge top right, the main area (most of the page), one of the
   two legend layouts (``side`` or ``bottom``), at most two short notes and a one-line footer.
 * **Two matrix blocks**: :func:`point_matrix` (P1, P2, P5) and :func:`heat_matrix` (P3, P4).
 
@@ -48,6 +48,7 @@ BADGE_PT = 9.0
 # --------------------------------------------------------------------------------------------- page (inches) ---
 MARGIN_X = 0.4
 HEADER_H = 0.95
+HEADER_H_TITLE_ONLY = 0.62  # a page without subtitle (X1)
 FOOTER_H = 0.32
 NOTE_LINE_H = 0.19
 GAP = 0.14
@@ -103,11 +104,22 @@ def relation_entries(case: Case) -> list[tuple]:
 
 # ------------------------------------------------------------------------------------------------ case context ---
 @dataclass(frozen=True)
+class Geo:
+    """The map sources of X1, read by the case run: place directory and basemap -- or why they are missing."""
+
+    gazetteer: dict = field(default_factory=dict)
+    countries: dict = field(default_factory=dict)
+    missing: str = ""  # reason X1 cannot be drawn (no place directory, no basemap); empty = both present
+    sources: dict = field(default_factory=dict)  # logical references and hashes for the run record
+
+
+@dataclass(frozen=True)
 class Context:
-    """What a figure needs about the case."""
+    """What a figure needs about the case (and, for the map X1, its sources)."""
 
     case: Case
     derived: Derived
+    geo: Geo | None = None
 
     @property
     def code(self) -> str:
@@ -300,9 +312,10 @@ class Page:
     notes: list[str] = field(default_factory=list)
 
 
-def page(ctx: Context, title: str, subtitle: str, *, main_w: float, main_h: float, legend: str, sections,
-         notes: Sequence[str] = ()) -> Page:
-    """The common page of every figure. ``legend`` is ``side`` (right of the main area) or ``bottom`` (below it)."""
+def page(ctx: Context, title: str, subtitle: str | None, *, main_w: float, main_h: float, legend: str, sections,
+         notes: Sequence[str] = (), footer: str | None = None) -> Page:
+    """The common page of every figure. ``legend`` is ``side`` (right of the main area) or ``bottom`` (below it).
+    Without ``subtitle`` the header is lower; ``footer`` replaces the common footer line (X1)."""
     notes = [n for n in notes if n][:2]
     notes_h = len(notes) * NOTE_LINE_H + (0.04 if notes else 0)
     if legend == "side":
@@ -314,7 +327,7 @@ def page(ctx: Context, title: str, subtitle: str, *, main_w: float, main_h: floa
     else:
         raise ValueError(f"legend must be 'side' or 'bottom', not {legend!r}")
     bottom_block = FOOTER_H + notes_h + (legend_h + GAP if legend_h else 0)
-    height = HEADER_H + main_h + GAP + bottom_block
+    height = (HEADER_H if subtitle is not None else HEADER_H_TITLE_ONLY) + main_h + GAP + bottom_block
     figure = new_figure(width, height)
 
     def axes(x: float, y: float, w: float, h: float) -> Axes:
@@ -334,7 +347,8 @@ def page(ctx: Context, title: str, subtitle: str, *, main_w: float, main_h: floa
         draw_legend(legend_ax, sections, "bottom")
 
     figure.text(MARGIN_X / width, 1 - 0.2 / height, title, fontsize=TITLE_PT, fontweight="bold", color=INK, ha="left", va="top")
-    figure.text(MARGIN_X / width, 1 - 0.58 / height, subtitle, fontsize=SUBTITLE_PT, color=MUTED, ha="left", va="top")
+    if subtitle is not None:
+        figure.text(MARGIN_X / width, 1 - 0.58 / height, subtitle, fontsize=SUBTITLE_PT, color=MUTED, ha="left", va="top")
     badge = case_badge(ctx)
     style = ({"facecolor": TEST_RED, "edgecolor": "none"} if ctx.is_test else {"facecolor": "#FFFFFF", "edgecolor": INK})
     figure.text(1 - MARGIN_X / width, 1 - 0.22 / height, badge, fontsize=BADGE_PT, fontweight="bold",
@@ -342,7 +356,7 @@ def page(ctx: Context, title: str, subtitle: str, *, main_w: float, main_h: floa
     for i, note in enumerate(reversed(notes)):
         figure.text(MARGIN_X / width, (FOOTER_H + 0.02 + i * NOTE_LINE_H) / height, note, fontsize=NOTE_PT, color=INK,
                     ha="left", va="bottom")
-    figure.text(MARGIN_X / width, 0.1 / height, footer_line(ctx), fontsize=FOOT_PT, color=MUTED, ha="left", va="bottom")
+    figure.text(MARGIN_X / width, 0.1 / height, footer_line(ctx) if footer is None else footer, fontsize=FOOT_PT, color=MUTED, ha="left", va="bottom")
     return Page(figure, main, main_w, main_h, legend_ax, notes)
 
 

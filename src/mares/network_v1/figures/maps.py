@@ -1,19 +1,17 @@
-"""Experimental figures of network_v1 -- for evaluation only, not part of the eight standard figures.
+"""X1 · Geografische Verteilung des persönlichen Netzwerks -- the ninth standard figure of network_v1 (a map).
 
-X1 · Geografische Verteilung (version 2): where the contacts live, on regional map panels (Amerika, Europa, Deutschland;
-further regions only when the data need them). No contact-contact and no ego lines; node colour = relation type, as in
-every network figure. The contacts of one place -- or of a place group ("Marburg und Umgebung": places the place
-directory assigns to a neighbouring place, when both fall together on the map) -- sit in rings around the place point on a
-very pale disc; a
-small place box names the place and is tied to the point by a fine leader that runs through a gap in the rings. A
-contact whose residence is known only by country sits at the country's label point inside a dashed ring (never at an
-invented city); contacts without a usable residence are named in a note and not drawn.
+Where the contacts live, on regional map panels (Amerika, Europa, Deutschland; further regions only when the data need
+them). No contact-contact and no ego lines; node colour = relation type, as in every network figure. The contacts of one
+place -- or of a place group ("Marburg und Umgebung": places the place directory assigns to a neighbouring place, when
+both fall together on the map) -- sit in rings on a very pale disc beside the true place point, tied to it by a fine
+line; the label docks right at the disc. A contact whose residence is known only by country sits at the country's label
+point inside a dashed ring (never at an invented city); contacts without a usable residence are named in a note and not
+drawn. Placement rules: docs/architecture/network-v1.md §6.
 
 Positions come from a hand-kept place directory (``ROOT:network_v1/reference/gazetteer.csv``: ``place; country_iso3;
-lat; lon; basis``) in the same root as the case -- never from a geocoding service, so residence data never leave the
-machine. Country borders and label points: Natural Earth admin 0 countries (public domain) in
-``WORKSPACE:cache/basemaps``. Output: ``<case>/experimental/<case>_X1_geografische_verteilung.{png,svg}`` -- outside
-``graphics/``, which holds the standard figures only; the run record goes to ``WORKSPACE/runs/<RUN-ID>/``.
+lat; lon; basis; group_with``) in the same root as the case -- never from a geocoding service, so residence data never
+leave the machine. Country borders and label points: Natural Earth admin 0 countries (public domain) in
+``WORKSPACE:cache/basemaps``. Both are read by the case run (:mod:`..run`) and handed over in :class:`.base.Geo`.
 """
 
 from __future__ import annotations
@@ -23,27 +21,17 @@ import io
 import json
 import math
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
 from pathlib import Path
 
 from matplotlib import patheffects
 from matplotlib.patches import Circle, FancyBboxPatch, Polygon
 
-from mares.core import ids
-from mares.core.refs import StorageRef
-from mares.core.roots import Roots
-from mares.network_v0.figures.style import rc, save_figure
+from ..places import Area, norm
+from .base import INK, LABEL_PT, MUTED, NODE_PT, Context, draw_nodes, page, relation_entries, relation_fill, text_width
 
-from .case import read_case
-from .figures.base import INK, LABEL_PT, MUTED, NODE_PT, Context, draw_nodes, file_name, page, relation_entries, relation_fill, text_width
-from .places import Area, norm
-from .run import check_case_ref
-from .validate import FAILED, validate
-
-X1_CODE, X1_NAME, X1_VERSION = "X1", "geografische_verteilung", "2.8"
-EXPERIMENTAL_DIR = "experimental"
 GAZETTEER = "network_v1/reference/gazetteer.csv"  # in the root of the case
 BASEMAP = "cache/basemaps/ne_50m_admin_0_countries.geojson"  # in WORKSPACE
+BASEMAP_SOURCE = "Natural Earth 1:50m Cultural Vectors, Admin 0 – Countries (public domain), naturalearthdata.com"
 GAZETTEER_COLUMNS = ("place", "country_iso3", "lat", "lon", "basis")  # plus, optional, "group_with"
 # group_with: the place (same country, itself in the directory) this place is shown with on a regional map -- a district,
 # a surrounding municipality or a neighbouring town of a larger centre; empty = shown on its own. One level only.
@@ -138,7 +126,7 @@ def read_gazetteer(path: Path) -> dict[tuple[str, str], tuple[float, float, tupl
 def read_basemap(path: Path) -> dict[str, dict]:
     """Natural Earth admin 0 countries by ISO3 (``ADM0_A3``)."""
     if not path.is_file():
-        raise X1Error(f"basemap missing: WORKSPACE:{BASEMAP} (see pilots/network_v1_map/README.md)")
+        raise X1Error(f"basemap missing: WORKSPACE:{BASEMAP} (see docs/architecture/network-v1.md §6)")
     return {f["properties"]["ADM0_A3"]: f for f in json.loads(path.read_text(encoding="utf-8"))["features"]}
 
 
@@ -195,7 +183,7 @@ class Place:
     @property
     def tail(self) -> str:
         """The compact rest of the first line: country outside Germany (the Germany panel names its country), a missing
-        place, and the number of contacts -- " · Kolumbien · 3"."""
+        place, and the number of contacts from two on -- " · Kolumbien · n = 3"."""
         total = len(self.members)
         parts = []
         if self.country_only:
@@ -203,7 +191,7 @@ class Place:
         elif self.country and self.region != "germany":
             parts.append(self.country)
         if total > 1:
-            parts.append(str(total))
+            parts.append(f"n = {total}")
         return "".join(f" · {x}" for x in parts)
 
     @property
@@ -703,31 +691,26 @@ def _basemap(figure, main, panel: Panel, countries: dict[str, dict]) -> None:
             ax.add_patch(Polygon(ring, closed=True, facecolor=fill, edgecolor="#FFFFFF", linewidth=0.5))
 
 
-def x1(ctx: Context, gazetteer: dict, countries: dict[str, dict]):
+def x1(ctx: Context, gazetteer: dict | None = None, countries: dict[str, dict] | None = None):
+    """The figure; place directory and basemap from ``ctx.geo`` unless given."""
+    if gazetteer is None or countries is None:
+        if ctx.geo is None or ctx.geo.missing:
+            raise X1Error(ctx.geo.missing if ctx.geo else "X1 needs the place directory and the basemap (Context.geo)")
+        gazetteer, countries = ctx.geo.gazetteer, ctx.geo.countries
     layout = x1_layout(ctx, gazetteer, countries)
     country_only = any(p.country_only for p in layout.places)
     others = any(p.others for p in layout.places)
     sections = [
         ("Beziehungstyp", relation_entries(ctx.case)),
         (None, [("dot", "Wohnort (Ortspunkt)", POINT)]
-               + [("line", "Kontakte des Ortes, daneben gesetzt", {"color": "#9AA3AC", "linewidth": 0.8}),
-                  ("text", "Zahl = Kontakte am Ort", None)]
                + ([("text", "○ weiterer Ort einer Ortsgruppe", None)] if others else [])
                + ([("area", "nur Wohnland bekannt (Lage unscharf)", {"facecolor": "none", "edgecolor": MUTED, "linewidth": 0.8,
                                                                      "linestyle": (0, (3, 2))})] if country_only else [])),
     ]
-    grouped = any(p.group for p in layout.places)
-    first = (f"Experimentelle Zusatzgrafik (Fassung {X1_VERSION}), keine Standardgrafik. Lage = Ortspunkt, Kontakte daneben"
-             + ("; „und Umgebung“: Nachbarorte zusammengefasst" if grouped else "")
-             + "; Panels mit eigenem Maßstab; keine Verbindungslinien (siehe G2). Karte: Natural Earth.")
-    missing = []
-    if layout.unresolved:
-        missing.append(f"Wohnort nicht darstellbar: {', '.join(layout.unresolved)}.")
-    if layout.not_in_gazetteer:
-        missing.append(f"Ort ohne Koordinaten im Ortsverzeichnis: {', '.join(layout.not_in_gazetteer)}.")
-    p_ = page(ctx, f"{X1_CODE} · Geografische Verteilung des persönlichen Netzwerks",
-              "Wo leben die Kontakte? Wohnorte nach Region (experimentell)",
-              main_w=MAIN_W, main_h=layout.height, legend="bottom", sections=sections, notes=[first, " ".join(missing)])
+    not_shown = [cid for cid in ctx.case.contact_ids if cid in set(layout.unresolved + layout.not_in_gazetteer)]
+    notes = [f"Wohnort nicht darstellbar: {', '.join(not_shown)}." if not_shown else "", "Kartengrundlage: Natural Earth."]
+    p_ = page(ctx, "Geografische Verteilung des persönlichen Netzwerks", None, main_w=MAIN_W, main_h=layout.height,
+              legend="bottom", sections=sections, notes=notes, footer=f"MARES · network_v1 · {len(ctx.case.contacts)} Kontakte")
     ax = p_.main
     ax.set_zorder(2)  # nodes above the map panels
     ax.patch.set_alpha(0.0)
@@ -764,50 +747,3 @@ def x1(ctx: Context, gazetteer: dict, countries: dict[str, dict]):
                     linespacing=1.1, path_effects=halo)
     draw_nodes(ax, layout.positions, {cid: relation_fill(ctx.case, cid) for cid in layout.positions}, zorder=5)
     return p_.figure
-
-
-# ----------------------------------------------------------------------------------------------------- run ---
-@dataclass(frozen=True)
-class X1Result:
-    case_ref: StorageRef
-    status: str  # COMPLETED | FAILED_VALIDATION
-    outputs: list[str]
-    run_id: str
-    layout: X1Layout | None
-
-
-def render_x1(roots: Roots, case_ref: StorageRef, *, formats: tuple[str, ...] = ("png", "svg")) -> X1Result:
-    """Draw X1 for one case into ``<case>/experimental/``. A case with validation errors gets no figure. Replaces only its
-    own X1 files; the standard figures in ``graphics/`` are not touched."""
-    check_case_ref(case_ref)
-    folder = roots.resolve(case_ref)
-    case = read_case(folder)
-    validation = validate(case)
-    gazetteer = read_gazetteer(roots.resolve(StorageRef(case_ref.root, GAZETTEER)))  # sources first: no empty run folder
-    countries = read_basemap(roots.resolve(StorageRef("WORKSPACE", BASEMAP)))
-    run_id = ids.new_run_id(datetime.now(timezone.utc))
-    run_dir = roots.resolve(StorageRef("WORKSPACE", f"runs/{run_id}"), writable=True)
-    run_dir.mkdir(parents=True, exist_ok=False)
-    record = {"format": "mares-run-record/v0-draft", "pipeline": "network_v1 experimental X1", "version": X1_VERSION,
-              "run_id": run_id, "case": {"ref": f"{case_ref.root}:{case_ref.rel}", "code": case.code}, "standard_figure": False,
-              "sources": {"gazetteer": f"{case_ref.root}:{GAZETTEER}", "basemap": f"WORKSPACE:{BASEMAP}",
-                          "basemap_source": "Natural Earth 1:50m admin 0 countries (public domain)"}}
-    if validation.status == FAILED:
-        record.update(status="FAILED_VALIDATION", outputs=[])
-        (run_dir / "run_record.json").write_text(json.dumps(record, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-        return X1Result(case_ref, "FAILED_VALIDATION", [], run_id, None)
-    ctx = Context(case, validation.derived)
-    target = roots.resolve(case_ref.child(EXPERIMENTAL_DIR), writable=True)
-    target.mkdir(exist_ok=True)
-    stem = target / file_name(case.code, X1_CODE, X1_NAME, "png")[:-4]
-    with rc():
-        layout = x1_layout(ctx, gazetteer, countries)
-        written = save_figure(x1(ctx, gazetteer, countries), stem, formats)
-    outputs = [p.name for p in written]
-    record.update(status="COMPLETED", outputs=[f"{EXPERIMENTAL_DIR}/{n}" for n in outputs],
-                  placed=len(layout.positions), unresolved=layout.unresolved, not_in_gazetteer=layout.not_in_gazetteer,
-                  country_only=[cid for p in layout.places if p.country_only for cid in p.members],
-                  place_groups=[[name for name, _ in p.places] for p in layout.places if p.group],
-                  panels=[pn.region.key for pn in layout.panels])
-    (run_dir / "run_record.json").write_text(json.dumps(record, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-    return X1Result(case_ref, "COMPLETED", outputs, run_id, layout)

@@ -3,10 +3,9 @@
 Commands:
 
 * ``validate --case ROOT:network_v1/pilots/<case>``   check one case; report in WORKSPACE/runs
-* ``render   --case ROOT:network_v1/pilots/<case>``   check, then draw the eight figures into the case's graphics/
+* ``render   --case ROOT:network_v1/pilots/<case>``   check, then draw the nine figures into the case's graphics/
 * ``render-all --root INTAKE``                         every case of the tree (test cases included, marked as such)
 * ``list --root INTAKE [--empirical]``                 cases with type, provenance and eligibility
-* ``experimental-x1 --case ROOT:REL | --root INTAKE``  experimental map X1 into <case>/experimental/ (not a standard figure)
 * ``install-test-cases --root INTAKE [--v0-package ROOT:rel]``
                                                        install 002 (synthetic) and, with a v0 package, build 001
 
@@ -40,7 +39,7 @@ def _ref(text: str) -> StorageRef:
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m mares.networks v1", description="network_v1: validate and render cases")
     sub = parser.add_subparsers(dest="command", required=True)
-    for name, text in (("validate", "check one case"), ("render", "check one case and draw the eight standard figures")):
+    for name, text in (("validate", "check one case"), ("render", "check one case and draw the nine standard figures")):
         cmd = sub.add_parser(name, help=text)
         cmd.add_argument("--case", required=True, metavar="ROOT:REL", help=f"e.g. INTAKE:{TREE}/pilots/{SYNTHETIC_CODE}")
         cmd.add_argument("--formats", default="png", help="png and/or svg, comma separated (default png)")
@@ -50,11 +49,6 @@ def build_parser() -> argparse.ArgumentParser:
     cmd = sub.add_parser("list", help="list the cases of the tree")
     cmd.add_argument("--root", required=True, choices=ALLOWED_ROOTS)
     cmd.add_argument("--empirical", action="store_true", help="only cases that may enter empirical overviews")
-    cmd = sub.add_parser("experimental-x1", help="experimental map X1 (not a standard figure) into <case>/experimental/")
-    where = cmd.add_mutually_exclusive_group(required=True)
-    where.add_argument("--case", metavar="ROOT:REL")
-    where.add_argument("--root", choices=ALLOWED_ROOTS, help="every case of the tree")
-    cmd.add_argument("--formats", default="png,svg")
     cmd = sub.add_parser("install-test-cases", help="install the test cases into the tree")
     cmd.add_argument("--root", required=True, choices=ALLOWED_ROOTS)
     cmd.add_argument("--v0-package", metavar="ROOT:REL", help="v0 pilot package to build 001 from (INTAKE or PRIMARY)")
@@ -108,24 +102,6 @@ def main(argv: Sequence[str] | None = None, *, roots: Roots | None = None) -> in
                 print(f"{ref.rel:55} {meta.get('case_type', '?'):8} {meta.get('provenance', '?'):26} "
                       f"empirical={'yes' if is_empirical(meta) else 'no'}")
             return 0
-        if args.command == "experimental-x1":
-            from .experimental import X1Error, render_x1
-
-            formats = tuple(x.strip() for x in args.formats.split(",") if x.strip())
-            refs = [_ref(args.case)] if args.case else [ref for ref, _meta in list_cases(roots, args.root)]
-            worst = 0
-            try:
-                for ref in refs:
-                    result = render_x1(roots, ref, formats=formats)
-                    layout = result.layout
-                    extra = (f"  placed {len(layout.positions)} · not shown {', '.join(layout.unresolved + layout.not_in_gazetteer) or '-'}"
-                             if layout else "")
-                    print(f"{ref.root}:{ref.rel}  X1 {result.status}  {', '.join(result.outputs)}{extra}  (run {result.run_id})")
-                    worst = max(worst, 0 if result.status == "COMPLETED" else 2)
-            except X1Error as error:
-                print(f"error: {error}", file=sys.stderr)
-                return 1
-            return worst
         if args.command == "install-test-cases":
             base = StorageRef(args.root, f"{TREE}/pilots")
             roots.resolve(StorageRef(args.root, f"{TREE}/cases"), writable=True).mkdir(parents=True, exist_ok=True)

@@ -1,10 +1,12 @@
-"""Processing a network_v1 case: read -> validate -> derive -> eight standard figures.
+"""Processing a network_v1 case: read -> validate -> derive -> nine standard figures.
 
 Locations (logical references only):
 
 * the case: ``ROOT:network_v1/{pilots,cases,student_pilot}/<case_code>`` in ``INTAKE`` (interim) or ``PRIMARY`` (target); never
   ``BACKUP``, ``EXCHANGE`` or ``WORKSPACE``
-* the finished figures: the case's ``graphics/`` -- the eight standard files and nothing else; a re-run replaces exactly
+* the map sources of X1: the place directory ``ROOT:network_v1/reference/gazetteer.csv`` in the root of the case and
+  the basemap ``WORKSPACE:cache/basemaps/...`` (read only; if one is missing, X1 is skipped with the reason)
+* the finished figures: the case's ``graphics/`` -- the nine standard files and nothing else; a re-run replaces exactly
   these files and never deletes anything
 * everything technical (validation report, derived tables, figure register, run record): ``WORKSPACE/runs/<RUN-ID>/``
 
@@ -31,7 +33,8 @@ from mares.network_v0.run import _RunFolder, _software, _utc  # version-neutral 
 from . import DATASET_VERSION, codes
 from .case import Case, is_empirical, read_case
 from .figures import FIGURES, expected_files, render
-from .figures.base import Context
+from .figures.base import Context, Geo
+from .figures.maps import BASEMAP, BASEMAP_SOURCE, GAZETTEER, X1Error, read_basemap, read_gazetteer
 from .places import AREA_LABELS, PRIMARY_LABELS
 from .validate import FAILED, Validation, validate
 
@@ -94,6 +97,24 @@ def _csv(header: list[str], rows: list[list[object]]) -> str:
     return buffer.getvalue()
 
 
+def load_geo(roots: Roots, root: str) -> Geo:
+    """The map sources of X1. A missing file is an explicit state (X1 is skipped with the reason, never drawn from
+    elsewhere); a malformed place directory or basemap stops the run."""
+    gazetteer_ref, basemap_ref = StorageRef(root, GAZETTEER), StorageRef("WORKSPACE", BASEMAP)
+    gazetteer_path, basemap_path = roots.resolve(gazetteer_ref), roots.resolve(basemap_ref)
+    missing = [f"{label} fehlt ({ref.root}:{ref.rel})" for label, ref, path in
+               (("Ortsverzeichnis", gazetteer_ref, gazetteer_path), ("Basiskarte", basemap_ref, basemap_path)) if not path.is_file()]
+    if missing:
+        return Geo(missing="; ".join(missing))
+    try:
+        gazetteer, countries = read_gazetteer(gazetteer_path), read_basemap(basemap_path)
+    except (X1Error, ValueError, KeyError) as error:
+        raise PipelineError(f"map sources of X1 unusable: {error}") from error
+    return Geo(gazetteer, countries, sources={
+        "gazetteer": {"ref": gazetteer_ref.to_dict(), "sha256": sha256_file(gazetteer_path)},
+        "basemap": {"ref": basemap_ref.to_dict(), "sha256": sha256_file(basemap_path), "source": BASEMAP_SOURCE}})
+
+
 def derived_tables(case: Case, validation: Validation) -> dict[str, str]:
     """Derived features as CSV: one row per contact, one row per pair with a statement."""
     d = validation.derived
@@ -137,6 +158,7 @@ def process_case(
     folder = roots.resolve(case_ref)
     if not (folder / "data").is_dir():
         raise PipelineError(f"{case_ref.root}:{case_ref.rel} has no data/ folder")
+    geo = load_geo(roots, case_ref.root)  # sources first: a malformed one leaves no empty run folder
     started = clock()
     run_id = ids.new_run_id(started)
     run_ref = StorageRef("WORKSPACE", f"runs/{run_id}")
@@ -154,13 +176,13 @@ def process_case(
         for rel, text in derived_tables(case, validation).items():
             out.write_text(rel, text)
         graphics = roots.resolve(case_ref.child("graphics"), writable=True)
-        figures = render(Context(case, validation.derived), graphics, formats)
+        figures = render(Context(case, validation.derived, geo), graphics, formats)
         allowed = expected_files(case.code, ("png", "svg"))
         foreign = sorted(p.name for p in graphics.iterdir() if p.name not in allowed)
         out.write_text("figures_index.json", json.dumps({
             "format": "mares-network-v1-figures/v1", "case_code": case.code, "graphics": case_ref.child("graphics").to_dict(),
             "figures": figures, "standard_set": [f"{s.code} {s.title}" for s in FIGURES],
-            "foreign_files_in_graphics": foreign,
+            "foreign_files_in_graphics": foreign, "map_sources": geo.sources or {"missing": geo.missing},
         }, indent=2, ensure_ascii=False) + "\n")
     status = "FAILED_VALIDATION" if validation.status == FAILED else "COMPLETED"
     data_files = sorted(p for p in (folder / "data").iterdir() if p.is_file())
@@ -179,6 +201,7 @@ def process_case(
         "coverage": validation.derived.coverage.to_dict() if validation.derived else None,
         "figures": [{k: f[k] for k in ("code", "status", "reason", "files")} for f in figures],
         "foreign_files_in_graphics": foreign,
+        "map_sources": geo.sources or {"missing": geo.missing},
         "software": _software(),
         "note": "Technische Prüfung, keine wissenschaftliche Validierung.",
     }

@@ -1,4 +1,4 @@
-"""The fixed set of eight standard figures of network_v1 -- no more, no automatic combinations.
+"""The fixed set of nine standard figures of network_v1 -- no more, no automatic combinations.
 
 A figure whose data are missing is not drawn; its entry carries the reason instead (``skipped``), so nothing
 pretends to show what was not surveyed.
@@ -15,6 +15,7 @@ from mares.network_v0.figures.style import rc, save_figure
 
 from ..places import Area
 from .base import Context, file_name
+from .maps import x1
 from .matrices import p1, p2, p3, p4, p5
 from .networks import g1, g2, g3
 
@@ -37,6 +38,14 @@ def _all_unresolved(ctx: Context) -> bool:
     return all(r.area is Area.UNRESOLVED for r in ctx.derived.residence.values())
 
 
+def _x1_missing(ctx: Context) -> str | None:
+    if ctx.geo is None:
+        return "keine Kartengrundlagen übergeben"
+    if ctx.geo.missing:
+        return ctx.geo.missing
+    return "kein Wohnort zuordenbar" if _all_unresolved(ctx) else None
+
+
 FIGURES: tuple[FigureSpec, ...] = (
     FigureSpec("G1", "persoenliches_netz", "Persönliches Beziehungsnetz", ("A: Nähe", "A: Beziehungstyp"), g1,
                lambda ctx: _no(ctx, lambda c: c.closeness.recorded, "keine erhobene persönliche Nähe")),
@@ -54,6 +63,8 @@ FIGURES: tuple[FigureSpec, ...] = (
                lambda ctx: _no(ctx, lambda c: c.functions.recorded, "keine erhobenen Beziehungsfunktionen")),
     FigureSpec("G3", "gruppen_zugehoerigkeit", "Gruppenstruktur und Zugehörigkeit", ("C: Gruppen, Mitglieder, Status, Zugehörigkeit", "C: bestätigte Verbindungen"), g3,
                lambda ctx: None if ctx.case.groups else "keine Gruppen erhoben"),
+    FigureSpec("X1", "geografische_verteilung", "Geografische Verteilung des persönlichen Netzwerks",
+               ("A: Wohnort, Wohnland", "A: Beziehungstyp", "Ortsverzeichnis", "Basiskarte"), x1, lambda ctx: _x1_missing(ctx)),
 )
 FORMATS = ("png", "svg")
 
@@ -75,7 +86,7 @@ def _save(figure, stem: Path, formats: tuple[str, ...]) -> list[Path]:
 
 
 def render(ctx: Context, target: Path, formats: tuple[str, ...] = ("png",)) -> list[dict]:
-    """Draw the eight figures into ``target`` (the case's ``graphics/``); returns one entry per figure."""
+    """Draw the nine figures into ``target`` (the case's ``graphics/``); returns one entry per figure."""
     if not formats or not set(formats) <= set(FORMATS):
         raise ValueError(f"formats must be a non-empty subset of {', '.join(FORMATS)}")
     target.mkdir(parents=True, exist_ok=True)

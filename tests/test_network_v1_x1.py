@@ -1,5 +1,5 @@
-"""Experimental figure X1 (geographic distribution): layout rules, drawing, output location. Synthetic data only: case
-002, a tiny artificial basemap and a place directory of its invented places."""
+"""Standard figure X1 (geographic distribution): layout rules, drawing, texts, its place in the case run. Synthetic data
+only: case 002, a tiny artificial basemap and a place directory of its invented places (network_v1_fixtures)."""
 
 from __future__ import annotations
 
@@ -13,62 +13,13 @@ from matplotlib.text import Text
 from mares.core.refs import StorageRef
 from mares.network_v0.figures.style import rc
 from mares.network_v1.case import read_case
-from mares.network_v1.experimental import (
-    BASEMAP, GAZETTEER, NODE_R, X1Error, read_gazetteer, render_x1, x1, x1_layout,
-)
+from mares.network_v1.figures.maps import BASEMAP, GAZETTEER, NODE_R, X1Error, read_gazetteer, x1, x1_layout
 from mares.network_v1.figures.base import Context
 from mares.network_v1.testcases import SYNTHETIC_CODE
 from mares.network_v1.validate import validate
-from network_v1_fixtures import copy_002, machine, read_rows, roots_for, write_rows
-
-# country: (continent, German name, label point lat, lon, half size of the square in degrees)
-COUNTRIES = {
-    "DEU": ("Europe", "Deutschland", 51.0, 10.0, 4.0), "ESP": ("Europe", "Spanien", 40.0, -4.0, 4.0),
-    "FRA": ("Europe", "Frankreich", 46.5, 2.5, 4.0), "COL": ("South America", "Kolumbien", 4.0, -73.0, 5.0),
-    "ECU": ("South America", "Ecuador", -1.5, -78.0, 2.0), "USA": ("North America", "Vereinigte Staaten", 39.0, -98.0, 15.0),
-    "CAN": ("North America", "Kanada", 56.0, -100.0, 12.0), "JPN": ("Asia", "Japan", 36.0, 138.0, 3.0),
-    "UKR": ("Europe", "Ukraine", 49.0, 31.0, 4.0),
-}
-PLACES = {  # public coordinates of the invented places of case 002 (as in pilots/network_v1_map)
-    ("Marburg", "DEU"): (50.81, 8.77), ("Wehrda", "DEU"): (50.84, 8.76), ("Cölbe", "DEU"): (50.85, 8.78),
-    ("Lahntal", "DEU"): (50.87, 8.69), ("Kirchhain", "DEU"): (50.83, 8.92), ("Gießen", "DEU"): (50.58, 8.68),
-    ("Wetzlar", "DEU"): (50.56, 8.50), ("Kassel", "DEU"): (51.31, 9.48), ("Frankfurt am Main", "DEU"): (50.11, 8.68),
-    ("Berlin", "DEU"): (52.52, 13.40), ("Madrid", "ESP"): (40.42, -3.70), ("Barcelona", "ESP"): (41.39, 2.17),
-    ("Lyon", "FRA"): (45.76, 4.84), ("Bogotá", "COL"): (4.71, -74.07), ("Medellín", "COL"): (6.24, -75.58),
-    ("Quito", "ECU"): (-0.18, -78.47), ("Miami", "USA"): (25.76, -80.19), ("Toronto", "CAN"): (43.65, -79.38),
-    ("Kyjiw", "UKR"): (50.45, 30.52), ("Chía", "COL"): (4.86, -74.06),
-}
-
-
-def basemap() -> dict:
-    features = []
-    for iso, (continent, name, lat, lon, h) in COUNTRIES.items():
-        ring = [[lon - h, lat - h], [lon + h, lat - h], [lon + h, lat + h], [lon - h, lat + h], [lon - h, lat - h]]
-        features.append({"type": "Feature", "geometry": {"type": "Polygon", "coordinates": [ring]},
-                         "properties": {"ADM0_A3": iso, "CONTINENT": continent, "NAME_DE": name, "LABEL_X": lon, "LABEL_Y": lat}})
-    return {"type": "FeatureCollection", "features": features}
-
-
-GROUP_WITH = {"Wehrda": "Marburg", "Cölbe": "Marburg", "Lahntal": "Marburg", "Kirchhain": "Marburg", "Wetzlar": "Gießen",
-              "Chía": "Bogotá"}  # the regional assignment of the place directory (synthetic)
-
-
-def gazetteer_text(places=PLACES, *, group_with=GROUP_WITH) -> str:
-    if group_with is None:
-        return "place;country_iso3;lat;lon;basis\n" + "".join(f"{p};{iso};{lat};{lon};synthetic\n" for (p, iso), (lat, lon) in places.items())
-    return "place;country_iso3;lat;lon;basis;group_with\n" + "".join(
-        f"{p};{iso};{lat};{lon};synthetic;{group_with.get(p, '')}\n" for (p, iso), (lat, lon) in places.items())
-
-
-def countries() -> dict:
-    return {f["properties"]["ADM0_A3"]: f for f in basemap()["features"]}
-
-
-def gazetteer(tmp_path, places=PLACES, *, group_with=GROUP_WITH) -> dict:
-    path = tmp_path / "gazetteer.csv"
-    path.write_text(gazetteer_text(places, group_with=group_with), encoding="utf-8")
-    return read_gazetteer(path)
-
+from network_v1_fixtures import (  # noqa: F401  (basemap, gazetteer_text: used by the tests below)
+    COUNTRIES, GROUP_WITH, PLACES, basemap, copy_002, countries, gazetteer, gazetteer_text, machine, read_rows, roots_for, write_rows,
+)
 
 def context(folder):
     case = read_case(folder)
@@ -115,7 +66,7 @@ def test_places_join_the_place_the_directory_assigns_them_to(case, tmp_path):
     assert names["Marburg"] == ["Marburg", "Cölbe", "Kirchhain", "Lahntal", "Wehrda"] and names["Gießen"] == ["Gießen", "Wetzlar"]
     marburg = next(p for p in layout.places if p.places[0][0] == "Marburg")
     in_marburg = [c.id for c in ctx.case.contacts if c.residence_place in ("Marburg", "Cölbe", "Kirchhain", "Lahntal", "Wehrda")]
-    assert marburg.title == f"Marburg und Umgebung · {len(in_marburg)}" and sorted(marburg.members) == sorted(in_marburg)
+    assert marburg.title == f"Marburg und Umgebung · n = {len(in_marburg)}" and sorted(marburg.members) == sorted(in_marburg)
     assert marburg.sub.replace("\n", " · ") == "Marburg 10 · Cölbe · Kirchhain · Lahntal · Wehrda" and len(marburg.others) == 4
     for alone in ("Kassel", "Frankfurt am Main", "Berlin", "Bogotá", "Medellín"):
         assert names[alone] == [alone]
@@ -127,7 +78,7 @@ def test_without_an_assignment_nothing_is_grouped(case, tmp_path):
 
 
 def test_grouping_depends_on_the_map_scale_and_a_distance_limit(case, tmp_path, monkeypatch):
-    import mares.network_v1.experimental as x1mod
+    import mares.network_v1.figures.maps as x1mod
 
     monkeypatch.setattr(x1mod, "GROUP_MAP_IN", 0.01)  # a larger-scale map: the places stand apart again
     assert not any(p.group for p in x1_layout(context(case), gazetteer(tmp_path), countries()).places)
@@ -162,7 +113,7 @@ def test_place_boxes_name_the_country_outside_germany_only(case, tmp_path):
     write_rows(case, "contacts.csv", rows)
     layout = x1_layout(context(case), gazetteer(tmp_path), countries())
     titles = {p.places[0][0]: p.title.replace("\n", " · ") for p in layout.places}  # a title may wrap
-    assert titles["Bogotá"] == "Bogotá und Umgebung · Kolumbien · 4"  # group abroad: with the country
+    assert titles["Bogotá"] == "Bogotá und Umgebung · Kolumbien · n = 4"  # group abroad: with the country
     assert titles["Madrid"] == "Madrid · Spanien" and titles["Toronto"] == "Toronto · Kanada"  # single places abroad
     assert titles["Berlin"] == "Berlin" and titles["Marburg"].startswith("Marburg und Umgebung · ")  # Germany: no country
     rows = read_rows(case, "contacts.csv")
@@ -212,7 +163,7 @@ def test_a_panel_without_contacts_shows_its_default_extent(tmp_path):
 
 
 def _geometry(case, tmp_path):
-    from mares.network_v1 import experimental as x
+    from mares.network_v1.figures import maps as x
 
     layout = x1_layout(context(case), gazetteer(tmp_path), countries())
     return x, layout
@@ -338,7 +289,8 @@ def test_a_place_missing_in_the_directory_is_named_not_guessed(case, tmp_path):
     with rc():
         figure = x1(ctx, gazetteer(tmp_path, places), countries())
     texts = " ".join(t.get_text() for t in figure.findobj(Text))
-    assert f"Ort ohne Koordinaten im Ortsverzeichnis: {lyon[0]}." in texts and "Wohnort nicht darstellbar: A22." in texts
+    assert f"Wohnort nicht darstellbar: A22, {lyon[0]}." in texts  # one short note, in contact order, no technical reason
+    assert "Ortsverzeichnis" not in texts
 
 
 def test_further_regions_appear_only_when_needed_between_america_and_europe(case, tmp_path):
@@ -363,49 +315,83 @@ def test_x1_has_no_ties_but_place_boxes_points_and_pale_discs(case, tmp_path):
     assert gids.count("place-box") == gids.count("place-point") == len(layout.places)
     assert gids.count("place-disc") == sum(1 for p in layout.places if len(p.members) > 1)
     texts = " ".join(t.get_text() for t in figure.findobj(Text))
-    assert "X1 · Geografische Verteilung des persönlichen Netzwerks" in texts and "TESTFALL 002*" in texts
-    assert "Fassung 2.8" in texts and "keine Standardgrafik" in texts and "keine Verbindungslinien" in texts
-    assert "Marburg und Umgebung" in texts and " · 14" in texts and "Gießen und Umgebung" in texts  # bold name, compact number
+    assert "Marburg und Umgebung" in texts and " · n = 14" in texts and "Gießen und Umgebung" in texts  # bold name, n = x
     assert gids.count("true-point") >= sum(len(p.others) for p in layout.places)  # other places of a group stay visible
 
 
-def test_render_x1_writes_into_experimental_and_leaves_graphics_alone(tmp_path):
-    folders = machine(tmp_path)
+def test_x1_shows_only_the_agreed_texts(case, tmp_path):
+    with rc():
+        figure = x1(context(case), gazetteer(tmp_path), countries())
+    texts = [t.get_text() for t in figure.findobj(Text)]
+    joined = " ".join(texts)
+    assert "Geografische Verteilung des persönlichen Netzwerks" in texts  # the title, without the code X1
+    assert not any(t.startswith("X1") for t in texts) and "Wo leben die Kontakte?" not in joined  # no code, no subtitle
+    assert "TESTFALL 002* · SYNTHETISCH" in texts
+    assert "MARES · network_v1 · 32 Kontakte" in texts  # no group count, no quality, no version
+    assert "Kartengrundlage: Natural Earth." in texts and "Wohnort nicht darstellbar: A22." in texts
+    for gone in ("Experimentell", "experimentell", "Fassung", "Standardgrafik", "Verbindungslinien", "Maßstab", "daneben gesetzt",
+                 "Zahl = Kontakte", "Nachbarorte", "Gruppen", "Datenqualität"):
+        assert gone not in joined, gone
+    assert "Beziehungstyp" in texts and "Wohnort (Ortspunkt)" in texts
+    assert "Bogotá" in texts and "Kolumbien · n = 3" in joined
+    assert "Madrid" in texts and not any(t.endswith("n = 1") for t in texts)  # a single contact needs no number
+
+
+def test_x1_hides_the_quality_of_a_real_case(case, tmp_path):
+    from network_v1_fixtures import set_metadata
+
+    set_metadata(case, case_type="pilot", provenance="survey", data_quality="VALIDATED", display_code="PILOT XY")
+    with rc():
+        texts = " ".join(t.get_text() for t in x1(context(case), gazetteer(tmp_path), countries()).findobj(Text))
+    assert "FALL · PILOT XY" in texts and "VALIDATED" not in texts and "Datenqualität" not in texts
+
+
+def test_the_case_run_draws_x1_into_graphics_next_to_the_other_figures(tmp_path):
+    from mares.network_v1.figures import expected_files
+    from mares.network_v1.run import process_case
+
+    folders = machine(tmp_path)  # with place directory and basemap
     case = copy_002(folders["intake"])
-    gaz = folders["intake"] / GAZETTEER
-    gaz.parent.mkdir(parents=True)
-    gaz.write_text(gazetteer_text(), encoding="utf-8")
-    base = folders["workspace"] / BASEMAP
-    base.parent.mkdir(parents=True)
-    base.write_text(json.dumps(basemap()), encoding="utf-8")
-    result = render_x1(roots_for(folders), StorageRef("INTAKE", f"network_v1/pilots/{SYNTHETIC_CODE}"))
+    result = process_case(roots_for(folders), StorageRef("INTAKE", f"network_v1/pilots/{SYNTHETIC_CODE}"), formats=("png", "svg"))
     assert result.status == "COMPLETED"
-    assert sorted(p.name for p in (case / "experimental").iterdir()) == [
-        f"{SYNTHETIC_CODE}_X1_geografische_verteilung.png", f"{SYNTHETIC_CODE}_X1_geografische_verteilung.svg"]
-    assert not (case / "graphics").exists()  # the standard figures are not touched
-    record = json.loads((folders["workspace"] / "runs" / result.run_id / "run_record.json").read_text(encoding="utf-8"))
-    assert record["standard_figure"] is False and record["version"] == "2.8" and record["unresolved"] == ["A22"] and str(folders["intake"]) not in json.dumps(record)
+    names = {p.name for p in (case / "graphics").iterdir()}
+    assert names == expected_files(SYNTHETIC_CODE, ("png", "svg")) and len(names) == 18
+    assert {f"{SYNTHETIC_CODE}_X1_geografische_verteilung.png", f"{SYNTHETIC_CODE}_X1_geografische_verteilung.svg"} <= names
+    assert not (case / "experimental").exists()
+    sources = result.record["map_sources"]
+    assert sources["gazetteer"]["ref"] == {"root": "INTAKE", "rel": GAZETTEER} and sources["basemap"]["ref"]["root"] == "WORKSPACE"
+    assert str(folders["intake"]) not in json.dumps(result.record)
 
 
-def test_render_x1_needs_the_basemap_and_a_valid_directory(tmp_path):
+def test_without_map_sources_x1_is_skipped_with_the_reason(tmp_path):
+    from mares.network_v1.run import process_case
+
     folders = machine(tmp_path)
-    copy_002(folders["intake"])
-    with pytest.raises(X1Error):
-        render_x1(roots_for(folders), StorageRef("INTAKE", f"network_v1/pilots/{SYNTHETIC_CODE}"))
+    (folders["workspace"] / BASEMAP).unlink()
+    case = copy_002(folders["intake"])
+    result = process_case(roots_for(folders), StorageRef("INTAKE", f"network_v1/pilots/{SYNTHETIC_CODE}"))
+    x1_entry = next(f for f in result.figures if f["code"] == "X1")
+    assert x1_entry["status"] == "skipped" and x1_entry["reason"].startswith("Basiskarte fehlt (WORKSPACE:")
+    assert not list((case / "graphics").glob("*X1*")) and len(list((case / "graphics").iterdir())) == 8
     bad = tmp_path / "bad.csv"
     bad.write_text("place;country_iso3;lat;lon;basis\nMarburg;DEU;north;8.77;x\n", encoding="utf-8")
     with pytest.raises(X1Error):
         read_gazetteer(bad)
 
 
-def test_the_command_line_draws_x1_for_one_case(tmp_path, capsys):
-    from mares.network_v1.cli import main
+def test_a_malformed_place_directory_stops_the_run_before_anything_is_written(tmp_path):
+    from mares.network_v1.run import PipelineError, process_case
 
     folders = machine(tmp_path)
-    copy_002(folders["intake"])
-    (folders["intake"] / GAZETTEER).parent.mkdir(parents=True)
-    (folders["intake"] / GAZETTEER).write_text(gazetteer_text(), encoding="utf-8")
-    (folders["workspace"] / BASEMAP).parent.mkdir(parents=True)
-    (folders["workspace"] / BASEMAP).write_text(json.dumps(basemap()), encoding="utf-8")
-    code = main(["experimental-x1", "--case", f"INTAKE:network_v1/pilots/{SYNTHETIC_CODE}", "--formats", "png"], roots=roots_for(folders))
-    assert code == 0 and "X1 COMPLETED" in capsys.readouterr().out
+    (folders["intake"] / GAZETTEER).write_text("place;country_iso3;lat;lon;basis\nMarburg;DEU;north;8.77;x\n", encoding="utf-8")
+    case = copy_002(folders["intake"])
+    with pytest.raises(PipelineError):
+        process_case(roots_for(folders), StorageRef("INTAKE", f"network_v1/pilots/{SYNTHETIC_CODE}"))
+    assert not (case / "graphics").exists() and not list((folders["workspace"] / "runs").iterdir())
+
+
+def test_the_experimental_command_is_gone(tmp_path):
+    from mares.network_v1.cli import build_parser
+
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["experimental-x1", "--root", "INTAKE"])

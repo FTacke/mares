@@ -16,21 +16,21 @@ from mares.network_v1.figures.base import Context, file_name
 from mares.network_v1.figures.networks import g1_layout, g2, g3_layout, intruders
 from mares.network_v1.testcases import synthetic_source
 from mares.network_v1.validate import validate
-from network_v1_fixtures import copy_002, read_rows, write_rows
+from network_v1_fixtures import copy_002, geo, read_rows, write_rows
 
 
-def context(folder):
+def context(folder, tmp):
     case = read_case(folder)
-    return Context(case, validate(case).derived)
+    return Context(case, validate(case).derived, geo(tmp))
 
 
 @pytest.fixture(scope="module")
-def ctx():
-    return context(synthetic_source())
+def ctx(tmp_path_factory):
+    return context(synthetic_source(), tmp_path_factory.mktemp("geo"))
 
 
-def test_exactly_eight_standard_figures():
-    assert [s.code for s in FIGURES] == ["G1", "G2", "P1", "P2", "P3", "P4", "P5", "G3"]
+def test_exactly_nine_standard_figures():
+    assert [s.code for s in FIGURES] == ["G1", "G2", "P1", "P2", "P3", "P4", "P5", "G3", "X1"]
 
 
 def test_file_names_are_stable_and_ascii():
@@ -40,7 +40,7 @@ def test_file_names_are_stable_and_ascii():
     assert all(n.isascii() for n in expected_files("002_test_synthetic", ("png", "svg")))
 
 
-def test_render_writes_only_the_eight_files_and_is_reproducible(ctx, tmp_path):
+def test_render_writes_only_the_nine_files_and_is_reproducible(ctx, tmp_path):
     first = render(ctx, tmp_path / "a")
     second = render(ctx, tmp_path / "b")
     names = sorted(p.name for p in (tmp_path / "a").iterdir())
@@ -84,14 +84,17 @@ def test_no_labels_of_persons_in_any_figure(tmp_path):
     for i, row in enumerate(rows):
         row["label"] = f"Pseudonym-Xq{i:02d}"
     write_rows(case, "contacts.csv", rows)
-    named = context(case)
+    named = context(case, tmp_path)
     for spec in FIGURES:
         with rc():
             figure = spec.draw(named)
         texts = " ".join(t.get_text() for t in figure.findobj(Text))
         assert "Pseudonym-Xq" not in texts, spec.code
         assert "TESTFALL 002* · SYNTHETISCH" in texts  # case badge on every figure
-        assert "MARES · network_v1 · 32 Kontakte · 5 Gruppen" in texts  # the same footer on every figure
+        if spec.code == "X1":  # the map counts contacts only: groups are no dimension of it
+            assert "MARES · network_v1 · 32 Kontakte" in texts and "Gruppen" not in texts
+        else:
+            assert "MARES · network_v1 · 32 Kontakte · 5 Gruppen" in texts  # the same footer on every other figure
 
 
 def test_coverage_is_stated_on_network_figures(ctx):
@@ -108,7 +111,7 @@ def test_a_figure_without_data_is_skipped_with_a_reason(tmp_path):
     write_rows(case, "group_memberships.csv", [], ["group_id", "contact_id"])
     rows = [r for r in read_rows(case, "alter_connections.csv") if r["source"] == ""]
     write_rows(case, "alter_connections.csv", rows)
-    entries = {e["code"]: e for e in render(context(case), tmp_path / "out")}
+    entries = {e["code"]: e for e in render(context(case, tmp_path), tmp_path / "out")}
     assert entries["G3"]["status"] == "skipped" and entries["G3"]["reason"] and not entries["G3"]["files"]
     assert not list((tmp_path / "out").glob("*G3*"))
     assert entries["G1"]["status"] == "rendered"
@@ -116,6 +119,6 @@ def test_a_figure_without_data_is_skipped_with_a_reason(tmp_path):
 
 def test_svg_is_optional(ctx, tmp_path):
     render(ctx, tmp_path, ("png", "svg"))
-    assert len(list(tmp_path.glob("*.svg"))) == 8
+    assert len(list(tmp_path.glob("*.svg"))) == 9
     with pytest.raises(ValueError):
         render(ctx, tmp_path, ("pdf",))
