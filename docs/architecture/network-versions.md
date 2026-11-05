@@ -15,7 +15,7 @@ nicht nach v1 umcodiert, v1 liest keine v0-Pakete, und die Fälle der einen Vers
 | Geografie | Marburg · Region Marburg · übriges Deutschland · übriges Europa · außerhalb Europas | Marburg (Stadt) · übriges Mittelhessen · übriges Deutschland · übriges Europa · außerhalb Europas |
 | Code | [`src/mares/network_v0/`](../../src/mares/network_v0/__init__.py) | [`src/mares/network_v1/`](../../src/mares/network_v1/__init__.py) |
 | Vertrag | [`network-module.md`](network-module.md), [`visualization-conventions.md`](visualization-conventions.md) | [`network-v1.md`](network-v1.md) |
-| Ausgaben | `WORKSPACE/runs/<RUN-ID>/` (19 Abbildungen, Berichte) | acht Standardgrafiken in `<Fall>/graphics/`, Berichte in `WORKSPACE/runs/<RUN-ID>/` |
+| Ausgaben | `WORKSPACE/runs/<RUN-ID>/` (19 Abbildungen, Berichte) | neun Standardgrafiken in `<Fall>/graphics/`, Berichte in `WORKSPACE/runs/<RUN-ID>/` |
 | Tests | `tests/test_network_v0_*.py` | `tests/test_network_v1_*.py` |
 
 ## 1. Ein Bedienweg

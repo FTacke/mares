@@ -3,8 +3,8 @@
 **Status: Experiment.** Keine Standardgrafik, nicht Teil von `render`/`render-all`, kein Bestandteil eines Fallordners.
 Verbindlicher Standard bleibt die Bänderdarstellung G2 ([`network-v1.md`](../../docs/architecture/network-v1.md) §6).
 Bewertung: [`docs/agent-runs/2026-10-31_network-v1-design-instrument.md`](../../docs/agent-runs/2026-10-31_network-v1-design-instrument.md) §5.
-Die ruhigere Verteilungskarte ohne Verbindungslinien für alle Fälle ist die experimentelle Grafik X1
-([`network-v1.md`](../../docs/architecture/network-v1.md) §6.1).
+Die ruhigere Verteilungskarte ohne Verbindungslinien für alle Fälle ist die Standardgrafik X1
+([`network-v1.md`](../../docs/architecture/network-v1.md) §6.1); sie nutzt dieselbe Basiskarte (unten).
 
 | Datei | Zweck |
 |---|---|

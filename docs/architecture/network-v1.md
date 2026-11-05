@@ -2,7 +2,8 @@
 
 **Status: implementiert und mit zwei Testfällen technisch geprüft (2026-10-31, Gestaltung überarbeitet am selben Tag, G1–G3
 nachgeschärft nach [`ADR-0007`](../decisions/ADR-0007_2026-10-31_netzwerk-v1-g1-g3.md), G1/G3 abgeschlossen nach
-[`ADR-0008`](../decisions/ADR-0008_2026-10-31_netzwerk-v1-g1-sektoren-g3-beschriftung.md)); fachlich nicht validiert.** Code:
+[`ADR-0008`](../decisions/ADR-0008_2026-10-31_netzwerk-v1-g1-sektoren-g3-beschriftung.md), Karte X1 als neunte Standardgrafik seit
+[`ADR-0016`](../decisions/ADR-0016_2026-11-05_netzwerk-v1-x1-kanonisch.md), 2026-11-05); fachlich nicht validiert.** Code:
 [`src/mares/network_v1/`](../../src/mares/network_v1/__init__.py). Abgrenzung zu v0: [`network-versions.md`](network-versions.md).
 Begründung: [`ADR-0005`](../decisions/ADR-0005_2026-10-31_netzwerk-v0-v1.md), Gestaltung:
 [`ADR-0006`](../decisions/ADR-0006_2026-10-31_netzwerk-v1-gestaltung.md).
@@ -17,7 +18,7 @@ zu diesem Datenmodell.
 ## 1. Ablauf
 
 ```text
-Erhebungsbögen ──(Übertragung)──> data/*.csv + metadata.json ──> Prüfung ──> Ableitungen ──> acht Standardgrafiken
+Erhebungsbögen ──(Übertragung)──> data/*.csv + metadata.json ──> Prüfung ──> Ableitungen ──> neun Standardgrafiken
                                    (Fallordner)                   validate.py   derive.py      figures/ → graphics/
 ```
 
@@ -38,8 +39,8 @@ eine Kopfzeile. Beispiel: [`examples/synthetic/network_v1/002_test_synthetic/`](
 | `context.csv` | Kontextbogen (§2.6) |
 | `places.csv` | optional: ausdrückliche Einordnung deutscher Orte (§3) |
 
-`<Fall>/graphics/` enthält ausschließlich die fertigen Standardgrafiken (§6). Experimentelle Zusatzgrafiken liegen getrennt davon
-unter `<Fall>/experimental/` (§6.1); die Pipeline liest dort nichts. Prüfberichte, Ableitungstabellen und das
+`<Fall>/graphics/` enthält ausschließlich die fertigen Standardgrafiken (§6), je Format genau eine Datei je Grafik. Ältere
+Entwicklungsstände der Karte X1 können noch unter `<Fall>/experimental/` liegen; die Pipeline liest und schreibt dort nichts. Prüfberichte, Ableitungstabellen und das
 Laufprotokoll liegen unter `WORKSPACE/runs/<RUN-ID>/`.
 
 ### 2.1 Tabelle A – `contacts.csv`
@@ -184,10 +185,12 @@ Oben rechts, aus den Metadaten: Testfälle `TESTFALL <Nummer>* · SYNTHETISCH` b
 `FALL · <display_code>` oder, ohne `display_code`, `FALL · MARES-<Nummer>`. Nie ein Name, nie der lange Ordnername. Dateien:
 `<Fallcode>_<Grafikcode>_<Bezeichnung>.png` (optional `.svg`).
 
-## 6. Die acht Standardgrafiken ([`figures/`](../../src/mares/network_v1/figures/__init__.py))
+## 6. Die neun Standardgrafiken ([`figures/`](../../src/mares/network_v1/figures/__init__.py))
 
 Fehlen die Daten einer Grafik, entsteht keine Datei; der Lauf nennt den Grund (`figures_index.json`). Gemeinsame Bausteine: Punktmatrix
 (P1, P2, P5: gleiche Punkt- und Beschriftungsgröße, Kontakte einer Zelle nebeneinander und in Zeilen, nie überlappend) und Heatmap (P3, P4).
+Reihenfolge im Register: G1, G2, P1, P2, P3, P4, P5, G3, X1. Alle sichtbaren Texte der neun Grafiken mit Herkunft und Bedingung:
+[`network-v1-visualization-text-inventory.md`](network-v1-visualization-text-inventory.md) (Iststand, Grundlage der redaktionellen Prüfung).
 
 | Code | Datei | Darstellung | Legende |
 |---|---|---|---|
@@ -199,27 +202,46 @@ Fehlen die Daten einer Grafik, entsteht keine Datei; der Lauf nennt den Grund (`
 | P4 | `P4_wohnort_sprachen` | derselbe Baustein; Zeilen Spanisch, Deutsch, Englisch, Portugiesisch und **jede** benannte weitere Sprache; M/S bleiben im Datenmodell, ohne eigene Grafik | bottom (Farbskala) |
 | P5 | `P5_funktionen_naehe` | Punktmatrix Funktionen × Nähe, Bezeichnungen ohne Codes, n je Spalte; „Nichts davon“ und „keine Angabe“ nur, wenn sie vorkommen, abgesetzt | bottom |
 | G3 | `G3_gruppen_zugehoerigkeit` | **eine** große Gruppenkarte: Kontakte als Knoten, die von Ego benannten Gruppen als Umrandungen mit heller Fläche; alle Umrandungen gleich stark. Beschriftung als Block aus zwei Zeilen: `C04 · <Bezeichnung> (3)` und darunter `○●○○○ 2` – **fünfstufige Punktskala** (1 links … 5 rechts), genau der erhobene Wert gefüllt, daneben die Zahl; kein „Zugehörigkeit“, keine verbalen Stufen, kein „Kontakte“ je Gruppe (die Legende erklärt die Skala einmal: „1 = sehr stark bis 5 = überhaupt nicht; der markierte Punkt zeigt den erhobenen Wert“). Ohne Wert kein Punkt gefüllt, statt der Zahl das Kürzel des Fehlens (`KA`, `NS`, `NA`, `n. e.`), in der Legende aufgelöst. Die Bezeichnung erscheint wie erhoben, nur ohne Testdaten-Zusatz („(fiktive Bezeichnung)“, „(synthetisch)“) und bei mehr als 34 Zeichen gekürzt – nur in der Darstellung, die Daten bleiben unverändert. Die Skala zeigt eine einzelne Selbsteinschätzung, nicht die interne Vernetzung. **Platzierung:** der Block liegt unmittelbar außerhalb der eigenen Umrandung (Kandidaten rundum in festem Abstand), nicht auf Knoten, Verbindungen, anderen Beschriftungen, Umrandungslinien oder fremden Gruppenflächen; die Flächen der Gruppen, die eine eingebettete Gruppe umschließen, zählen für deren Beschriftung nicht als fremd. Ist kein naher Platz frei, verbindet eine kurze feine Linie in der Gruppenfarbe Block und Umrandung (deren Kreuzungen mit fremden Umrandungen zählen mit). Links und rechts der Karte bleibt Platz für Beschriftungen am Rand. Eine ganz in anderen liegende Gruppe bekommt eine engere Umrandung und keinen eigenen Ankerplatz (ihre Mitglieder liegen in der Schnittfläche der umgebenden Gruppen). Farbige Ringe nur für Mehrfachmitglieder, deren Mitgliedschaften die Umrandungen nicht schon zeigen (nicht bei eingebetteten Gruppen). Nichtmitglieder werden aus fremden Umrandungen geschoben; ungruppierte Kontakte mit Verbindungen außen, ohne Gruppe und ohne Verbindung in einer Zeile unten („keiner Gruppe zugeordnet, keine bestätigte Verbindung:“). T/P/N/NS wirken nur über die abgeleiteten Linien | bottom |
+| X1 | `X1_geografische_verteilung` | Karte: wo die Kontakte leben – Panels Amerika · Europa (ohne Deutschland) · Deutschland (weitere Regionen bei Bedarf), Ortspunkt an der wahren Lage, die Kontakte daneben nach Beziehungstyp gefärbt, keine Verbindungslinien; Einzelheiten §6.1 | bottom |
 
 Ausgelegt und an den Testfällen geprüft für 22 und 32 Kontakte mit 5–6 Gruppen; für 30–40 Kontakte vorgesehen, mit mehr nicht geprüft.
 
 **Experiment, kein Standard:** eine kartografische Variante von G2 (Amerika, Europa, Ausschnitt Mittelhessen) liegt als Pilotskript unter
 [`pilots/network_v1_map/`](../../pilots/network_v1_map/README.md); sie läuft nur mit dem synthetischen Testfall 002, schreibt nur nach
-`WORKSPACE/runs/` und gehört nicht zu den acht Grafiken.
+`WORKSPACE/runs/` und gehört nicht zu den Standardgrafiken.
 
-### 6.1 Experimentelle Zusatzgrafiken (zur Evaluation, kein Standard)
+### 6.1 X1 – Geografische Verteilung des persönlichen Netzwerks
 
-Code: [`experimental.py`](../../src/mares/network_v1/experimental.py), Begründung:
-[`ADR-0010`](../decisions/ADR-0010_2026-11-05_netzwerk-v1-experimentelle-grafik-x1.md), Fassung 2:
-[`ADR-0011`](../decisions/ADR-0011_2026-11-05_netzwerk-v1-x1-fassung-2.md), Fassung 2.1:
-[`ADR-0012`](../decisions/ADR-0012_2026-11-05_netzwerk-v1-x1-fassung-2-1.md), Fassung 2.2:
-[`ADR-0013`](../decisions/ADR-0013_2026-11-05_netzwerk-v1-x1-zentren-und-laender.md), Fassung 2.3:
-[`ADR-0014`](../decisions/ADR-0014_2026-11-05_netzwerk-v1-x1-regionale-ortsgruppen.md). Codes `X<n>`, Dateien
-`<Fall>/experimental/<Fallcode>_X<n>_<Bezeichnung>.png|svg`, je Fall genau eine Datei je Grafik. Nicht Teil von `render`/`render-all`,
-nicht im Grafikregister; ein eigener Befehl (§8), Laufprotokoll unter `WORKSPACE/runs/`.
+Code: [`figures/maps.py`](../../src/mares/network_v1/figures/maps.py). Seit
+[`ADR-0016`](../decisions/ADR-0016_2026-11-05_netzwerk-v1-x1-kanonisch.md) Standardgrafik; entwickelt als experimentelle Zusatzgrafik in
+den Fassungen 1 bis 2.8 ([`ADR-0010`](../decisions/ADR-0010_2026-11-05_netzwerk-v1-experimentelle-grafik-x1.md),
+[`ADR-0011`](../decisions/ADR-0011_2026-11-05_netzwerk-v1-x1-fassung-2.md),
+[`ADR-0012`](../decisions/ADR-0012_2026-11-05_netzwerk-v1-x1-fassung-2-1.md),
+[`ADR-0013`](../decisions/ADR-0013_2026-11-05_netzwerk-v1-x1-zentren-und-laender.md),
+[`ADR-0014`](../decisions/ADR-0014_2026-11-05_netzwerk-v1-x1-regionale-ortsgruppen.md),
+[`ADR-0015`](../decisions/ADR-0015_2026-11-05_netzwerk-v1-x1-ortspunkt-frei.md); Verlauf in den Run-Berichten unter
+`docs/agent-runs/2026-11-05_network-v1-*x1*`). Entsteht mit `render`/`render-all` wie jede Standardgrafik als
+`<Fall>/graphics/<Fallcode>_X1_geografische_verteilung.png|svg`.
+
+**Kartenquellen.** Der Fallauf liest vor dem Anlegen des Run-Ordners das Ortsverzeichnis `ROOT:network_v1/reference/gazetteer.csv`
+(im Root des Falls) und die Basiskarte `WORKSPACE:cache/basemaps/ne_50m_admin_0_countries.geojson` und vermerkt beide mit SHA-256 unter
+`map_sources` im Run-Record und in `figures_index.json`. Fehlt eine Datei, wird X1 übersprungen (`skipped`, Grund „Ortsverzeichnis
+fehlt (…)“ bzw. „Basiskarte fehlt (…)“), nie aus einer anderen Quelle gezeichnet; eine fehlerhafte Datei stoppt den Lauf. Basiskarte:
+Natural Earth, 1:50m Cultural Vectors, Admin 0 – Countries (gemeinfrei, <https://www.naturalearthdata.com/>; Nutzungsbedingungen:
+<https://www.naturalearthdata.com/about/terms-of-use/>), einmalig in den regenerierbaren Cache geladen (Befehl in
+[`pilots/network_v1_map/README.md`](../../pilots/network_v1_map/README.md)). Die Grafik nennt knapp „Kartengrundlage: Natural Earth.“
+
+**Texte.** Titel „Geografische Verteilung des persönlichen Netzwerks“ ohne Grafikcode, kein Untertitel; Fallkennzeichnung wie bei
+allen Grafiken (§5.6). Legende: Beziehungstypen (gemeinsame Komponente) und „Wohnort (Ortspunkt)“, bei Bedarf „○ weiterer Ort einer
+Ortsgruppe“ und „nur Wohnland bekannt (Lage unscharf)“. Hinweise nur „Wohnort nicht darstellbar: A22.“ (wenn Kontakte nicht gezeichnet
+werden können) und „Kartengrundlage: Natural Earth.“ Fußzeile „MARES · network_v1 · {n} Kontakte“ – ohne Gruppenzahl und ohne
+Datenqualität, auch bei authentischen Fällen: Datenstatus und Prüfung stehen in den Metadaten und Run-Records. Die folgenden
+methodischen Festlegungen (eigene Maßstäbe der Panels, schematisch daneben gesetzte Kontakte, Zusammenfassung benachbarter Orte) stehen
+nur hier, nicht in der Grafik.
 
 | Code | Datei | Inhalt | Legende |
 |---|---|---|---|
-| X1 | `X1_geografische_verteilung` (Fassung 2.8) | **Wo leben die Kontakte?** Kartenpanels von links nach rechts Amerika · Europa (ohne Deutschland) · Deutschland, immer alle drei, oben bündig; **Deutschland ist das größte Panel**, die übrigen sind 0,8-mal so hoch. **Ausschnitte nach den Daten:** Umriss aller Orte des Panels plus Rand, mindestens eine Orientierungsgröße (Amerika 30° × 30°, Europa 13° × 10°, Deutschland 9° × 7,5°), Seitenverhältnis 0,65–1,5; Deutschland bleibt im Deutschland-Rahmen; ein Panel ohne Kontakte zeigt seinen Standardausschnitt (Amerika: Mexiko bis Südamerika, Europa: Portugal bis etwas östlich von Deutschland). Panels haben eigene Maßstäbe; Entfernungen sind zwischen Panels nicht vergleichbar (Fußnote). Weitere Weltregionen (Afrika, Asien, Ozeanien, Weitere) nur bei Bedarf zwischen Amerika und Europa. Zuordnung über den Wohnortbereich (§3): Deutschland, übriges Europa, sonst Kontinent des Wohnlands. **Keine Kontakt-Kontakt- und keine Ego-Linien**; Knotenfarbe = Beziehungstyp. **Ortspunkt** (dunkel, weiß umrandet) **an der wahren Lage, immer sichtbar**; die Kontakte stehen **daneben** auf einer sehr hellen Fläche (bis 10 ein Ring, sonst Ringe zu 6, 12, …; nach Ort und Beziehungstyp sortiert), mit einer feinen Linie an den Ortspunkt angebunden – auch ein einzelner Kontakt. **Fläche und Label bilden ein Callout:** das Label dockt direkt am Rand der Fläche an (Ortsname fett, Land und Zahl kompakt in derselben Zeile, z. B. „Bogotá · Kolumbien · 3“; Einzelorte einer Gruppe kleiner und grauer darunter; bei Bedarf zweizeilig), ohne Rahmen, nur mit weißem Halo und einer sehr blassen, weich gerundeten Fläche; „Zahl = Kontakte am Ort“ steht einmal in der Legende. X1 zeigt die geografische Verteilung, nicht exakte Kontaktpositionen. **„… und Umgebung“** (Darstellungsentscheidung, maßstabsabhängig): Ein Ort kommt zu dem Ort, dem ihn das Ortsverzeichnis in `group_with` zuordnet (Stadtteil, Umlandgemeinde oder Nachbarstadt eines größeren Ortes; zentral gepflegt und begründet), wenn dieser Ort im selben Panel Kontakte hat, höchstens 40 km Luftlinie entfernt ist und beide Punkte im Panel weniger als etwa 15 mm auseinanderliegen – auf einem größeren Maßstab bleiben sie getrennt; eine Stufe, keine Ketten; ohne Zuordnung bleibt jeder Ort für sich, weiter entfernte Städte werden nie zusammengefasst. Die Kontakte stehen nach Ort sortiert im Ring; die wahren Punkte der weiteren Orte bleiben als kleine hohle Ringe sichtbar. Kasten „Marburg und Umgebung · n = 14“, darunter klein und heller die Einzelorte („Marburg 10 · Cölbe · …“). **Land im Kasten:** außerhalb Deutschlands „Bogotá · Kolumbien · n = 3“ bzw. „Madrid · Spanien“, im Deutschland-Panel nur der Ort; keine Länderbeschriftung auf der Karte. Die Gruppierung ist eine Darstellungsentscheidung; die erhobenen Wohnorte bleiben unverändert. **Platzierung mit Vorrang** (je Panel Ort für Ort, größte zuerst; **Fläche und Label werden gemeinsam platziert**: die Fläche kommt an die nächstgelegene zulässige Position, an der ihre vollständige Beschriftung unmittelbar am Kreis frei Platz findet – benachbarte Gruppen werden dafür auseinandergezogen, die Ortspunkte nie; danach eine Nachbesserungsrunde für alle Labels): (1) Ortspunkte und Ortsnamen bleiben frei – keine Fläche, kein Knoten und kein Label auf einem Ortspunkt (auch nicht auf den hohlen Ringen weiterer Orte einer Gruppe), kein Knoten und keine Fläche auf einem Label; (2) Ortsgruppen sauber getrennt – Flächen überlappen nicht, Linien kreuzen sich nicht und laufen nicht unter Flächen, Labels oder über fremde Ortspunkte; (3) **geografische Leserichtung**, soweit layoutseitig vermeidbar: Bei nahen Orten (Punkte im Panel unter etwa 38 mm auseinander) kehren weder Flächen noch Labels eine klare Nord-Süd- oder West-Ost-Relation um (klar = Versatz mindestens 1,5-mal so groß wie quer dazu; ein nördlicherer Ort wird nicht unter einem südlicheren beschriftet), bei diagonal zueinander liegenden Orten nicht die Gesamtrichtung; dafür werden auch die Flächen umgesetzt, und ein früh gesetzter Ort lässt die Seite der noch folgenden Nachbarn frei. Eine Umkehrung wiegt etwa 5 cm zusätzliche Linienlänge auf, nie ein verdecktes Element; (4) erst dann möglichst nah am Ortspunkt. Jedes Label liegt – von seiner Mitte aus gemessen – näher an der eigenen Fläche als an jeder fremden. Linien und Punkte liegen über allen Flächen, die Knoten oben. Asymmetrische Positionen ergeben sich aus diesen Regeln, nicht aus Ortsnamen; Titel bei Bedarf zweizeilig (Ort / Land und Zahl); Seitenverhältnis eines Panels mindestens 0,8. Nur Wohnland bekannt: Länderpunkt der Basiskarte, gestrichelte Fläche, „· nur Land bekannt“, nie eine erfundene Stadt. Nicht zuordenbarer Wohnort und Ort ohne Eintrag im Ortsverzeichnis: nicht gezeichnet, in der Fußnote genannt. Koordinaten nur aus dem Ortsverzeichnis `ROOT:network_v1/reference/gazetteer.csv` (`place; country_iso3; lat; lon; basis; group_with`, `group_with` = zugeordneter Ort derselben Länderangabe oder leer, von Hand gepflegt, im Root der Fälle, nie im Repository, kein Geocoding-Dienst); Basiskarte Natural Earth 1:50m (gemeinfrei) in `WORKSPACE/cache/basemaps/`. Die vorige Fassung liegt zum Vergleich unter `<Fall>/experimental/x1_fassung_1/` | bottom |
+| X1 | `X1_geografische_verteilung` (Fassung 2.8) | **Wo leben die Kontakte?** Kartenpanels von links nach rechts Amerika · Europa (ohne Deutschland) · Deutschland, immer alle drei, oben bündig; **Deutschland ist das größte Panel**, die übrigen sind 0,8-mal so hoch. **Ausschnitte nach den Daten:** Umriss aller Orte des Panels plus Rand, mindestens eine Orientierungsgröße (Amerika 30° × 30°, Europa 13° × 10°, Deutschland 9° × 7,5°), Seitenverhältnis 0,65–1,5; Deutschland bleibt im Deutschland-Rahmen; ein Panel ohne Kontakte zeigt seinen Standardausschnitt (Amerika: Mexiko bis Südamerika, Europa: Portugal bis etwas östlich von Deutschland). Panels haben eigene Maßstäbe; Entfernungen sind zwischen Panels nicht vergleichbar (steht nicht in der Grafik). Weitere Weltregionen (Afrika, Asien, Ozeanien, Weitere) nur bei Bedarf zwischen Amerika und Europa. Zuordnung über den Wohnortbereich (§3): Deutschland, übriges Europa, sonst Kontinent des Wohnlands. **Keine Kontakt-Kontakt- und keine Ego-Linien**; Knotenfarbe = Beziehungstyp. **Ortspunkt** (dunkel, weiß umrandet) **an der wahren Lage, immer sichtbar**; die Kontakte stehen **daneben** auf einer sehr hellen Fläche (bis 10 ein Ring, sonst Ringe zu 6, 12, …; nach Ort und Beziehungstyp sortiert), mit einer feinen Linie an den Ortspunkt angebunden – auch ein einzelner Kontakt. **Fläche und Label bilden ein Callout:** das Label dockt direkt am Rand der Fläche an (Ortsname fett, Land und Zahl kompakt in derselben Zeile, z. B. „Bogotá · Kolumbien · n = 3“, ein einzelner Kontakt ohne Zahl; Einzelorte einer Gruppe kleiner und grauer darunter; bei Bedarf zweizeilig), ohne Rahmen, nur mit weißem Halo und einer sehr blassen, weich gerundeten Fläche. X1 zeigt die geografische Verteilung, nicht exakte Kontaktpositionen. **„… und Umgebung“** (Darstellungsentscheidung, maßstabsabhängig): Ein Ort kommt zu dem Ort, dem ihn das Ortsverzeichnis in `group_with` zuordnet (Stadtteil, Umlandgemeinde oder Nachbarstadt eines größeren Ortes; zentral gepflegt und begründet), wenn dieser Ort im selben Panel Kontakte hat, höchstens 40 km Luftlinie entfernt ist und beide Punkte im Panel weniger als etwa 15 mm auseinanderliegen – auf einem größeren Maßstab bleiben sie getrennt; eine Stufe, keine Ketten; ohne Zuordnung bleibt jeder Ort für sich, weiter entfernte Städte werden nie zusammengefasst. Die Kontakte stehen nach Ort sortiert im Ring; die wahren Punkte der weiteren Orte bleiben als kleine hohle Ringe sichtbar. Kasten „Marburg und Umgebung · n = 14“, darunter klein und heller die Einzelorte („Marburg 10 · Cölbe · …“). **Land im Kasten:** außerhalb Deutschlands „Bogotá · Kolumbien · n = 3“ bzw. „Madrid · Spanien“, im Deutschland-Panel nur der Ort; keine Länderbeschriftung auf der Karte. Die Gruppierung ist eine Darstellungsentscheidung; die erhobenen Wohnorte bleiben unverändert. **Platzierung mit Vorrang** (je Panel Ort für Ort, größte zuerst; **Fläche und Label werden gemeinsam platziert**: die Fläche kommt an die nächstgelegene zulässige Position, an der ihre vollständige Beschriftung unmittelbar am Kreis frei Platz findet – benachbarte Gruppen werden dafür auseinandergezogen, die Ortspunkte nie; danach eine Nachbesserungsrunde für alle Labels): (1) Ortspunkte und Ortsnamen bleiben frei – keine Fläche, kein Knoten und kein Label auf einem Ortspunkt (auch nicht auf den hohlen Ringen weiterer Orte einer Gruppe), kein Knoten und keine Fläche auf einem Label; (2) Ortsgruppen sauber getrennt – Flächen überlappen nicht, Linien kreuzen sich nicht und laufen nicht unter Flächen, Labels oder über fremde Ortspunkte; (3) **geografische Leserichtung**, soweit layoutseitig vermeidbar: Bei nahen Orten (Punkte im Panel unter etwa 38 mm auseinander) kehren weder Flächen noch Labels eine klare Nord-Süd- oder West-Ost-Relation um (klar = Versatz mindestens 1,5-mal so groß wie quer dazu; ein nördlicherer Ort wird nicht unter einem südlicheren beschriftet), bei diagonal zueinander liegenden Orten nicht die Gesamtrichtung; dafür werden auch die Flächen umgesetzt, und ein früh gesetzter Ort lässt die Seite der noch folgenden Nachbarn frei. Eine Umkehrung wiegt etwa 5 cm zusätzliche Linienlänge auf, nie ein verdecktes Element; (4) erst dann möglichst nah am Ortspunkt. Jedes Label liegt – von seiner Mitte aus gemessen – näher an der eigenen Fläche als an jeder fremden. Linien und Punkte liegen über allen Flächen, die Knoten oben. Asymmetrische Positionen ergeben sich aus diesen Regeln, nicht aus Ortsnamen; Titel bei Bedarf zweizeilig (Ort / Land und Zahl); Seitenverhältnis eines Panels mindestens 0,8. Nur Wohnland bekannt: Länderpunkt der Basiskarte, gestrichelte Fläche, „· nur Land bekannt“, nie eine erfundene Stadt. Nicht zuordenbarer Wohnort und Ort ohne Eintrag im Ortsverzeichnis: nicht gezeichnet, gemeinsam genannt („Wohnort nicht darstellbar: …“). Koordinaten nur aus dem Ortsverzeichnis `ROOT:network_v1/reference/gazetteer.csv` (`place; country_iso3; lat; lon; basis; group_with`, `group_with` = zugeordneter Ort derselben Länderangabe oder leer, von Hand gepflegt, im Root der Fälle, nie im Repository, kein Geocoding-Dienst); Basiskarte Natural Earth 1:50m (gemeinfrei) in `WORKSPACE/cache/basemaps/`. Entwicklungsstände (darunter Fassung 1 unter `<Fall>/experimental/x1_fassung_1/`) bleiben historisch liegen | bottom |
 
 ## 7. Testfälle und empirische Fälle
 
@@ -255,8 +277,7 @@ Erhebungen liegen unter `cases/` mit `case_type: regular` und demselben Datenmod
 .venv\Scripts\python -m mares.networks v1 render-all --root INTAKE [--formats png,svg]
 .venv\Scripts\python -m mares.networks v1 list --root INTAKE [--empirical]
 .venv\Scripts\python -m mares.networks v1 install-test-cases --root INTAKE [--v0-package INTAKE:inbox/<Lieferung>/contents]
-.venv\Scripts\python -m mares.networks v1 experimental-x1 (--case INTAKE:network_v1/<…>/<Fall> | --root INTAKE) [--formats png,svg]
 ```
 
-Fälle nur aus `INTAKE` oder `PRIMARY`. `render` ersetzt in `graphics/` genau die Standarddateien des Falls und löscht nichts; fremde Dateien
+Fälle nur aus `INTAKE` oder `PRIMARY`. `render` ersetzt in `graphics/` genau die neun Standarddateien des Falls und löscht nichts; fremde Dateien
 werden im Run-Record gemeldet. `install-test-cases` ersetzt nur Testfälle. Exit-Status 0 erledigt, 2 Prüffehler, 1 nicht startbar.
