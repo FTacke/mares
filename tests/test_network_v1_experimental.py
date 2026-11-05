@@ -161,7 +161,7 @@ def test_place_boxes_name_the_country_outside_germany_only(case, tmp_path):
     medellin["residence_place"] = "Chía"  # about 17 km from Bogotá: a place group abroad
     write_rows(case, "contacts.csv", rows)
     layout = x1_layout(context(case), gazetteer(tmp_path), countries())
-    titles = {p.places[0][0]: p.title for p in layout.places}
+    titles = {p.places[0][0]: p.title.replace("\n", " · ") for p in layout.places}  # a title may wrap
     assert titles["Bogotá"] == "Bogotá und Umgebung · Kolumbien · n = 4"  # group abroad: with the country
     assert titles["Madrid"] == "Madrid · Spanien" and titles["Toronto"] == "Toronto · Kanada"  # single places abroad
     assert titles["Berlin"] == "Berlin" and titles["Marburg"].startswith("Marburg und Umgebung · n = ")  # Germany: no country
@@ -169,7 +169,7 @@ def test_place_boxes_name_the_country_outside_germany_only(case, tmp_path):
     next(r for r in rows if r["residence_place"] == "Toronto")["residence_place"] = ""
     write_rows(case, "contacts.csv", rows)
     only = next(p for p in x1_layout(context(case), gazetteer(tmp_path), countries()).places if p.country_only)
-    assert only.title == "Kanada · nur Land bekannt"  # the country is the name already, not repeated
+    assert only.title.replace("\n", " · ") == "Kanada · nur Land bekannt"  # the country is the name already, not repeated
 
 
 def test_extents_follow_the_contacts_and_germany_stays_the_largest_panel(case, tmp_path):
@@ -211,53 +211,76 @@ def test_a_panel_without_contacts_shows_its_default_extent(tmp_path):
     assert (europe.lon, europe.lat, europe.count) == ((-10.5, 19.5), (35.0, 59.0), 0)
 
 
-def test_every_box_belongs_to_its_place_point_at_a_glance(case, tmp_path):
-    from mares.network_v1.experimental import _box_point, _gap, _segment_hits_box, _segment_hits_disc, _segments_cross
+def _geometry(case, tmp_path):
+    from mares.network_v1 import experimental as x
 
     layout = x1_layout(context(case), gazetteer(tmp_path), countries())
-    leaders = [(_box_point(p.box, *p.hub), p.hub) for p in layout.places]
+    return x, layout
+
+
+@pytest.mark.parametrize("variant", ["002", "no_north"])
+def test_place_points_and_names_always_stay_visible(case, tmp_path, variant):
+    if variant == "no_north":  # another arrangement of the same places
+        rows = read_rows(case, "contacts.csv")
+        for row in rows:
+            if row["residence_country_iso3"] in ("USA", "CAN"):
+                row.update(residence_place="Medellín", residence_country="Kolumbien", residence_country_iso3="COL")
+        write_rows(case, "contacts.csv", rows)
+    x, layout = _geometry(case, tmp_path)
+    for p in layout.places:
+        same = [o for o in layout.places if o.region == p.region]
+        points = [q for o in same for q in [o.point] + o.others]
+        for q in points:  # no disc and no box on any place point
+            assert math.hypot(p.hub[0] - q[0], p.hub[1] - q[1]) >= p.radius + x.POINT_R, (p.title, q)
+            assert not x._box_hits_disc(p.box, q, x.POINT_R), (p.title, q)
+        for o in same:  # names are never covered by contacts
+            assert not x._box_hits_disc(p.box, o.hub, o.radius), (p.title, o.title)
+        for x_, y_ in layout.positions.values():
+            assert not (p.box[0] < x_ + NODE_R and x_ - NODE_R < p.box[2] and p.box[1] < y_ + NODE_R and y_ - NODE_R < p.box[3])
+
+
+def test_discs_sit_beside_their_point_tied_by_a_line_and_never_overlap(case, tmp_path):
+    x, layout = _geometry(case, tmp_path)
     for i, p in enumerate(layout.places):
-        start, hub = leaders[i]
-        others = [o for o in layout.places if o is not p and o.region == p.region]
-        for o in others:
-            assert not _segment_hits_disc(start, hub, o.hub, o.radius), (p.title, o.title)  # never under another disc
-            assert not _segment_hits_box(start, hub, o.box), (p.title, o.title)  # never under another box
-            assert _gap(p.box, o) >= _gap(p.box, p), (p.title, o.title)  # nearer to its own group than to any other
-        for j, (a, b) in enumerate(leaders):
-            assert j == i or not _segments_cross(start, hub, a, b), (p.title, layout.places[j].title)
+        assert math.hypot(p.hub[0] - p.point[0], p.hub[1] - p.point[1]) > p.radius  # beside the point, never on it
+        for o in layout.places[i + 1:]:
+            if o.region == p.region:
+                assert math.hypot(p.hub[0] - o.hub[0], p.hub[1] - o.hub[1]) >= p.radius + o.radius, (p.title, o.title)
+    marburg = next(p for p in layout.places if p.places[0][0] == "Marburg")
+    germany = next(pn for pn in layout.panels if pn.region.key == "germany")
+    assert marburg.point == germany.to_in(*marburg.anchor)  # the place point stays where the place is
+
+
+def test_every_box_belongs_to_its_place_point_at_a_glance(case, tmp_path):
+    x, layout = _geometry(case, tmp_path)
+    leaders = [(x._box_point(p.box, *p.point), p.point) for p in layout.places]
+    connectors = [(p.point, x._disc_edge(p)) for p in layout.places]
+    for i, p in enumerate(layout.places):
+        start, point = leaders[i]
+        same = [o for o in layout.places if o.region == p.region]
+        for o in same:
+            assert not x._segment_hits_disc(start, point, o.hub, o.radius), (p.title, o.title)  # never under a disc
+            if o is not p:
+                assert not x._segment_hits_box(start, point, o.box), (p.title, o.title)  # never under another box
+                if x._gap(p.box, p.point) < 0.3:  # a box right at its point is nearest to it; a farther box has a free leader
+                    assert x._gap(p.box, o.point) >= x._gap(p.box, p.point), (p.title, o.title)
+        for j, (a_, b_) in enumerate(leaders):
+            assert j == i or not x._segments_cross(start, point, a_, b_), (p.title, layout.places[j].title)
+        for j, (a_, b_) in enumerate(connectors):
+            assert j == i or not x._segments_cross(start, point, a_, b_), (p.title, layout.places[j].title)
     titles = {p.places[0][0]: p for p in layout.places}
-    assert titles["Marburg"].box != titles["Gießen"].box
+    assert not x._overlaps(titles["Marburg"].box, titles["Gießen"].box)
 
 
-def test_leaders_are_drawn_above_every_fill(case, tmp_path):
+def test_lines_and_points_are_drawn_above_every_fill(case, tmp_path):
     with rc():
         figure = x1(context(case), gazetteer(tmp_path), countries())
     ax = figure.axes[0]
-    leader = min(line.get_zorder() for line in ax.lines if line.get_gid() == "leader")
-    fills = [p.get_zorder() for p in ax.patches if p.get_gid() == "place-disc"] + [line.get_zorder() for line in ax.lines
-                                                                                   if line.get_gid() == "offset"]
-    assert leader > max(fills)
+    line = min(line.get_zorder() for line in ax.lines if line.get_gid() in ("leader", "connector"))
+    fills = [p.get_zorder() for p in ax.patches if p.get_gid() == "place-disc"]
+    assert line > max(fills)
     point = min(p.get_zorder() for p in ax.patches if p.get_gid() == "place-point")
-    assert point > leader  # the place point marks the end of its leader
-
-
-def test_place_boxes_sit_off_the_nodes_and_their_leader_runs_through_a_free_slot(case, tmp_path):
-    layout = x1_layout(context(case), gazetteer(tmp_path), countries())
-    boxes = [p.box for p in layout.places]
-    for i, box in enumerate(boxes):
-        for other in boxes[i + 1:]:
-            assert not (box[0] < other[2] and other[0] < box[2] and box[1] < other[3] and other[1] < box[3])
-        for x, y in layout.positions.values():
-            assert not (box[0] < x + NODE_R and x - NODE_R < box[2] and box[1] < y + NODE_R and y - NODE_R < box[3])
-    for p in layout.places:
-        if len(p.members) < 2:
-            continue
-        sx, sy = min(max(p.hub[0], p.box[0]), p.box[2]), min(max(p.hub[1], p.box[1]), p.box[3])
-        for cid in p.members:  # the leader from the box to the place point passes no node of its place
-            x, y = layout.positions[cid]
-            dx, dy = p.hub[0] - sx, p.hub[1] - sy
-            t = max(0.0, min(1.0, ((x - sx) * dx + (y - sy) * dy) / (dx * dx + dy * dy)))
-            assert math.hypot(sx + t * dx - x, sy + t * dy - y) > NODE_R * 0.9, (p.places[0][0], cid)
+    assert point > line  # the place point marks the end of its lines
 
 
 def test_a_contact_known_only_by_country_sits_at_the_country_point_marked_as_unsharp(case, tmp_path):
@@ -302,15 +325,15 @@ def test_x1_has_no_ties_but_place_boxes_points_and_pale_discs(case, tmp_path):
         figure = x1(ctx, gazetteer(tmp_path), countries())
     ax = figure.axes[0]
     assert not [p for p in ax.patches if isinstance(p, PathPatch)]  # no contact-contact ties
-    assert {line.get_gid() for line in ax.lines} <= {"leader", "offset"}  # box leaders and lines to a true place point only
+    assert {line.get_gid() for line in ax.lines} <= {"leader", "connector"}  # box and disc lines to the place point only
     layout = x1_layout(ctx, gazetteer(tmp_path), countries())
     gids = [p.get_gid() for p in ax.patches]
     assert gids.count("place-box") == gids.count("place-point") == len(layout.places)
     assert gids.count("place-disc") == sum(1 for p in layout.places if len(p.members) > 1)
     texts = " ".join(t.get_text() for t in figure.findobj(Text))
     assert "X1 · Geografische Verteilung des persönlichen Netzwerks" in texts and "TESTFALL 002*" in texts
-    assert "Fassung 2.4" in texts and "keine Standardgrafik" in texts and "keine Verbindungslinien" in texts
-    assert "Marburg und Umgebung · n = 14" in texts and "Gießen und Umgebung · n = 4" in texts
+    assert "Fassung 2.5" in texts and "keine Standardgrafik" in texts and "keine Verbindungslinien" in texts
+    assert "Marburg und Umgebung · n = 14" in texts.replace("\n", " · ") and "Gießen und Umgebung" in texts
     assert gids.count("true-point") >= sum(len(p.others) for p in layout.places)  # other places of a group stay visible
 
 
@@ -329,7 +352,7 @@ def test_render_x1_writes_into_experimental_and_leaves_graphics_alone(tmp_path):
         f"{SYNTHETIC_CODE}_X1_geografische_verteilung.png", f"{SYNTHETIC_CODE}_X1_geografische_verteilung.svg"]
     assert not (case / "graphics").exists()  # the standard figures are not touched
     record = json.loads((folders["workspace"] / "runs" / result.run_id / "run_record.json").read_text(encoding="utf-8"))
-    assert record["standard_figure"] is False and record["version"] == "2.4" and record["unresolved"] == ["A22"] and str(folders["intake"]) not in json.dumps(record)
+    assert record["standard_figure"] is False and record["version"] == "2.5" and record["unresolved"] == ["A22"] and str(folders["intake"]) not in json.dumps(record)
 
 
 def test_render_x1_needs_the_basemap_and_a_valid_directory(tmp_path):

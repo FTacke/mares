@@ -39,7 +39,7 @@ from .places import Area, norm
 from .run import check_case_ref
 from .validate import FAILED, validate
 
-X1_CODE, X1_NAME, X1_VERSION = "X1", "geografische_verteilung", "2.4"
+X1_CODE, X1_NAME, X1_VERSION = "X1", "geografische_verteilung", "2.5"
 EXPERIMENTAL_DIR = "experimental"
 GAZETTEER = "network_v1/reference/gazetteer.csv"  # in the root of the case
 BASEMAP = "cache/basemaps/ne_50m_admin_0_countries.geojson"  # in WORKSPACE
@@ -52,6 +52,9 @@ NODE_STEP = 2 * NODE_R + 0.035  # centre distance of two nodes of one place
 SINGLE_RING_MAX = 10  # up to this many contacts one ring around the place point, more in rings of 6, 12, ... slots
 RING_R0 = 0.22  # smallest ring radius (inches): the place point and the leader stay visible
 DISC_PAD = 0.05  # the pale disc of a place reaches this far beyond its nodes
+POINT_R = 0.05  # radius of a place point (inches)
+POINT_CLEAR = 0.09  # no disc, node or box comes closer to any place point than this: the points always stay visible
+OFFSET_STEP = 0.06  # search step for the position of a disc beside its point
 GROUP_MAX_KM = 40.0  # never group places farther apart than this (great-circle distance), whatever the directory says
 GROUP_MAP_IN = 0.6  # ... and only when the two points lie closer than this on the panel (about 15 mm): scale-dependent
 MAIN_W = 14.5
@@ -139,17 +142,15 @@ def read_basemap(path: Path) -> dict[str, dict]:
 
 # -------------------------------------------------------------------------------------------------- layout ---
 def ring_slots(k: int) -> list[tuple[float, int]]:
-    """(radius, slots) of the rings for ``k`` contacts. Every ring keeps one slot free for the leader of the place box;
-    a single contact sits on the place point (no ring)."""
+    """(radius, slots) of the rings for ``k`` contacts around the centre of their disc; a single contact is the disc."""
     if k == 1:
         return [(0.0, 1)]
     if k <= SINGLE_RING_MAX:
-        return [(max(RING_R0, (k + 1) * NODE_STEP / (2 * math.pi)), k + 1)]
+        return [(max(RING_R0, k * NODE_STEP / (2 * math.pi)), k)]
     out, left, j = [], k, 1
     while left:
-        slots = 6 * j
-        n = min(left, slots - 1)
-        out.append((j * NODE_STEP, slots if n == slots - 1 else n + 1))
+        n = min(left, 6 * j)
+        out.append((j * NODE_STEP, n))
         left -= n
         j += 1
     return out
@@ -173,7 +174,6 @@ class Place:
     point: tuple[float, float] = (0.0, 0.0)  # true place point in inches
     hub: tuple[float, float] = (0.0, 0.0)  # centre of the rings (= point unless the place had to give way)
     box: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)  # place box (inches)
-    gap: float = math.pi / 2  # direction of the leader from the hub (radians)
     country: str = ""  # residence country as recorded (several, " / "-joined, if a place group crosses a border)
     key: tuple[str, str] | None = None  # place directory key of the (head) place
     parent: tuple[str, str] | None = None  # group_with of the place directory
@@ -335,35 +335,88 @@ def _group(places: list[Place]) -> list[Place]:
     return sorted(out, key=lambda p: (-len(p.members), p.places[0][0]))
 
 
-def _separate(places: list[Place], panel: Panel) -> None:
-    """Place the discs of one panel without overlap: the largest first at its point, every further one at the free position
-    closest to its point (spiral search), inside the panel and below its title. Deterministic."""
-    done: list[Place] = []
+def _disc_edge(p: "Place") -> tuple[float, float]:
+    """Where the line from the place point meets its disc."""
+    dx, dy = p.hub[0] - p.point[0], p.hub[1] - p.point[1]
+    d = math.hypot(dx, dy) or 1.0
+    return p.point[0] + dx / d * (d - p.radius), p.point[1] + dy / d * (d - p.radius)
+
+
+def _place_disc(p: Place, panel: Panel, points: list, done: list[Place], boxes: list, leaders: list) -> None:
+    """The disc of one place beside its point (never on it), tied to it by a fine line. Priorities: no disc covers a place
+    point (also the true points of the other places of a group), a box or a box leader; then it overlaps no disc placed
+    before; then it is as close to its point as possible. Positions in growing distance and sixteen directions."""
+    r = p.radius
     title = panel.title_box()
+    best = None
+    for step in range(40):
+        d = r + POINT_CLEAR + step * OFFSET_STEP
+        for k in range(16):
+            t = math.pi / 2 - 2 * math.pi * k / 16
+            x, y = p.point[0] + d * math.cos(t), p.point[1] + d * math.sin(t)
+            outside = not (panel.x + r + 0.04 <= x <= panel.x + panel.width - r - 0.04
+                           and panel.y + r + 0.04 <= y <= panel.y + panel.height - r - 0.04)
+            covers = sum(math.hypot(x - q[0], y - q[1]) < r + POINT_CLEAR for q in points)
+            overlap = sum(math.hypot(x - o.hub[0], y - o.hub[1]) < r + o.radius + 0.08 for o in done)
+            edge = (p.point[0] + (x - p.point[0]) * (d - r) / d, p.point[1] + (y - p.point[1]) * (d - r) / d)
+            crosses = sum(_segment_hits_disc(p.point, edge, o.hub, o.radius) for o in done)
+            on_box = sum(_box_hits_disc(b_, (x, y), r + 0.04) for b_ in boxes)  # names stay readable
+            on_leader = sum(_segment_hits_disc(a_, b_, (x, y), r + 0.03) for a_, b_ in leaders)
+            line_box = sum(_segment_hits_box(p.point, edge, b_) for b_ in boxes)
+            line_points = sum(_segment_hits_disc(p.point, edge, q, POINT_R + 0.02) for q in points
+                              if q != p.point and q not in p.others)  # its own group's places lie around the point
+            cost = (covers * 100 + on_box * 100 + on_leader * 100 + overlap * 100 + outside * 100
+                    + _box_hits_disc(title, (x, y), r + 0.04) * 100 + crosses * 20 + line_box * 20 + line_points * 20
+                    + d + k * 0.001)
+            if best is None or cost < best[0]:
+                best = (cost, (x, y))
+        if best[0] < 10:  # nothing violated at this distance: the closest free position
+            break
+    p.hub = best[1]
+
+
+def _place_panel(places: list[Place], panel: Panel) -> None:
+    """Place after place, largest first: first its box (the name, beside the point), then its disc of contacts beside the
+    point; every later box and disc keeps clear of everything placed before. All place points are reserved from the start,
+    so no box or disc ever covers one. Asymmetric positions follow from these rules, not from place names."""
+    points = [q for p in places for q in [p.point] + p.others]
+    taken = [panel.title_box()]
+    lines: list = []  # leaders and disc lines placed so far
+    done: list[Place] = []
     for p in places:
-        r = p.radius
-        x0, x1 = panel.x + r + 0.05, panel.x + panel.width - r - 0.05
-        y0, y1 = panel.y + r + 0.05, panel.y + panel.height - r - 0.05
-        px, py = min(max(p.point[0], x0), x1), min(max(p.point[1], y0), y1)
         best = None
-        for step in range(500):
-            d = step * 0.03
-            n = 1 if step == 0 else 24
-            for i in range(n):
-                t = math.pi / 2 + 2 * math.pi * i / n
-                x, y = px + d * math.cos(t), py + d * math.sin(t)
-                if not (x0 <= x <= x1 and y0 <= y <= y1) or _box_hits_disc(title, (x, y), r + 0.04):
-                    continue
-                if all(math.hypot(x - o.hub[0], y - o.hub[1]) >= r + o.radius + 0.08 for o in done):
-                    best = (x, y)
-                    break
-            if best:
-                break
-        p.hub = best or (px, py)
+        for wrap in (False, True):  # the two-line title only where it places better
+            p.wrap = wrap
+            if wrap and "\n" not in p.title:
+                continue
+            w, h = p.box_size()
+            best = _box_candidates(p, panel, points, done, taken, lines, w, h, wrap, best)
+        _, p.box, start, p.wrap = best
+        taken.append(p.box)
+        _place_disc(p, panel, points, done, taken[1:], [(start, p.point)] + lines)
+        lines += [(start, p.point), (p.point, _disc_edge(p))]
         done.append(p)
+    for _ in range(3):  # refinement: every box again, with all other boxes, discs (its own too) and lines in place
+        changed = False
+        for p in places:
+            others = [o for o in places if o is not p]
+            taken = [panel.title_box()] + [o.box for o in others]
+            lines = [(_box_point(o.box, *o.point), o.point) for o in others] + [(o.point, _disc_edge(o)) for o in places]
+            best = None
+            for wrap in (False, True):
+                p.wrap = wrap
+                if wrap and "\n" not in p.title:
+                    continue
+                w, h = p.box_size()
+                best = _box_candidates(p, panel, points, places, taken, lines, w, h, wrap, best)
+            if best[1] != p.box:
+                changed = True
+            _, p.box, _start, p.wrap = best
+        if not changed:
+            break
 
 
-BOX_DISTANCES = (0.12, 0.3, 0.55, 0.85)  # inches between a disc and its place box
+BOX_DISTANCES = (0.1, 0.25, 0.45, 0.7, 1.0, 1.4, 1.8)  # inches between a place point and its place box
 
 
 def _segments_cross(p1, p2, q1, q2) -> bool:
@@ -380,71 +433,65 @@ def _segment_hits_box(p1, p2, box) -> bool:
     return any(_segments_cross(p1, p2, corners[i], corners[(i + 1) % 4]) for i in range(4))
 
 
-def _place_boxes(places: list[Place], panels: list[Panel]) -> None:
-    """A box per place beside its disc, in eight directions and four distances, so that box and place point belong together
-    at a glance: the box not on any disc, place point, panel title or other box, inside its panel; its leader not across
-    another place's disc, another box or another leader; and the box closer to its own place point than to any other.
-    Larger places choose first; the asymmetric positions follow from these rules, not from place names."""
-    taken = [pn.title_box() for pn in panels]
-    leaders: list[tuple[tuple[float, float], tuple[float, float]]] = []
-    for p in places:
-        panel = next(pn for pn in panels if pn.region.key == p.region)
-        others = [o for o in places if o is not p and o.region == p.region]
-        best = None
-        for wrap in (False, True):  # the two-line title only where it places better
-            p.wrap = wrap
-            if wrap and "\n" not in p.title:
-                continue
-            w, h = p.box_size()
-            best = _box_candidates(p, panel, places, others, taken, leaders, w, h, wrap, best)
-        _, p.box, p.gap, start, p.wrap = best
-        taken.append(p.box)
-        leaders.append((start, p.hub))
-
-
-def _box_candidates(p, panel, places, others, taken, leaders, w, h, wrap, best):
-    """Score the box positions of one title variant; keep the best so far (cost, box, leader angle, start, wrap)."""
+def _box_candidates(p, panel, points, done, taken, lines, w, h, wrap, best):
+    """Score the box positions of one title variant; keep the best so far (cost, box, leader start, wrap). ``done``: the
+    places already placed (their discs are obstacles); ``points``: every place point of the panel. Above and below the point
+    the box may also stand with the point near its left or right end, beside the point level with its top or bottom."""
     for rank, d in enumerate(BOX_DISTANCES):
         for k in range(8):
             t = math.pi / 2 - math.pi / 4 * k  # N, NE, E, ... clockwise
             ux, uy = round(math.cos(t), 9), round(math.sin(t), 9)
-            bx = p.hub[0] + ux * (p.radius + d) + (w / 2 * (1 if ux > 0 else -1) if ux else 0.0)
-            by = p.hub[1] + uy * (p.radius + d) + (h / 2 * (1 if uy > 0 else -1) if uy else 0.0)
-            box = (bx - w / 2, by - h / 2, bx + w / 2, by + h / 2)
-            inside = (panel.x + 0.04 <= box[0] and box[2] <= panel.x + panel.width - 0.04 and panel.y + 0.04 <= box[1]
-                      and box[3] <= panel.y + panel.height - 0.04)
-            start = _box_point(box, *p.hub)
-            discs = sum(_box_hits_disc(box, o.hub, o.radius + 0.03) for o in places if o.region == p.region)
-            crossing = sum(_segment_hits_disc(start, p.hub, o.hub, o.radius + 0.02) for o in others)
-            boxes = sum(_overlaps(box, q) for q in taken)
-            over_box = sum(_segment_hits_box(start, p.hub, q) for q in taken)  # the leader would vanish under a box
-            under_box = sum(_segment_hits_box(a_, b_, box) for a_, b_ in leaders)  # the box would hide a leader
-            lines = sum(_segments_cross(start, p.hub, a_, b_) for a_, b_ in leaders)
-            ambiguous = sum(_gap(box, o) < _gap(box, p) for o in others)  # nearer to another group than to its own
-            cost = (discs * 10 + boxes * 10 + crossing * 12 + over_box * 10 + under_box * 10 + lines * 10 + ambiguous * 15
-                    + (0 if inside else 25) + rank * 1.5 + k * 0.01)
-            cost += 1.0 if wrap else 0.0
-            if best is None or cost < best[0]:
-                best = (cost, box, math.atan2(start[1] - p.hub[1], start[0] - p.hub[0]), start, wrap)
+            bx0 = p.point[0] + ux * (POINT_R + d) + (w / 2 * (1 if ux > 0 else -1) if ux else 0.0)
+            by0 = p.point[1] + uy * (POINT_R + d) + (h / 2 * (1 if uy > 0 else -1) if uy else 0.0)
+            if not ux:
+                shifts = [(0.0, 0.0), (w / 2 - 0.12, 0.0), (-(w / 2 - 0.12), 0.0)]
+            elif not uy:
+                shifts = [(0.0, 0.0), (0.0, h / 2 - 0.06), (0.0, -(h / 2 - 0.06))]
+            else:
+                shifts = [(0.0, 0.0)]
+            for sx, sy in shifts:
+                bx, by = bx0 + sx, by0 + sy
+                box = (bx - w / 2, by - h / 2, bx + w / 2, by + h / 2)
+                cost = _box_cost(p, panel, points, done, taken, lines, box) + rank * 1.5 + (0.3 if sx or sy else 0.0) \
+                    + k * 0.01 + (1.0 if wrap else 0.0)
+                if best is None or cost < best[0]:
+                    best = (cost, box, _box_point(box, *p.point), wrap)
     return best
 
 
-def _gap(box, p: Place) -> float:
-    """Distance between a box and the edge of a place's disc (what the eye compares)."""
-    x, y = _box_point(box, *p.hub)
-    return math.hypot(x - p.hub[0], y - p.hub[1]) - p.radius
+def _box_cost(p, panel, points, done, taken, lines, box) -> float:
+    """Collisions of one box and its leader; 100 for everything that would hide a name, point, disc or line."""
+    inside = (panel.x + 0.04 <= box[0] and box[2] <= panel.x + panel.width - 0.04 and panel.y + 0.04 <= box[1]
+              and box[3] <= panel.y + panel.height - 0.04)
+    start = _box_point(box, *p.point)
+    hidden = (sum(_box_hits_disc(box, o.hub, o.radius + 0.03) for o in done)  # on a disc
+              + sum(_box_hits_disc(box, q, POINT_CLEAR) for q in points)  # on a place point
+              + sum(_segment_hits_disc(start, p.point, o.hub, o.radius + 0.02) for o in done)  # leader under a disc
+              + sum(_overlaps(box, q) for q in taken)  # on another box
+              + sum(_segment_hits_box(start, p.point, q) for q in taken)  # leader under a box
+              + sum(_segment_hits_box(a_, b_, box) for a_, b_ in lines)  # the box hides a line
+              + sum(_segments_cross(start, p.point, a_, b_) for a_, b_ in lines)  # crossing lines
+              + sum(_segment_hits_disc(start, p.point, q, POINT_R + 0.02) for q in points
+                    if q != p.point and q not in p.others))  # leader over a point (its own group's places lie around it)
+    own = _gap(box, p.point)
+    ambiguous = sum(_gap(box, q) < own for q in points if q != p.point)  # nearer to another place point
+    return hidden * 100 + ambiguous * 15 + (0 if inside else 200)
+
+
+def _gap(box, point) -> float:
+    """Distance between a box and a point."""
+    x, y = _box_point(box, *point)
+    return math.hypot(x - point[0], y - point[1])
 
 
 def _ring_positions(p: Place, order: list[str]) -> dict[str, tuple[float, float]]:
-    """Nodes on the rings around the hub, the slot towards the place box left free for its leader."""
+    """Nodes on the rings around the centre of the disc, clockwise from the top; every second ring turned by half a step."""
     if len(order) == 1:
         return {order[0]: p.hub}
     out, i = {}, 0
-    for r, slots in ring_slots(len(order)):
-        for s in range(1, slots):  # slot 0 points at the box
-            if i == len(order):
-                break
-            t = p.gap - 2 * math.pi * s / slots  # clockwise from the leader
+    for j, (r, n) in enumerate(ring_slots(len(order))):
+        for s_ in range(n):
+            t = math.pi / 2 - 2 * math.pi * (s_ + 0.5 * j) / n
             out[order[i]] = (p.hub[0] + r * math.cos(t), p.hub[1] + r * math.sin(t))
             i += 1
     return out
@@ -542,9 +589,8 @@ def x1_layout(ctx: Context, gazetteer: dict, countries: dict[str, dict]) -> X1La
     for pn in panels:
         grouped += _group([p for p in places if p.region == pn.region.key])
     places = grouped
-    for pn in panels:
-        _separate([p for p in places if p.region == pn.region.key], pn)
-    _place_boxes(places, panels)
+    for pn in panels:  # place point and name first, then the contacts beside them
+        _place_panel([p for p in places if p.region == pn.region.key], pn)
     positions = {}
     for p in places:
         rank, start = {}, 0
@@ -594,20 +640,18 @@ def _basemap(figure, main, panel: Panel, countries: dict[str, dict]) -> None:
 def x1(ctx: Context, gazetteer: dict, countries: dict[str, dict]):
     layout = x1_layout(ctx, gazetteer, countries)
     country_only = any(p.country_only for p in layout.places)
-    moved = any(math.hypot(p.hub[0] - p.point[0], p.hub[1] - p.point[1]) > 0.02 for p in layout.places)
     others = any(p.others for p in layout.places)
     sections = [
         ("Beziehungstyp", relation_entries(ctx.case)),
         (None, [("dot", "Wohnort (Ortspunkt)", POINT)]
-               + ([("line", "ausgewichen: gepunktet zur wahren Lage (○)", {"color": "#8A939C", "linewidth": 0.8,
-                                                                         "linestyle": (0, (1, 1.5))})] if moved else [])
-               + ([("text", "○ ohne Linie: weiterer Ort einer Ortsgruppe", None)] if others and not moved else [])
+               + [("line", "Kontakte des Ortes, daneben gesetzt", {"color": "#9AA3AC", "linewidth": 0.8})]
+               + ([("text", "○ weiterer Ort einer Ortsgruppe", None)] if others else [])
                + ([("area", "nur Wohnland bekannt (Lage unscharf)", {"facecolor": "none", "edgecolor": MUTED, "linewidth": 0.8,
                                                                      "linestyle": (0, (3, 2))})] if country_only else [])),
     ]
     grouped = any(p.group for p in layout.places)
-    first = (f"Experimentelle Zusatzgrafik (Fassung {X1_VERSION}), keine Standardgrafik. Lage = Wohnort"
-             + ("; „und Umgebung“: Nachbarorte zusammengefasst, ○ = weiterer Ort" if grouped else "")
+    first = (f"Experimentelle Zusatzgrafik (Fassung {X1_VERSION}), keine Standardgrafik. Lage = Ortspunkt, Kontakte daneben"
+             + ("; „und Umgebung“: Nachbarorte zusammengefasst" if grouped else "")
              + "; Panels mit eigenem Maßstab; keine Verbindungslinien (siehe G2). Karte: Natural Earth.")
     missing = []
     if layout.unresolved:
@@ -625,19 +669,17 @@ def x1(ctx: Context, gazetteer: dict, countries: dict[str, dict]):
         ax.text(panel.x + 0.08, panel.y + panel.height - 0.08, panel.title, fontsize=LABEL_PT, fontweight="bold", color=INK,
                 ha="left", va="top", zorder=8)
     for p in layout.places:
-        if len(p.members) > 1 or p.country_only:  # a very pale disc: these contacts belong to one place
+        if len(p.members) > 1 or p.country_only:  # a very pale disc beside the point: these contacts belong to one place
             ax.add_patch(Circle(p.hub, p.radius, facecolor="#FFFFFF", alpha=0.55, edgecolor="none", zorder=2.5, gid="place-disc"))
             ax.add_patch(Circle(p.hub, p.radius, fill=False, edgecolor=MUTED if p.country_only else "#D3D9DF", linewidth=0.7,
                                 linestyle=(0, (3, 2)) if p.country_only else "solid", zorder=2.6))
-        if math.hypot(p.hub[0] - p.point[0], p.hub[1] - p.point[1]) > 0.02:  # the place gave way: dotted line to its true point
-            ax.plot(*zip(p.point, p.hub), color="#8A939C", linewidth=0.6, linestyle=(0, (1, 1.5)), zorder=3, gid="offset")
-            ax.add_patch(Circle(p.point, 0.03, facecolor="white", edgecolor=POINT, linewidth=0.8, zorder=4.6, gid="true-point"))
-        start = _box_point(p.box, *p.hub)
-        ax.plot(*zip(start, p.hub), color="#6B7580", linewidth=0.7, zorder=4.5, gid="leader")  # above all fills, through the free slot
+        ax.plot(*zip(p.point, _disc_edge(p)), color="#9AA3AC", linewidth=0.7, zorder=4.4, gid="connector")  # disc beside its point
+        start = _box_point(p.box, *p.point)
+        ax.plot(*zip(start, p.point), color="#6B7580", linewidth=0.7, zorder=4.5, gid="leader")  # box to point, above all fills
         for q in p.others:  # the other places of a group keep their true point: not everyone lives in the head place
-            if math.hypot(q[0] - p.hub[0], q[1] - p.hub[1]) > 0.02:
+            if math.hypot(q[0] - p.point[0], q[1] - p.point[1]) > 0.02:
                 ax.add_patch(Circle(q, 0.03, facecolor="white", edgecolor=POINT, linewidth=0.8, zorder=4.6, gid="true-point"))
-        ax.add_patch(Circle(p.hub, 0.05, facecolor=POINT, edgecolor="white", linewidth=0.8, zorder=4.7, gid="place-point"))
+        ax.add_patch(Circle(p.point, POINT_R, facecolor=POINT, edgecolor="white", linewidth=0.8, zorder=4.7, gid="place-point"))
         x0, y0, x1_, y1 = p.box
         ax.add_patch(FancyBboxPatch((x0, y0), x1_ - x0, y1 - y0, boxstyle="round,pad=0,rounding_size=0.03", facecolor="white",
                                     alpha=0.92, edgecolor="#CBD2D9", linewidth=0.5, zorder=7, gid="place-box"))
