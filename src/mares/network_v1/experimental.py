@@ -2,8 +2,9 @@
 
 X1 · Geografische Verteilung (version 2): where the contacts live, on regional map panels (Amerika, Europa, Deutschland;
 further regions only when the data need them). No contact-contact and no ego lines; node colour = relation type, as in
-every network figure. The contacts of one place -- or of a place group ("Marburg und Umgebung": a centre with the
-districts and surrounding municipalities within UMGEBUNG_KM) -- sit in rings around the place point on a very pale disc; a
+every network figure. The contacts of one place -- or of a place group ("Marburg und Umgebung": places the place
+directory assigns to a neighbouring place, when both fall together on the map) -- sit in rings around the place point on a
+very pale disc; a
 small place box names the place and is tied to the point by a fine leader that runs through a gap in the rings. A
 contact whose residence is known only by country sits at the country's label point inside a dashed ring (never at an
 invented city); contacts without a usable residence are named in a note and not drawn.
@@ -38,20 +39,21 @@ from .places import Area, norm
 from .run import check_case_ref
 from .validate import FAILED, validate
 
-X1_CODE, X1_NAME, X1_VERSION = "X1", "geografische_verteilung", "2.2"
+X1_CODE, X1_NAME, X1_VERSION = "X1", "geografische_verteilung", "2.3"
 EXPERIMENTAL_DIR = "experimental"
 GAZETTEER = "network_v1/reference/gazetteer.csv"  # in the root of the case
 BASEMAP = "cache/basemaps/ne_50m_admin_0_countries.geojson"  # in WORKSPACE
-GAZETTEER_COLUMNS = ("place", "country_iso3", "lat", "lon", "basis")  # plus, optional, "centre"
-# centre: 1 = an independent town centre (a middle or higher order centre in spatial planning, or an independent city),
-# 0 = a district or a surrounding municipality; empty or absent = unknown, treated as a centre (never merged into another)
+GAZETTEER_COLUMNS = ("place", "country_iso3", "lat", "lon", "basis")  # plus, optional, "group_with"
+# group_with: the place (same country, itself in the directory) this place is shown with on a regional map -- a district,
+# a surrounding municipality or a neighbouring town of a larger centre; empty = shown on its own. One level only.
 
 NODE_R = NODE_PT / 72 / 2  # node radius in inches
 NODE_STEP = 2 * NODE_R + 0.035  # centre distance of two nodes of one place
 SINGLE_RING_MAX = 10  # up to this many contacts one ring around the place point, more in rings of 6, 12, ... slots
 RING_R0 = 0.22  # smallest ring radius (inches): the place point and the leader stay visible
 DISC_PAD = 0.05  # the pale disc of a place reaches this far beyond its nodes
-UMGEBUNG_KM = 20.0  # a non-centre at most this far from a centre joins its place group ("… und Umgebung")
+GROUP_MAX_KM = 40.0  # never group places farther apart than this (great-circle distance), whatever the directory says
+GROUP_MAP_IN = 0.6  # ... and only when the two points lie closer than this on the panel (about 15 mm): scale-dependent
 MAIN_W = 14.5
 PANEL_GAP = 0.3
 OTHER_SCALE = 0.8  # the other panels are this high relative to the Germany panel
@@ -102,25 +104,29 @@ class X1Error(RuntimeError):
 
 
 # ------------------------------------------------------------------------------------------------- sources ---
-def read_gazetteer(path: Path) -> dict[tuple[str, str], tuple[float, float, bool]]:
-    """(normalised place, ISO3) -> (lat, lon, centre). A missing file is an empty directory; a malformed row is an error."""
+def read_gazetteer(path: Path) -> dict[tuple[str, str], tuple[float, float, tuple[str, str] | None]]:
+    """(normalised place, ISO3) -> (lat, lon, key of ``group_with`` or None). A missing file is an empty directory; a
+    malformed row or a ``group_with`` that is not itself in the directory is an error."""
     if not path.is_file():
         return {}
     rows = list(csv.DictReader(io.StringIO(path.read_text(encoding="utf-8-sig")), delimiter=";"))
-    if rows and tuple(rows[0])[:len(GAZETTEER_COLUMNS)] != GAZETTEER_COLUMNS or rows and tuple(rows[0])[5:] not in ((), ("centre",)):
-        raise X1Error(f"gazetteer columns must be {'; '.join(GAZETTEER_COLUMNS)} [; centre]")
+    header = tuple(rows[0]) if rows else GAZETTEER_COLUMNS
+    if header[:len(GAZETTEER_COLUMNS)] != GAZETTEER_COLUMNS or header[5:] not in ((), ("group_with",)):
+        raise X1Error(f"gazetteer columns must be {'; '.join(GAZETTEER_COLUMNS)} [; group_with]")
     out = {}
     for i, row in enumerate(rows, start=2):
-        centre = (row.get("centre") or "").strip()
-        if centre not in ("", "0", "1"):
-            raise X1Error(f"gazetteer line {i}: centre must be 1, 0 or empty")
         try:
             lat, lon = float(row["lat"]), float(row["lon"])
         except (TypeError, ValueError) as error:
             raise X1Error(f"gazetteer line {i}: lat/lon must be numbers") from error
         if not (-90 <= lat <= 90 and -180 <= lon <= 180):
             raise X1Error(f"gazetteer line {i}: lat/lon out of range")
-        out[(norm(row["place"]), row["country_iso3"].strip().upper())] = (lat, lon, centre != "0")
+        iso = row["country_iso3"].strip().upper()
+        parent = (row.get("group_with") or "").strip()
+        out[(norm(row["place"]), iso)] = (lat, lon, (norm(parent), iso) if parent else None)
+    for key, (_lat, _lon, parent) in out.items():
+        if parent is not None and (parent not in out or parent == key):
+            raise X1Error(f"gazetteer: group_with of {key[0]!r} must name another place of the same country in the directory")
     return out
 
 
@@ -169,7 +175,9 @@ class Place:
     box: tuple[float, float, float, float] = (0.0, 0.0, 0.0, 0.0)  # place box (inches)
     gap: float = math.pi / 2  # direction of the leader from the hub (radians)
     country: str = ""  # residence country as recorded (several, " / "-joined, if a place group crosses a border)
-    centre: bool = True  # an independent town centre (place directory); only non-centres join a centre's group
+    key: tuple[str, str] | None = None  # place directory key of the (head) place
+    parent: tuple[str, str] | None = None  # group_with of the place directory
+    others: list[tuple[float, float]] = field(default_factory=list)  # true points (inches) of the other places of a group
 
     @property
     def group(self) -> bool:
@@ -296,27 +304,29 @@ def _box_point(box, x: float, y: float) -> tuple[float, float]:
 
 
 def _group(places: list[Place]) -> list[Place]:
-    """Place groups "<centre> und Umgebung": a place that is not a centre (district, surrounding municipality) joins the
-    nearest centre within UMGEBUNG_KM great-circle distance; centres are never merged, also when they are close or their
-    symbols collide on the map; no chains. Country-only places are never grouped. A display decision only: the recorded
-    places are kept (listed in the box)."""
-    centres = [p for p in places if p.centre and not p.country_only]
-    joined: dict[int, list[Place]] = {id(c): [] for c in centres}
-    alone = []
+    """Place groups "<place> und Umgebung", a display decision only (the recorded places are kept and listed in the box):
+    a place joins the place its directory entry names in ``group_with`` -- if that place has contacts in the same panel,
+    is at most GROUP_MAX_KM away and its point lies closer than GROUP_MAP_IN on this panel (on a larger-scale map the two
+    stay apart). One level, no chains; places without ``group_with`` and country-only places stand on their own."""
+    by_key = {p.key: p for p in places if p.key and not p.country_only}
+    joined: dict[int, list[Place]] = {id(p): [] for p in places}
+    heads = []
     for p in places:
-        if p.centre or p.country_only:
-            continue
-        near = [(km, c.places[0][0], c) for c in centres if (km := _km(p.anchor, c.anchor)) <= UMGEBUNG_KM]
-        if near:
-            joined[id(min(near, key=lambda t: (t[0], t[1]))[2])].append(p)
+        q = by_key.get(p.parent) if p.parent and not p.country_only else None
+        if q is not None and q.parent is None and _km(p.anchor, q.anchor) <= GROUP_MAX_KM \
+                and math.hypot(p.point[0] - q.point[0], p.point[1] - q.point[1]) < GROUP_MAP_IN:
+            joined[id(q)].append(p)
         else:
-            alone.append(p)
-    out = [p for p in places if p.country_only] + alone
-    for c in centres:
-        parts = [c] + sorted(joined[id(c)], key=lambda p: (-len(p.members), p.places[0][0]))
+            heads.append(p)
+    out = []
+    for h in heads:
+        parts = [h] + sorted(joined[id(h)], key=lambda p: (-len(p.members), p.places[0][0]))
+        if len(parts) == 1:
+            out.append(h)
+            continue
         country = " / ".join(dict.fromkeys(p.country for p in parts if p.country))
-        out.append(Place(c.region, [pl for p in parts for pl in p.places], c.anchor, [m for p in parts for m in p.members],
-                         False, c.point, c.point, country=country, centre=True))
+        out.append(Place(h.region, [pl for p in parts for pl in p.places], h.anchor, [m for p in parts for m in p.members], False,
+                         h.point, h.point, country=country, key=h.key, others=[p.point for p in parts[1:]]))
     return sorted(out, key=lambda p: (-len(p.members), p.places[0][0]))
 
 
@@ -449,18 +459,19 @@ def x1_layout(ctx: Context, gazetteer: dict, countries: dict[str, dict]) -> X1La
             if entry is None:
                 missing.append(c.id)
                 continue
-            point, centre = entry[:2], (entry[2] if len(entry) > 2 else True)
+            point, parent, pkey = entry[:2], (entry[2] if len(entry) > 2 else None), (norm(place), iso)
             key, label, country_only = (region, norm(place), iso), place, False
         else:  # only the country is known: its label point, never a city
             props = countries.get(iso, {}).get("properties")
             if not props:
                 missing.append(c.id)
                 continue
-            point, centre = (props["LABEL_Y"], props["LABEL_X"]), True
+            point, parent, pkey = (props["LABEL_Y"], props["LABEL_X"]), None, None
             key, label, country_only = (region, "", iso), props.get("NAME_DE") or c.residence_country, True
         props = countries.get(iso, {}).get("properties") or {}
         country = c.residence_country.strip() or props.get("NAME_DE", "")
-        found.setdefault(key, Place(region, [(label, 0)], point, [], country_only, country=country, centre=centre)).members.append(c.id)
+        found.setdefault(key, Place(region, [(label, 0)], point, [], country_only, country=country, key=pkey,
+                                    parent=parent)).members.append(c.id)
     places = sorted(found.values(), key=lambda p: (-len(p.members), p.places[0][0]))
     for p in places:
         p.places = [(p.places[0][0], len(p.members))]
@@ -538,17 +549,19 @@ def x1(ctx: Context, gazetteer: dict, countries: dict[str, dict]):
     layout = x1_layout(ctx, gazetteer, countries)
     country_only = any(p.country_only for p in layout.places)
     moved = any(math.hypot(p.hub[0] - p.point[0], p.hub[1] - p.point[1]) > 0.02 for p in layout.places)
+    others = any(p.others for p in layout.places)
     sections = [
         ("Beziehungstyp", relation_entries(ctx.case)),
         (None, [("dot", "Wohnort (Ortspunkt)", POINT)]
                + ([("line", "ausgewichen: gepunktet zur wahren Lage (○)", {"color": "#8A939C", "linewidth": 0.8,
                                                                          "linestyle": (0, (1, 1.5))})] if moved else [])
+               + ([("text", "○ ohne Linie: weiterer Ort einer Ortsgruppe", None)] if others and not moved else [])
                + ([("area", "nur Wohnland bekannt (Lage unscharf)", {"facecolor": "none", "edgecolor": MUTED, "linewidth": 0.8,
                                                                      "linestyle": (0, (3, 2))})] if country_only else [])),
     ]
     grouped = any(p.group for p in layout.places)
     first = (f"Experimentelle Zusatzgrafik (Fassung {X1_VERSION}), keine Standardgrafik. Lage = Wohnort"
-             + (f"; „und Umgebung“: Umlandorte bis {UMGEBUNG_KM:.0f} km zum nächsten Zentrum" if grouped else "")
+             + ("; „und Umgebung“: Nachbarorte zusammengefasst, ○ = weiterer Ort" if grouped else "")
              + "; Panels mit eigenem Maßstab; keine Verbindungslinien (siehe G2). Karte: Natural Earth.")
     missing = []
     if layout.unresolved:
@@ -575,6 +588,9 @@ def x1(ctx: Context, gazetteer: dict, countries: dict[str, dict]):
             ax.add_patch(Circle(p.point, 0.03, facecolor="white", edgecolor=POINT, linewidth=0.8, zorder=3.5, gid="true-point"))
         start = _box_point(p.box, *p.hub)
         ax.plot(*zip(start, p.hub), color="#7B8590", linewidth=0.6, zorder=3, gid="leader")  # through the free ring slot
+        for q in p.others:  # the other places of a group keep their true point: not everyone lives in the head place
+            if math.hypot(q[0] - p.hub[0], q[1] - p.hub[1]) > 0.02:
+                ax.add_patch(Circle(q, 0.03, facecolor="white", edgecolor=POINT, linewidth=0.8, zorder=3.5, gid="true-point"))
         ax.add_patch(Circle(p.hub, 0.05, facecolor=POINT, edgecolor="white", linewidth=0.8, zorder=3.6, gid="place-point"))
         x0, y0, x1_, y1 = p.box
         ax.add_patch(FancyBboxPatch((x0, y0), x1_ - x0, y1 - y0, boxstyle="round,pad=0,rounding_size=0.03", facecolor="white",
