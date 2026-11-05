@@ -33,7 +33,7 @@ erkennbaren Umriss. Die Mindestgröße ist deshalb auf 9° × 7,5° gesetzt.
   - Bogotá (n = 3) und Medellín sind getrennt; Medellín weicht mit gepunkteter Linie aus.
   - Amerika reicht wegen Toronto von Kanada bis Ecuador; Europa ist auf Spanien und Südfrankreich fokussiert.
   - Deutschland zeigt Marburg und Umgebung (14) und Gießen und Umgebung (4) getrennt; Kassel und Frankfurt weichen aus.
-- **MT:** Amerika zeigt den Raum um den einen Ort in Südamerika, Europa ist auf Italien fokussiert, Deutschland bleibt erkennbar. Alle
+- **MT:** Amerika zeigt den Raum um den einen Ort in Südamerika, Europa ist auf das Land der europäischen Kontakte fokussiert, Deutschland bleibt erkennbar. Alle
   Ortskästen stehen frei.
 - **001:**
   - Amerika: Kolumbien bis Peru; Europa: Iberische Halbinsel.

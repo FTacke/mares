@@ -37,7 +37,7 @@ Arbeitsplatz nicht konfiguriert, Fälle liegen daher übergangsweise in `INTAKE`
 ## 4. Übertragung (einmaliges Skript außerhalb des Repositorys)
 
 - Tabelle A und B: Werte wie übergeben, Ländercodes ISO-3166-alpha-2 deterministisch auf alpha-3 und die Ländernamen der Übergabe
-  übertragen. Spalte `label` leer, weil Vornamen und Rollen Dritter nicht übergeben wurden (Datenminimierung). Code 5 als Italienisch in
+  übertragen. Spalte `label` leer, weil Vornamen und Rollen Dritter nicht übergeben wurden (Datenminimierung). Code 5 mit dem in der Übergabe benannten Sprachnamen in
   `other_languages`. Sprachgebrauch nur bei mehreren Sprachen (A08–A10 `M;S`, A13–A15 `S`). Keine überwiegende Sprache und keine
   Erläuterung ergänzt.
 - Tabelle C: fünf Gruppen, alle `T`. Die Gruppenpaare leitet die Pipeline aus `T` ab und sind nicht doppelt eingetragen. Dazu kommen
