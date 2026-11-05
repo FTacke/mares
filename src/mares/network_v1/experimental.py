@@ -26,6 +26,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
+from matplotlib import patheffects
 from matplotlib.patches import Circle, FancyBboxPatch, Polygon
 
 from mares.core import ids
@@ -39,7 +40,7 @@ from .places import Area, norm
 from .run import check_case_ref
 from .validate import FAILED, validate
 
-X1_CODE, X1_NAME, X1_VERSION = "X1", "geografische_verteilung", "2.5"
+X1_CODE, X1_NAME, X1_VERSION = "X1", "geografische_verteilung", "2.7"
 EXPERIMENTAL_DIR = "experimental"
 GAZETTEER = "network_v1/reference/gazetteer.csv"  # in the root of the case
 BASEMAP = "cache/basemaps/ne_50m_admin_0_countries.geojson"  # in WORKSPACE
@@ -66,6 +67,7 @@ BOX_PT = LABEL_PT - 1.5  # first line of a place box
 BOX_SUB_PT = LABEL_PT - 3.0  # list of places of a place group (lighter)
 BOX_LINE_W = 1.7  # inches; a longer place list wraps
 BOX_PAD = 0.035
+HEAD_GAP = 0.012  # between the bold place name and the compact rest of the line
 GERMANY = (Area.MARBURG, Area.MITTELHESSEN, Area.GERMANY_OTHER)
 POINT = "#1F2933"
 
@@ -185,20 +187,31 @@ class Place:
         return len(self.places) > 1
 
     @property
-    def title(self) -> str:
-        """Place and number; outside Germany with the country ("Bogotá · Kolumbien · n = 3"), in the Germany panel without (the
-        panel names the country); a country-only place names the country already."""
-        name, n = self.places[0]
+    def head(self) -> str:
+        """The bold part of the label: the place (or the country, if only that is known)."""
+        name = self.places[0][0]
+        return f"{name}{' und Umgebung' if self.group else ''}"
+
+    @property
+    def tail(self) -> str:
+        """The compact rest of the first line: country outside Germany (the Germany panel names its country), a missing
+        place, and the number of contacts -- " · Kolumbien · 3"."""
         total = len(self.members)
-        count = f" · n = {total}" if total > 1 else ""
+        parts = []
         if self.country_only:
-            return f"{name} · nur Land bekannt{count}"
-        country = f" · {self.country}" if self.country and self.region != "germany" else ""
-        head = f"{name}{' und Umgebung' if self.group else ''}"
-        tail = f"{country}{count}"
-        if self.wrap and tail:
-            return f"{head}\n{tail[3:]}"
-        return head + tail
+            parts.append("nur Land bekannt")
+        elif self.country and self.region != "germany":
+            parts.append(self.country)
+        if total > 1:
+            parts.append(str(total))
+        return "".join(f" · {x}" for x in parts)
+
+    @property
+    def title(self) -> str:
+        """First line of the label (two lines if wrapped: place / country and number)."""
+        if self.wrap and self.tail:
+            return f"{self.head}\n{self.tail[3:]}"
+        return self.head + self.tail
 
     @property
     def sub(self) -> str:
@@ -224,8 +237,12 @@ class Place:
         return self.ring + NODE_R + (DISC_PAD if len(self.members) > 1 or self.country_only else 0.02)
 
     def box_size(self) -> tuple[float, float]:
-        w = max(text_width(line, BOX_PT, bold=True) for line in self.title.split("\n"))
-        h = BOX_PT / 72 * 1.25 * (self.title.count("\n") + 1)
+        if self.wrap and self.tail:
+            w = max(text_width(self.head, BOX_PT, bold=True), text_width(self.tail[3:], BOX_PT))
+            h = BOX_PT / 72 * 1.25 * 2
+        else:
+            w = text_width(self.head, BOX_PT, bold=True) + HEAD_GAP + text_width(self.tail, BOX_PT)
+            h = BOX_PT / 72 * 1.25
         if self.sub:
             w = max(w, max(text_width(line, BOX_SUB_PT) for line in self.sub.split("\n")))
             h += (self.sub.count("\n") + 1) * BOX_SUB_PT / 72 * 1.2 + 0.02
@@ -342,13 +359,14 @@ def _disc_edge(p: "Place") -> tuple[float, float]:
     return p.point[0] + dx / d * (d - p.radius), p.point[1] + dy / d * (d - p.radius)
 
 
-def _place_disc(p: Place, panel: Panel, points: list, done: list[Place], boxes: list, leaders: list) -> None:
-    """The disc of one place beside its point (never on it), tied to it by a fine line. Priorities: no disc covers a place
-    point (also the true points of the other places of a group), a box or a box leader; then it overlaps no disc placed
-    before; then it is as close to its point as possible. Positions in growing distance and sixteen directions."""
+def _disc_candidates(p: Place, panel: Panel, points: list, done: list[Place], boxes: list, lines: list) -> list:
+    """Positions of the disc of one place beside its point (never on it), as (cost, centre), nearest first among the
+    allowed ones. Violations: covering a place point (also the true points of the other places of a group), a label or a
+    line, overlapping a disc placed before, leaving the panel; minor: its line crossing a disc, a label or a foreign point.
+    Positions in growing distance and sixteen directions."""
     r = p.radius
     title = panel.title_box()
-    best = None
+    out = []
     for step in range(40):
         d = r + POINT_CLEAR + step * OFFSET_STEP
         for k in range(16):
@@ -361,62 +379,117 @@ def _place_disc(p: Place, panel: Panel, points: list, done: list[Place], boxes: 
             edge = (p.point[0] + (x - p.point[0]) * (d - r) / d, p.point[1] + (y - p.point[1]) * (d - r) / d)
             crosses = sum(_segment_hits_disc(p.point, edge, o.hub, o.radius) for o in done)
             on_box = sum(_box_hits_disc(b_, (x, y), r + 0.04) for b_ in boxes)  # names stay readable
-            on_leader = sum(_segment_hits_disc(a_, b_, (x, y), r + 0.03) for a_, b_ in leaders)
+            on_line = sum(_segment_hits_disc(a_, b_, (x, y), r + 0.03) for a_, b_ in lines)
             line_box = sum(_segment_hits_box(p.point, edge, b_) for b_ in boxes)
-            line_points = sum(_segment_hits_disc(p.point, edge, q, POINT_R + 0.02) for q in points
+            line_points = sum(_segment_hits_disc(p.point, edge, q, POINT_CLEAR) for q in points
                               if q != p.point and q not in p.others)  # its own group's places lie around the point
-            cost = (covers * 100 + on_box * 100 + on_leader * 100 + overlap * 100 + outside * 100
-                    + _box_hits_disc(title, (x, y), r + 0.04) * 100 + crosses * 20 + line_box * 20 + line_points * 20
+            cost = (covers * 100 + on_box * 100 + on_line * 100 + overlap * 100 + outside * 100
+                    + _box_hits_disc(title, (x, y), r + 0.04) * 100 + crosses * 100 + line_box * 100 + line_points * 60
                     + d + k * 0.001)
-            if best is None or cost < best[0]:
-                best = (cost, (x, y))
-        if best[0] < 10:  # nothing violated at this distance: the closest free position
-            break
-    p.hub = best[1]
+            out.append((cost, (x, y)))
+    return sorted(out)
+
+
+LABEL_MISS = 8.0  # extra cost of a label that does not dock right at its circle (about 8 inches of disc offset)
+LABEL_FITS = 1.6  # a label cost below this: the full label docks right at the circle (closest distance), hiding nothing
+
+
+def _place_callout(p: Place, panel: Panel, points: list, done: list[Place], taken: list, lines: list) -> None:
+    """Disc and docked label together: the disc goes to the nearest allowed position at which its complete label finds room
+    right at the circle; neighbouring groups are pulled apart for that, never the place points (the line ties the disc to
+    its point). If no position allows it, the best combination is taken."""
+    best = None
+    for cost, centre in _disc_candidates(p, panel, points, done, taken[1:], lines):
+        if best is not None and cost >= best[0]:
+            break  # every further position is worse already
+        p.hub = centre
+        label = _place_label(p, panel, points, done + [p], taken, lines + [(p.point, _disc_edge(p))])
+        total = cost + label + (0.0 if label < LABEL_FITS else LABEL_MISS)  # a label not docked tightly is worth moving the disc
+        if best is None or total < best[0]:
+            best = (total, centre, p.box, p.wrap)
+        if cost < 20 and label < LABEL_FITS:
+            break  # the nearest position where disc and full label fit
+    _, p.hub, p.box, p.wrap = best
 
 
 def _place_panel(places: list[Place], panel: Panel) -> None:
-    """Place after place, largest first: first its box (the name, beside the point), then its disc of contacts beside the
-    point; every later box and disc keeps clear of everything placed before. All place points are reserved from the start,
-    so no box or disc ever covers one. Asymmetric positions follow from these rules, not from place names."""
+    """Place after place, largest first: its callout -- disc of contacts and label docked right at it, placed together so
+    that the full label fits at the circle -- beside the point, tied to it by a fine line. Every later disc and label keeps clear of
+    everything placed before; all place points are reserved from the start. Then a refinement pass for all labels.
+    Asymmetric positions follow from these rules, not from place names."""
     points = [q for p in places for q in [p.point] + p.others]
     taken = [panel.title_box()]
-    lines: list = []  # leaders and disc lines placed so far
+    lines: list = []  # the lines from the points to their discs
     done: list[Place] = []
     for p in places:
-        best = None
-        for wrap in (False, True):  # the two-line title only where it places better
-            p.wrap = wrap
-            if wrap and "\n" not in p.title:
-                continue
-            w, h = p.box_size()
-            best = _box_candidates(p, panel, points, done, taken, lines, w, h, wrap, best)
-        _, p.box, start, p.wrap = best
+        _place_callout(p, panel, points, done, taken, lines)
+        lines.append((p.point, _disc_edge(p)))
         taken.append(p.box)
-        _place_disc(p, panel, points, done, taken[1:], [(start, p.point)] + lines)
-        lines += [(start, p.point), (p.point, _disc_edge(p))]
         done.append(p)
-    for _ in range(3):  # refinement: every box again, with all other boxes, discs (its own too) and lines in place
+    for _ in range(3):  # refinement: every label again, with all discs, lines and other labels in place
         changed = False
         for p in places:
-            others = [o for o in places if o is not p]
-            taken = [panel.title_box()] + [o.box for o in others]
-            lines = [(_box_point(o.box, *o.point), o.point) for o in others] + [(o.point, _disc_edge(o)) for o in places]
-            best = None
-            for wrap in (False, True):
-                p.wrap = wrap
-                if wrap and "\n" not in p.title:
-                    continue
-                w, h = p.box_size()
-                best = _box_candidates(p, panel, points, places, taken, lines, w, h, wrap, best)
-            if best[1] != p.box:
-                changed = True
-            _, p.box, _start, p.wrap = best
+            old = p.box
+            _place_label(p, panel, points, places, [panel.title_box()] + [o.box for o in places if o is not p], lines)
+            changed |= p.box != old
         if not changed:
             break
 
 
-BOX_DISTANCES = (0.1, 0.25, 0.45, 0.7, 1.0, 1.4, 1.8)  # inches between a place point and its place box
+DOCK = (0.03, 0.09, 0.18, 0.32)  # inches between a disc and its label: docked first, a little apart only if needed
+
+
+def _place_label(p: Place, panel: Panel, points: list, discs: list[Place], taken: list, lines: list) -> float:
+    """The label beside its own disc, in eight directions (above and below also shifted to the side): not on a disc, a
+    place point, a line, the panel title or another label, inside its panel, nearer to its own disc than to any other."""
+    best = None
+    for wrap in (False, True):  # the two-line title only where it places better
+        p.wrap = wrap
+        if wrap and not p.tail:
+            continue
+        w, h = p.box_size()
+        for rank, d in enumerate(DOCK):
+            for k in range(8):
+                t = math.pi / 2 - math.pi / 4 * k  # N, NE, E, ... clockwise
+                ux, uy = round(math.cos(t), 9), round(math.sin(t), 9)
+                reach = p.radius + d
+                if ux and uy:  # diagonal: the corner of the label touches the circle
+                    reach = p.radius + d
+                    bx0 = p.hub[0] + ux * reach * 0.7071 * 1.0 + w / 2 * (1 if ux > 0 else -1)
+                    by0 = p.hub[1] + uy * reach * 0.7071 * 1.0 + h / 2 * (1 if uy > 0 else -1)
+                else:
+                    bx0 = p.hub[0] + ux * reach + (w / 2 * (1 if ux > 0 else -1) if ux else 0.0)
+                    by0 = p.hub[1] + uy * reach + (h / 2 * (1 if uy > 0 else -1) if uy else 0.0)
+                if not ux:
+                    shifts = [(0.0, 0.0), (w / 2 - 0.15, 0.0), (-(w / 2 - 0.15), 0.0)]
+                elif not uy:
+                    shifts = [(0.0, 0.0), (0.0, h / 2 - 0.06), (0.0, -(h / 2 - 0.06))]
+                else:
+                    shifts = [(0.0, 0.0)]
+                for sx, sy in shifts:
+                    bx, by = bx0 + sx, by0 + sy
+                    box = (bx - w / 2, by - h / 2, bx + w / 2, by + h / 2)
+                    cost = (_label_cost(p, panel, points, discs, taken, lines, box) + rank * 1.5 + (0.3 if sx or sy else 0.0)
+                            + k * 0.01 + (1.0 if wrap else 0.0))
+                    if best is None or cost < best[0]:
+                        best = (cost, box, wrap)
+    cost, p.box, p.wrap = best
+    return cost
+
+
+def _label_cost(p, panel, points, discs, taken, lines, box) -> float:
+    """Collisions of one label; 100 for everything that would hide a point, a disc, a line or another label."""
+    inside = (panel.x + 0.04 <= box[0] and box[2] <= panel.x + panel.width - 0.04 and panel.y + 0.04 <= box[1]
+              and box[3] <= panel.y + panel.height - 0.04)
+    hidden = (sum(_box_hits_disc(box, o.hub, o.radius) for o in discs)  # on a disc (its own included)
+              + sum(_box_hits_disc(box, q, POINT_CLEAR) for q in points)  # on a place point
+              + sum(_overlaps(box, q) for q in taken)  # on another label or the panel title
+              + sum(_segment_hits_box(a_, b_, box) for a_, b_ in lines))  # the label hides a line
+    own = _reach(box, p)
+    ambiguous = (sum(_reach(box, o) < own for o in discs if o is not p)  # the eye would read it as another callout's
+                 + sum(math.hypot((box[0] + box[2]) / 2 - q[0], (box[1] + box[3]) / 2 - q[1]) < own
+                       for q in points if q != p.point and q not in p.others))  # ... or as a label of another place point
+    return hidden * 150 + ambiguous * 100 + (0 if inside else 200)  # hiding anything is worst, then ambiguity
 
 
 def _segments_cross(p1, p2, q1, q2) -> bool:
@@ -433,49 +506,9 @@ def _segment_hits_box(p1, p2, box) -> bool:
     return any(_segments_cross(p1, p2, corners[i], corners[(i + 1) % 4]) for i in range(4))
 
 
-def _box_candidates(p, panel, points, done, taken, lines, w, h, wrap, best):
-    """Score the box positions of one title variant; keep the best so far (cost, box, leader start, wrap). ``done``: the
-    places already placed (their discs are obstacles); ``points``: every place point of the panel. Above and below the point
-    the box may also stand with the point near its left or right end, beside the point level with its top or bottom."""
-    for rank, d in enumerate(BOX_DISTANCES):
-        for k in range(8):
-            t = math.pi / 2 - math.pi / 4 * k  # N, NE, E, ... clockwise
-            ux, uy = round(math.cos(t), 9), round(math.sin(t), 9)
-            bx0 = p.point[0] + ux * (POINT_R + d) + (w / 2 * (1 if ux > 0 else -1) if ux else 0.0)
-            by0 = p.point[1] + uy * (POINT_R + d) + (h / 2 * (1 if uy > 0 else -1) if uy else 0.0)
-            if not ux:
-                shifts = [(0.0, 0.0), (w / 2 - 0.12, 0.0), (-(w / 2 - 0.12), 0.0)]
-            elif not uy:
-                shifts = [(0.0, 0.0), (0.0, h / 2 - 0.06), (0.0, -(h / 2 - 0.06))]
-            else:
-                shifts = [(0.0, 0.0)]
-            for sx, sy in shifts:
-                bx, by = bx0 + sx, by0 + sy
-                box = (bx - w / 2, by - h / 2, bx + w / 2, by + h / 2)
-                cost = _box_cost(p, panel, points, done, taken, lines, box) + rank * 1.5 + (0.3 if sx or sy else 0.0) \
-                    + k * 0.01 + (1.0 if wrap else 0.0)
-                if best is None or cost < best[0]:
-                    best = (cost, box, _box_point(box, *p.point), wrap)
-    return best
-
-
-def _box_cost(p, panel, points, done, taken, lines, box) -> float:
-    """Collisions of one box and its leader; 100 for everything that would hide a name, point, disc or line."""
-    inside = (panel.x + 0.04 <= box[0] and box[2] <= panel.x + panel.width - 0.04 and panel.y + 0.04 <= box[1]
-              and box[3] <= panel.y + panel.height - 0.04)
-    start = _box_point(box, *p.point)
-    hidden = (sum(_box_hits_disc(box, o.hub, o.radius + 0.03) for o in done)  # on a disc
-              + sum(_box_hits_disc(box, q, POINT_CLEAR) for q in points)  # on a place point
-              + sum(_segment_hits_disc(start, p.point, o.hub, o.radius + 0.02) for o in done)  # leader under a disc
-              + sum(_overlaps(box, q) for q in taken)  # on another box
-              + sum(_segment_hits_box(start, p.point, q) for q in taken)  # leader under a box
-              + sum(_segment_hits_box(a_, b_, box) for a_, b_ in lines)  # the box hides a line
-              + sum(_segments_cross(start, p.point, a_, b_) for a_, b_ in lines)  # crossing lines
-              + sum(_segment_hits_disc(start, p.point, q, POINT_R + 0.02) for q in points
-                    if q != p.point and q not in p.others))  # leader over a point (its own group's places lie around it)
-    own = _gap(box, p.point)
-    ambiguous = sum(_gap(box, q) < own for q in points if q != p.point)  # nearer to another place point
-    return hidden * 100 + ambiguous * 15 + (0 if inside else 200)
+def _reach(box, p: Place) -> float:
+    """Distance from the middle of a label to the edge of a disc: what the eye uses to tie a label to its callout."""
+    return math.hypot((box[0] + box[2]) / 2 - p.hub[0], (box[1] + box[3]) / 2 - p.hub[1]) - p.radius
 
 
 def _gap(box, point) -> float:
@@ -644,7 +677,8 @@ def x1(ctx: Context, gazetteer: dict, countries: dict[str, dict]):
     sections = [
         ("Beziehungstyp", relation_entries(ctx.case)),
         (None, [("dot", "Wohnort (Ortspunkt)", POINT)]
-               + [("line", "Kontakte des Ortes, daneben gesetzt", {"color": "#9AA3AC", "linewidth": 0.8})]
+               + [("line", "Kontakte des Ortes, daneben gesetzt", {"color": "#9AA3AC", "linewidth": 0.8}),
+                  ("text", "Zahl = Kontakte am Ort", None)]
                + ([("text", "○ weiterer Ort einer Ortsgruppe", None)] if others else [])
                + ([("area", "nur Wohnland bekannt (Lage unscharf)", {"facecolor": "none", "edgecolor": MUTED, "linewidth": 0.8,
                                                                      "linestyle": (0, (3, 2))})] if country_only else [])),
@@ -673,20 +707,28 @@ def x1(ctx: Context, gazetteer: dict, countries: dict[str, dict]):
             ax.add_patch(Circle(p.hub, p.radius, facecolor="#FFFFFF", alpha=0.55, edgecolor="none", zorder=2.5, gid="place-disc"))
             ax.add_patch(Circle(p.hub, p.radius, fill=False, edgecolor=MUTED if p.country_only else "#D3D9DF", linewidth=0.7,
                                 linestyle=(0, (3, 2)) if p.country_only else "solid", zorder=2.6))
-        ax.plot(*zip(p.point, _disc_edge(p)), color="#9AA3AC", linewidth=0.7, zorder=4.4, gid="connector")  # disc beside its point
-        start = _box_point(p.box, *p.point)
-        ax.plot(*zip(start, p.point), color="#6B7580", linewidth=0.7, zorder=4.5, gid="leader")  # box to point, above all fills
+        ax.plot(*zip(p.point, _disc_edge(p)), color="#9AA3AC", linewidth=0.7, zorder=4.4, gid="connector")  # callout to its point
         for q in p.others:  # the other places of a group keep their true point: not everyone lives in the head place
             if math.hypot(q[0] - p.point[0], q[1] - p.point[1]) > 0.02:
                 ax.add_patch(Circle(q, 0.03, facecolor="white", edgecolor=POINT, linewidth=0.8, zorder=4.6, gid="true-point"))
         ax.add_patch(Circle(p.point, POINT_R, facecolor=POINT, edgecolor="white", linewidth=0.8, zorder=4.7, gid="place-point"))
-        x0, y0, x1_, y1 = p.box
-        ax.add_patch(FancyBboxPatch((x0, y0), x1_ - x0, y1 - y0, boxstyle="round,pad=0,rounding_size=0.03", facecolor="white",
-                                    alpha=0.92, edgecolor="#CBD2D9", linewidth=0.5, zorder=7, gid="place-box"))
-        ax.text(x0 + BOX_PAD, y1 - BOX_PAD, p.title, fontsize=BOX_PT, fontweight="bold", color=INK, ha="left", va="top", zorder=8)
+        x0, y0, x1_, y1 = p.box  # a soft, borderless ground and a white halo: readable on the map, no note-paper look
+        ax.add_patch(FancyBboxPatch((x0, y0), x1_ - x0, y1 - y0, boxstyle="round,pad=0.01,rounding_size=0.07", facecolor="white",
+                                    alpha=0.5, edgecolor="none", zorder=6.5, gid="place-box"))
+        halo = [patheffects.withStroke(linewidth=2.2, foreground="white")]
+        top = y1 - BOX_PAD
+        ax.text(x0 + BOX_PAD, top, p.head, fontsize=BOX_PT, fontweight="bold", color=INK, ha="left", va="top", zorder=8,
+                path_effects=halo)
+        if p.tail:
+            if p.wrap:
+                ax.text(x0 + BOX_PAD, top - BOX_PT / 72 * 1.25, p.tail[3:], fontsize=BOX_PT, color=INK, ha="left", va="top",
+                        zorder=8, path_effects=halo)
+            else:
+                ax.text(x0 + BOX_PAD + text_width(p.head, BOX_PT, bold=True) + HEAD_GAP, top, p.tail, fontsize=BOX_PT, color=INK, ha="left",
+                        va="top", zorder=8, path_effects=halo)
         if p.sub:
             ax.text(x0 + BOX_PAD, y0 + BOX_PAD, p.sub, fontsize=BOX_SUB_PT, color="#7B8590", ha="left", va="bottom", zorder=8,
-                    linespacing=1.1)
+                    linespacing=1.1, path_effects=halo)
     draw_nodes(ax, layout.positions, {cid: relation_fill(ctx.case, cid) for cid in layout.positions}, zorder=5)
     return p_.figure
 

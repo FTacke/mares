@@ -115,7 +115,7 @@ def test_places_join_the_place_the_directory_assigns_them_to(case, tmp_path):
     assert names["Marburg"] == ["Marburg", "Cölbe", "Kirchhain", "Lahntal", "Wehrda"] and names["Gießen"] == ["Gießen", "Wetzlar"]
     marburg = next(p for p in layout.places if p.places[0][0] == "Marburg")
     in_marburg = [c.id for c in ctx.case.contacts if c.residence_place in ("Marburg", "Cölbe", "Kirchhain", "Lahntal", "Wehrda")]
-    assert marburg.title == f"Marburg und Umgebung · n = {len(in_marburg)}" and sorted(marburg.members) == sorted(in_marburg)
+    assert marburg.title == f"Marburg und Umgebung · {len(in_marburg)}" and sorted(marburg.members) == sorted(in_marburg)
     assert marburg.sub.replace("\n", " · ") == "Marburg 10 · Cölbe · Kirchhain · Lahntal · Wehrda" and len(marburg.others) == 4
     for alone in ("Kassel", "Frankfurt am Main", "Berlin", "Bogotá", "Medellín"):
         assert names[alone] == [alone]
@@ -162,9 +162,9 @@ def test_place_boxes_name_the_country_outside_germany_only(case, tmp_path):
     write_rows(case, "contacts.csv", rows)
     layout = x1_layout(context(case), gazetteer(tmp_path), countries())
     titles = {p.places[0][0]: p.title.replace("\n", " · ") for p in layout.places}  # a title may wrap
-    assert titles["Bogotá"] == "Bogotá und Umgebung · Kolumbien · n = 4"  # group abroad: with the country
+    assert titles["Bogotá"] == "Bogotá und Umgebung · Kolumbien · 4"  # group abroad: with the country
     assert titles["Madrid"] == "Madrid · Spanien" and titles["Toronto"] == "Toronto · Kanada"  # single places abroad
-    assert titles["Berlin"] == "Berlin" and titles["Marburg"].startswith("Marburg und Umgebung · n = ")  # Germany: no country
+    assert titles["Berlin"] == "Berlin" and titles["Marburg"].startswith("Marburg und Umgebung · ")  # Germany: no country
     rows = read_rows(case, "contacts.csv")
     next(r for r in rows if r["residence_place"] == "Toronto")["residence_place"] = ""
     write_rows(case, "contacts.csv", rows)
@@ -251,32 +251,43 @@ def test_discs_sit_beside_their_point_tied_by_a_line_and_never_overlap(case, tmp
     assert marburg.point == germany.to_in(*marburg.anchor)  # the place point stays where the place is
 
 
-def test_every_box_belongs_to_its_place_point_at_a_glance(case, tmp_path):
+def test_every_label_docks_at_its_own_disc(case, tmp_path):
     x, layout = _geometry(case, tmp_path)
-    leaders = [(x._box_point(p.box, *p.point), p.point) for p in layout.places]
     connectors = [(p.point, x._disc_edge(p)) for p in layout.places]
-    for i, p in enumerate(layout.places):
-        start, point = leaders[i]
+    for p in layout.places:
+        own = x._gap(p.box, p.hub) - p.radius
+        assert -1e-9 <= own <= 0.35, p.title  # docked at the disc, never on it
+        for o in layout.places:
+            if o is not p and o.region == p.region:
+                assert x._reach(p.box, o) >= x._reach(p.box, p), (p.title, o.title)  # read as its own callout's
+                assert not x._overlaps(p.box, o.box), (p.title, o.title)
+        for a_, b_ in connectors:
+            assert not x._segment_hits_box(a_, b_, p.box), p.title  # never hides a line
+
+
+@pytest.mark.parametrize("variant", ["002", "crowded"])
+def test_every_callout_has_its_full_label_right_at_the_circle(case, tmp_path, variant):
+    if variant == "crowded":  # more contacts in Gießen: larger discs in the dense part of the Germany panel
+        rows = read_rows(case, "contacts.csv")
+        for row in rows:
+            if row["residence_place"] == "Berlin":
+                row["residence_place"] = "Gießen"
+        write_rows(case, "contacts.csv", rows)
+    x, layout = _geometry(case, tmp_path)
+    for p in layout.places:
         same = [o for o in layout.places if o.region == p.region]
-        for o in same:
-            assert not x._segment_hits_disc(start, point, o.hub, o.radius), (p.title, o.title)  # never under a disc
-            if o is not p:
-                assert not x._segment_hits_box(start, point, o.box), (p.title, o.title)  # never under another box
-                if x._gap(p.box, p.point) < 0.3:  # a box right at its point is nearest to it; a farther box has a free leader
-                    assert x._gap(p.box, o.point) >= x._gap(p.box, p.point), (p.title, o.title)
-        for j, (a_, b_) in enumerate(leaders):
-            assert j == i or not x._segments_cross(start, point, a_, b_), (p.title, layout.places[j].title)
-        for j, (a_, b_) in enumerate(connectors):
-            assert j == i or not x._segments_cross(start, point, a_, b_), (p.title, layout.places[j].title)
-    titles = {p.places[0][0]: p for p in layout.places}
-    assert not x._overlaps(titles["Marburg"].box, titles["Gießen"].box)
+        points = [q for o in same for q in [o.point] + o.others]
+        lines = [(o.point, x._disc_edge(o)) for o in same]
+        taken = [next(pn for pn in layout.panels if pn.region.key == p.region).title_box()] + [o.box for o in same if o is not p]
+        panel = next(pn for pn in layout.panels if pn.region.key == p.region)
+        assert x._label_cost(p, panel, points, same, taken, lines, p.box) == 0, p.title  # nothing hidden, unambiguous, inside
 
 
 def test_lines_and_points_are_drawn_above_every_fill(case, tmp_path):
     with rc():
         figure = x1(context(case), gazetteer(tmp_path), countries())
     ax = figure.axes[0]
-    line = min(line.get_zorder() for line in ax.lines if line.get_gid() in ("leader", "connector"))
+    line = min(line.get_zorder() for line in ax.lines if line.get_gid() == "connector")
     fills = [p.get_zorder() for p in ax.patches if p.get_gid() == "place-disc"]
     assert line > max(fills)
     point = min(p.get_zorder() for p in ax.patches if p.get_gid() == "place-point")
@@ -325,15 +336,17 @@ def test_x1_has_no_ties_but_place_boxes_points_and_pale_discs(case, tmp_path):
         figure = x1(ctx, gazetteer(tmp_path), countries())
     ax = figure.axes[0]
     assert not [p for p in ax.patches if isinstance(p, PathPatch)]  # no contact-contact ties
-    assert {line.get_gid() for line in ax.lines} <= {"leader", "connector"}  # box and disc lines to the place point only
+    assert {line.get_gid() for line in ax.lines} <= {"connector"}  # only the line from a callout to its place point
+    boxes = [p for p in ax.patches if p.get_gid() == "place-box"]
+    assert all(b.get_edgecolor()[3] == 0 for b in boxes)  # no frame: a soft ground only
     layout = x1_layout(ctx, gazetteer(tmp_path), countries())
     gids = [p.get_gid() for p in ax.patches]
     assert gids.count("place-box") == gids.count("place-point") == len(layout.places)
     assert gids.count("place-disc") == sum(1 for p in layout.places if len(p.members) > 1)
     texts = " ".join(t.get_text() for t in figure.findobj(Text))
     assert "X1 · Geografische Verteilung des persönlichen Netzwerks" in texts and "TESTFALL 002*" in texts
-    assert "Fassung 2.5" in texts and "keine Standardgrafik" in texts and "keine Verbindungslinien" in texts
-    assert "Marburg und Umgebung · n = 14" in texts.replace("\n", " · ") and "Gießen und Umgebung" in texts
+    assert "Fassung 2.7" in texts and "keine Standardgrafik" in texts and "keine Verbindungslinien" in texts
+    assert "Marburg und Umgebung" in texts and " · 14" in texts and "Gießen und Umgebung" in texts  # bold name, compact number
     assert gids.count("true-point") >= sum(len(p.others) for p in layout.places)  # other places of a group stay visible
 
 
@@ -352,7 +365,7 @@ def test_render_x1_writes_into_experimental_and_leaves_graphics_alone(tmp_path):
         f"{SYNTHETIC_CODE}_X1_geografische_verteilung.png", f"{SYNTHETIC_CODE}_X1_geografische_verteilung.svg"]
     assert not (case / "graphics").exists()  # the standard figures are not touched
     record = json.loads((folders["workspace"] / "runs" / result.run_id / "run_record.json").read_text(encoding="utf-8"))
-    assert record["standard_figure"] is False and record["version"] == "2.5" and record["unresolved"] == ["A22"] and str(folders["intake"]) not in json.dumps(record)
+    assert record["standard_figure"] is False and record["version"] == "2.7" and record["unresolved"] == ["A22"] and str(folders["intake"]) not in json.dumps(record)
 
 
 def test_render_x1_needs_the_basemap_and_a_valid_directory(tmp_path):
