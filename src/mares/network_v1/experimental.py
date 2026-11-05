@@ -40,7 +40,7 @@ from .places import Area, norm
 from .run import check_case_ref
 from .validate import FAILED, validate
 
-X1_CODE, X1_NAME, X1_VERSION = "X1", "geografische_verteilung", "2.7"
+X1_CODE, X1_NAME, X1_VERSION = "X1", "geografische_verteilung", "2.8"
 EXPERIMENTAL_DIR = "experimental"
 GAZETTEER = "network_v1/reference/gazetteer.csv"  # in the root of the case
 BASEMAP = "cache/basemaps/ne_50m_admin_0_countries.geojson"  # in WORKSPACE
@@ -359,11 +359,41 @@ def _disc_edge(p: "Place") -> tuple[float, float]:
     return p.point[0] + dx / d * (d - p.radius), p.point[1] + dy / d * (d - p.radius)
 
 
-def _disc_candidates(p: Place, panel: Panel, points: list, done: list[Place], boxes: list, lines: list) -> list:
+ORDER_NEAR = 1.5  # inches: places this close on the panel keep their geographic order (north-south, west-east)
+ORDER_MIN = 0.1  # inches: a relation counts from this separation of the points on, and if not much smaller than the other
+ORDER_CLEAR = 1.5  # a relation is clear if its offset is this many times the other one; otherwise the pair is diagonal
+ORDER_TOL = 0.05  # inches: a reversal below this is not visible
+ORDER_COST = 2.0  # per reversed relation, in inches of disc offset: worth a somewhat longer line, never a hidden name
+
+
+def _order_flips(p: Place, pos, o: Place, other) -> int:
+    """How many geographic relations of two nearby places the positions of their discs or labels reverse. A clear relation
+    (north-south or west-east, the other offset much smaller) must keep its sign: a place further north is not shown below
+    one further south. A diagonal pair must only not turn round as a whole (north-east shown south-west)."""
+    dx, dy = p.point[0] - o.point[0], p.point[1] - o.point[1]
+    if math.hypot(dx, dy) > ORDER_NEAR or math.hypot(dx, dy) < ORDER_MIN:
+        return 0
+    sx, sy = pos[0] - other[0], pos[1] - other[1]
+    flips = 0
+    for along, across, shown in ((dx, dy, sx), (dy, dx, sy)):
+        if abs(along) >= ORDER_MIN and abs(along) >= ORDER_CLEAR * abs(across) and along * shown < 0 and abs(shown) > ORDER_TOL:
+            flips += 1
+    if not flips and max(abs(dx), abs(dy)) < ORDER_CLEAR * min(abs(dx), abs(dy)):  # diagonal
+        flips += (dx * sx + dy * sy) < -ORDER_TOL * math.hypot(dx, dy)
+    return flips
+
+
+def _centre(box) -> tuple[float, float]:
+    return (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
+
+
+def _disc_candidates(p: Place, panel: Panel, points: list, done: list[Place], boxes: list, lines: list,
+                     pending: tuple = ()) -> list:
     """Positions of the disc of one place beside its point (never on it), as (cost, centre), nearest first among the
     allowed ones. Violations: covering a place point (also the true points of the other places of a group), a label or a
-    line, overlapping a disc placed before, leaving the panel; minor: its line crossing a disc, a label or a foreign point.
-    Positions in growing distance and sixteen directions."""
+    line, overlapping a disc placed before, leaving the panel; minor: its line crossing a disc, a label or a foreign point;
+    then the geographic order towards the discs placed before and the points of the places still to come (so that an
+    early disc leaves the right side free for them). Positions in growing distance and sixteen directions."""
     r = p.radius
     title = panel.title_box()
     out = []
@@ -385,7 +415,8 @@ def _disc_candidates(p: Place, panel: Panel, points: list, done: list[Place], bo
                               if q != p.point and q not in p.others)  # its own group's places lie around the point
             cost = (covers * 100 + on_box * 100 + on_line * 100 + overlap * 100 + outside * 100
                     + _box_hits_disc(title, (x, y), r + 0.04) * 100 + crosses * 100 + line_box * 100 + line_points * 60
-                    + d + k * 0.001)
+                    + (sum(_order_flips(p, (x, y), o, o.hub) for o in done)
+                       + sum(_order_flips(p, (x, y), o, o.point) for o in pending)) * ORDER_COST + d + k * 0.001)
             out.append((cost, (x, y)))
     return sorted(out)
 
@@ -394,12 +425,13 @@ LABEL_MISS = 8.0  # extra cost of a label that does not dock right at its circle
 LABEL_FITS = 1.6  # a label cost below this: the full label docks right at the circle (closest distance), hiding nothing
 
 
-def _place_callout(p: Place, panel: Panel, points: list, done: list[Place], taken: list, lines: list) -> None:
+def _place_callout(p: Place, panel: Panel, points: list, done: list[Place], taken: list, lines: list,
+                   pending: tuple = ()) -> None:
     """Disc and docked label together: the disc goes to the nearest allowed position at which its complete label finds room
     right at the circle; neighbouring groups are pulled apart for that, never the place points (the line ties the disc to
     its point). If no position allows it, the best combination is taken."""
     best = None
-    for cost, centre in _disc_candidates(p, panel, points, done, taken[1:], lines):
+    for cost, centre in _disc_candidates(p, panel, points, done, taken[1:], lines, pending):
         if best is not None and cost >= best[0]:
             break  # every further position is worse already
         p.hub = centre
@@ -421,8 +453,8 @@ def _place_panel(places: list[Place], panel: Panel) -> None:
     taken = [panel.title_box()]
     lines: list = []  # the lines from the points to their discs
     done: list[Place] = []
-    for p in places:
-        _place_callout(p, panel, points, done, taken, lines)
+    for i, p in enumerate(places):
+        _place_callout(p, panel, points, done, taken, lines, tuple(places[i + 1:]))
         lines.append((p.point, _disc_edge(p)))
         taken.append(p.box)
         done.append(p)
@@ -489,7 +521,8 @@ def _label_cost(p, panel, points, discs, taken, lines, box) -> float:
     ambiguous = (sum(_reach(box, o) < own for o in discs if o is not p)  # the eye would read it as another callout's
                  + sum(math.hypot((box[0] + box[2]) / 2 - q[0], (box[1] + box[3]) / 2 - q[1]) < own
                        for q in points if q != p.point and q not in p.others))  # ... or as a label of another place point
-    return hidden * 150 + ambiguous * 100 + (0 if inside else 200)  # hiding anything is worst, then ambiguity
+    order = sum(_order_flips(p, _centre(box), o, _centre(o.box)) for o in discs if o is not p)  # north stays above south
+    return hidden * 150 + ambiguous * 100 + (0 if inside else 200) + order * ORDER_COST  # hiding anything is worst
 
 
 def _segments_cross(p1, p2, q1, q2) -> bool:

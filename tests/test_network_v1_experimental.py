@@ -235,8 +235,8 @@ def test_place_points_and_names_always_stay_visible(case, tmp_path, variant):
             assert not x._box_hits_disc(p.box, q, x.POINT_R), (p.title, q)
         for o in same:  # names are never covered by contacts
             assert not x._box_hits_disc(p.box, o.hub, o.radius), (p.title, o.title)
-        for x_, y_ in layout.positions.values():
-            assert not (p.box[0] < x_ + NODE_R and x_ - NODE_R < p.box[2] and p.box[1] < y_ + NODE_R and y_ - NODE_R < p.box[3])
+        for node in layout.positions.values():  # no name on a contact (its circle, not the square around it)
+            assert not x._box_hits_disc(p.box, node, NODE_R), (p.title, node)
 
 
 def test_discs_sit_beside_their_point_tied_by_a_line_and_never_overlap(case, tmp_path):
@@ -281,6 +281,25 @@ def test_every_callout_has_its_full_label_right_at_the_circle(case, tmp_path, va
         taken = [next(pn for pn in layout.panels if pn.region.key == p.region).title_box()] + [o.box for o in same if o is not p]
         panel = next(pn for pn in layout.panels if pn.region.key == p.region)
         assert x._label_cost(p, panel, points, same, taken, lines, p.box) == 0, p.title  # nothing hidden, unambiguous, inside
+
+
+@pytest.mark.parametrize("variant", ["002", "frankfurt_first"])
+def test_callouts_keep_the_geographic_reading_order(case, tmp_path, variant):
+    if variant == "frankfurt_first":  # the southern place larger, so placed before the northern one
+        rows = read_rows(case, "contacts.csv")
+        for row in rows:
+            if row["residence_place"] in ("Berlin", "Kassel"):
+                row["residence_place"] = "Frankfurt am Main"
+        write_rows(case, "contacts.csv", rows)
+    x, layout = _geometry(case, tmp_path)
+    for i, p in enumerate(layout.places):
+        for o in layout.places[i + 1:]:
+            if o.region == p.region:
+                assert x._order_flips(p, p.hub, o, o.hub) == 0, (p.title, o.title)  # discs
+                assert x._order_flips(p, x._centre(p.box), o, x._centre(o.box)) == 0, (p.title, o.title)  # labels
+    by = {p.places[0][0]: p for p in layout.places}
+    giessen, frankfurt = by["Gießen"], by["Frankfurt am Main"]
+    assert giessen.hub[1] > frankfurt.hub[1] and x._centre(giessen.box)[1] > x._centre(frankfurt.box)[1]  # north above south
 
 
 def test_lines_and_points_are_drawn_above_every_fill(case, tmp_path):
@@ -345,7 +364,7 @@ def test_x1_has_no_ties_but_place_boxes_points_and_pale_discs(case, tmp_path):
     assert gids.count("place-disc") == sum(1 for p in layout.places if len(p.members) > 1)
     texts = " ".join(t.get_text() for t in figure.findobj(Text))
     assert "X1 · Geografische Verteilung des persönlichen Netzwerks" in texts and "TESTFALL 002*" in texts
-    assert "Fassung 2.7" in texts and "keine Standardgrafik" in texts and "keine Verbindungslinien" in texts
+    assert "Fassung 2.8" in texts and "keine Standardgrafik" in texts and "keine Verbindungslinien" in texts
     assert "Marburg und Umgebung" in texts and " · 14" in texts and "Gießen und Umgebung" in texts  # bold name, compact number
     assert gids.count("true-point") >= sum(len(p.others) for p in layout.places)  # other places of a group stay visible
 
@@ -365,7 +384,7 @@ def test_render_x1_writes_into_experimental_and_leaves_graphics_alone(tmp_path):
         f"{SYNTHETIC_CODE}_X1_geografische_verteilung.png", f"{SYNTHETIC_CODE}_X1_geografische_verteilung.svg"]
     assert not (case / "graphics").exists()  # the standard figures are not touched
     record = json.loads((folders["workspace"] / "runs" / result.run_id / "run_record.json").read_text(encoding="utf-8"))
-    assert record["standard_figure"] is False and record["version"] == "2.7" and record["unresolved"] == ["A22"] and str(folders["intake"]) not in json.dumps(record)
+    assert record["standard_figure"] is False and record["version"] == "2.8" and record["unresolved"] == ["A22"] and str(folders["intake"]) not in json.dumps(record)
 
 
 def test_render_x1_needs_the_basemap_and_a_valid_directory(tmp_path):
