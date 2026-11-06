@@ -11,6 +11,7 @@ import math
 import re
 from collections import defaultdict
 from dataclasses import dataclass, field
+from typing import Callable
 
 import numpy as np
 from matplotlib.patches import Circle, FancyBboxPatch, PathPatch, Polygon, Rectangle
@@ -675,8 +676,7 @@ def group_label_lines(ctx: Context, group) -> tuple[str, str]:
     return f"{group.id} · {display_name(group.label)} ({len(ctx.case.members(group.id))})", belonging_text(group)
 
 
-def _label_width(ctx: Context, group) -> float:
-    first, second = group_label_lines(ctx, group)
+def _label_width(first: str, second: str) -> float:
     line2 = scale_width() + 0.08 + text_width(second, LEGEND_PT - 0.6, bold=True)
     return max(text_width(first, LEGEND_PT, bold=True), line2) + 0.1
 
@@ -738,12 +738,14 @@ def label_candidates(hull: np.ndarray, w: float, h: float) -> list[tuple[tuple[f
 
 
 def place_labels(ctx: Context, positions: dict[str, tuple[float, float]], hulls: dict[str, np.ndarray],
-                 bounds: tuple[float, float], floor: float = 0.05) -> dict[str, tuple[float, float, str, tuple]]:
+                 bounds: tuple[float, float], floor: float = 0.05, *, node_r: float = NODE_R_IN,
+                 label_lines: Callable | None = None) -> dict[str, tuple[float, float, str, tuple]]:
     """Label block (name line and belonging scale) per group, in inches, right at its outline: the candidate with no
     node, no tie, no other label, no foreign outline and no foreign group area under it and the smallest distance to its
     outline; otherwise the one with the fewest such collisions. A nested group's label may lie on the areas of the
-    groups around it (not on their outlines). Larger groups are placed first."""
-    nodes = [(x - NODE_R_IN - 0.03, y - NODE_R_IN - 0.03, x + NODE_R_IN + 0.03, y + NODE_R_IN + 0.03) for x, y in positions.values()]
+    groups around it (not on their outlines). Larger groups are placed first. ``node_r`` (inches) and ``label_lines`` (group -> the two label lines) default to G3."""
+    label_lines = label_lines or (lambda group: group_label_lines(ctx, group))
+    nodes = [(x - node_r - 0.03, y - node_r - 0.03, x + node_r + 0.03, y + node_r + 0.03) for x, y in positions.values()]
     ties = [_straight(positions[a], positions[b]) for a, b in _edges(ctx) if a in positions and b in positions]
     outlines = {gid: MplPath(np.vstack([hh, hh[:1]]), closed=True) for gid, hh in hulls.items()}
     containers = _containers(ctx)
@@ -751,7 +753,7 @@ def place_labels(ctx: Context, positions: dict[str, tuple[float, float]], hulls:
     result = {}
     groups = sorted((g for g in ctx.case.groups if g.id in hulls), key=lambda g: -len(ctx.case.members(g.id)))
     for g in groups:
-        w, h = _label_width(ctx, g), LABEL_H
+        w, h = _label_width(*label_lines(g)), LABEL_H
         hull = hulls[g.id]
         best, best_cost = None, None
         for box, rank in label_candidates(hull, w, h):
@@ -808,22 +810,21 @@ def membership_marked(ctx: Context) -> list[str]:
     return marked
 
 
-def g3(ctx: Context):
-    colors = {g.id: GROUP_COLORS[i % len(GROUP_COLORS)] for i, g in enumerate(ctx.case.groups)}
-    marked = membership_marked(ctx)
-    scale = [("scale", "Zugehörigkeit: 1 sehr stark – 5 überhaupt nicht", "2")]
-    missing = sorted({g.belonging.missing for g in ctx.case.groups if not g.belonging.value}, key=list(MISSING_SHORT).index)
-    if missing:  # only the short codes that occur, with an empty scale
-        named = " · ".join(f"{MISSING_SHORT[m]} = {codes.MISSING_LABELS[m].split(' (')[0]}" for m in missing)
-        scale.append(("scale", named, None))
-    sections = [
-        relation_section(ctx.case),
-        (None, scale),
-        (None, [("line", "bestätigte Verbindung", {"color": TIE, "linewidth": 1.0})]
-               + ([("ring", "Mitglied mehrerer Gruppen", [GROUP_COLORS[0], GROUP_COLORS[1]])] if marked else [])),
-    ]
-    p = page(ctx, "G3", main_w=G3_W, main_h=G3_H, legend="bottom", sections=sections)
-    ax = p.main
+@dataclass
+class G3Geometry:
+    """Everything G3 places, in inches of the main area: nodes (the row of loose contacts included), group outlines,
+    label boxes and the contacts with ring segments. Computed before drawing, so a variant can reuse it unchanged."""
+
+    positions: dict[str, tuple[float, float]]
+    hulls: dict[str, np.ndarray]
+    loose: list[str]
+    floor: float
+    labels: dict[str, tuple[float, float, float, float]]
+    marked: list[str]
+
+
+def g3_geometry(ctx: Context, *, node_r: float = NODE_R_IN, label_lines: Callable | None = None) -> G3Geometry:
+    """The geometry of G3 for ``ctx`` (deterministic). ``node_r`` and ``label_lines`` as in :func:`place_labels`."""
     positions, span = g3_positions(ctx)
     pads = group_pads(ctx)
     hulls = {}
@@ -831,6 +832,29 @@ def g3(ctx: Context):
         members = ctx.case.members(g.id)
         if members:
             hulls[g.id] = _hull([positions[m] for m in members], pads[g.id] * span)
+    labelled = dict(positions)
+    loose = loose_contacts(ctx)
+    floor = LOOSE_H if loose else 0.05
+    if loose:
+        x0 = text_width(LOOSE_LABEL, LABEL_PT - 1.5) + 0.35
+        for i, cid in enumerate(loose):
+            positions[cid] = (x0 + i * 0.5, LOOSE_H / 2)
+    labels = {gid: box for gid, (_x, _y, _side, box) in
+              place_labels(ctx, labelled, hulls, (G3_W, G3_H), floor, node_r=node_r, label_lines=label_lines).items()}
+    return G3Geometry(positions, hulls, loose, floor, labels, membership_marked(ctx))
+
+
+def group_colors(ctx: Context) -> dict[str, str]:
+    """Outline colour per group: by the group's place in groups.csv."""
+    return {g.id: GROUP_COLORS[i % len(GROUP_COLORS)] for i, g in enumerate(ctx.case.groups)}
+
+
+def draw_g3(ax, ctx: Context, geometry: G3Geometry, *, colors: dict[str, str], nodes: Callable | None = None,
+            node_r: float = NODE_R_IN, label_lines: Callable | None = None) -> None:
+    """Draw the group map: pale areas, outlines, confirmed ties, the row of loose contacts, nodes (``nodes(ax,
+    positions)``, by default relation-type nodes), ring segments and the group labels."""
+    label_lines = label_lines or (lambda group: group_label_lines(ctx, group))
+    hulls, positions = geometry.hulls, geometry.positions
     for g in ctx.case.groups:  # fill all first (pale), then the outlines
         if g.id in hulls:
             ax.add_patch(Polygon(hulls[g.id], closed=True, facecolor=colors[g.id], alpha=0.07, edgecolor="none", zorder=0))
@@ -842,20 +866,17 @@ def g3(ctx: Context):
             ax.add_patch(outline)
     for a, b in _edges(ctx):
         _tie(ax, _straight(positions[a], positions[b]), color=TIE, width=0.7)
-    loose = loose_contacts(ctx)
-    floor = LOOSE_H if loose else 0.05
-    if loose:
-        x0 = text_width(LOOSE_LABEL, LABEL_PT - 1.5) + 0.35
+    if geometry.loose:
         ax.text(0.06, LOOSE_H / 2, LOOSE_LABEL, fontsize=LABEL_PT - 1.5, color=MUTED, ha="left", va="center", style="italic")
-        for i, cid in enumerate(loose):
-            positions[cid] = (x0 + i * 0.5, LOOSE_H / 2)
-    draw_nodes(ax, positions, _fills(ctx, positions))
-    for cid in marked:
-        ring_segments(ax, positions[cid], [colors[g] for g in ctx.case.groups_of(cid)], NODE_R_IN + 0.07)
-    labelled = {cid: xy for cid, xy in positions.items() if cid not in loose}
-    for gid, (_x, _y, _side, box) in place_labels(ctx, labelled, hulls, (G3_W, G3_H), floor).items():
+    if nodes is None:
+        draw_nodes(ax, positions, _fills(ctx, positions))
+    else:
+        nodes(ax, positions)
+    for cid in geometry.marked:
+        ring_segments(ax, positions[cid], [colors[g] for g in ctx.case.groups_of(cid)], node_r + 0.07)
+    for gid, box in geometry.labels.items():
         g = next(gr for gr in ctx.case.groups if gr.id == gid)
-        first, second = group_label_lines(ctx, g)
+        first, second = label_lines(g)
         gap, near_box, near_hull = label_gap(box, hulls[gid])
         if gap > LEADER_GAP:  # assigns a label that cannot sit right at its outline (nested or crowded groups)
             ax.plot([near_box[0], near_hull[0]], [near_box[1], near_hull[1]], color=colors[gid], linewidth=0.8, zorder=5,
@@ -869,4 +890,26 @@ def g3(ctx: Context):
         x += ordinal_dots(ax, x, y, g.belonging.value) + 0.08
         ax.text(x, y, second, ha="left", va="center", fontsize=LEGEND_PT - 0.6, color=INK if g.belonging.value else MUTED,
                 fontweight="bold" if g.belonging.value else "normal", style="normal" if g.belonging.value else "italic", zorder=7)
+
+
+def belonging_sections(ctx: Context, *, ring: bool) -> list[tuple]:
+    """The legend sections of G3 after the node colours: the belonging scale (with the missing codes that occur), the
+    confirmed tie and -- if any contact has ring segments -- the several-groups marker."""
+    scale = [("scale", "Zugehörigkeit: 1 sehr stark – 5 überhaupt nicht", "2")]
+    missing = sorted({g.belonging.missing for g in ctx.case.groups if not g.belonging.value}, key=list(MISSING_SHORT).index)
+    if missing:  # only the short codes that occur, with an empty scale
+        named = " · ".join(f"{MISSING_SHORT[m]} = {codes.MISSING_LABELS[m].split(' (')[0]}" for m in missing)
+        scale.append(("scale", named, None))
+    return [
+        (None, scale),
+        (None, [("line", "bestätigte Verbindung", {"color": TIE, "linewidth": 1.0})]
+               + ([("ring", "Mitglied mehrerer Gruppen", [GROUP_COLORS[0], GROUP_COLORS[1]])] if ring else [])),
+    ]
+
+
+def g3(ctx: Context):
+    geometry = g3_geometry(ctx)
+    sections = [relation_section(ctx.case)] + belonging_sections(ctx, ring=bool(geometry.marked))
+    p = page(ctx, "G3", main_w=G3_W, main_h=G3_H, legend="bottom", sections=sections)
+    draw_g3(p.main, ctx, geometry, colors=group_colors(ctx))
     return p.figure

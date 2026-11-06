@@ -330,9 +330,11 @@ class Page:
     notes: list[str] = field(default_factory=list)
 
 
-def page(ctx: Context, code: str, *, main_w: float, main_h: float, legend: str, sections, notes: Sequence[str] = ()) -> Page:
+def page(ctx: Context, code: str, *, main_w: float, main_h: float, legend: str, sections, notes: Sequence[str] = (),
+         title: str | None = None) -> Page:
     """The common page of every figure: title of ``code`` from :data:`TITLES`, badge, main area, legend, notes, footer.
-    ``legend`` is ``side`` (right of the main area) or ``bottom`` (below it)."""
+    ``legend`` is ``side`` (right of the main area) or ``bottom`` (below it). ``title`` only for experimental variants
+    outside the standard set, which have no entry in :data:`TITLES`."""
     notes = [n for n in notes if n][:2]
     notes_h = len(notes) * NOTE_LINE_H + (0.04 if notes else 0)
     if legend == "side":
@@ -363,7 +365,7 @@ def page(ctx: Context, code: str, *, main_w: float, main_h: float, legend: str, 
         legend_ax = axes(MARGIN_X, FOOTER_H + notes_h, main_w, legend_h)
         draw_legend(legend_ax, sections, "bottom")
 
-    figure.text(MARGIN_X / width, 1 - 0.2 / height, TITLES[code], fontsize=TITLE_PT, fontweight="bold", color=INK, ha="left", va="top")
+    figure.text(MARGIN_X / width, 1 - 0.2 / height, title or TITLES[code], fontsize=TITLE_PT, fontweight="bold", color=INK, ha="left", va="top")
     badge = case_badge(ctx)
     style = ({"facecolor": TEST_RED, "edgecolor": "none"} if ctx.is_test else {"facecolor": "#FFFFFF", "edgecolor": INK})
     figure.text(1 - MARGIN_X / width, 1 - 0.22 / height, badge, fontsize=BADGE_PT, fontweight="bold",

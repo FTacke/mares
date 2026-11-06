@@ -8,6 +8,9 @@ Commands:
 * ``list --root INTAKE [--empirical]``                 cases with type, provenance and eligibility
 * ``install-test-cases --root INTAKE [--v0-package ROOT:rel]``
                                                        install 002 (synthetic) and, with a v0 package, build 001
+* ``experiment g3-geburtsland --case ROOT:REL | --root INTAKE``
+                                                       experimental G3 by birth country into <case>/experimental/
+                                                       (not a standard figure, never part of render)
 
 Exit status: 0 = completed, 2 = validation errors in at least one case, 1 = could not start.
 """
@@ -52,6 +55,12 @@ def build_parser() -> argparse.ArgumentParser:
     cmd = sub.add_parser("install-test-cases", help="install the test cases into the tree")
     cmd.add_argument("--root", required=True, choices=ALLOWED_ROOTS)
     cmd.add_argument("--v0-package", metavar="ROOT:REL", help="v0 pilot package to build 001 from (INTAKE or PRIMARY)")
+    cmd = sub.add_parser("experiment", help="experimental figures outside the standard set (into <case>/experimental/)")
+    cmd.add_argument("name", choices=("g3-geburtsland",))
+    where = cmd.add_mutually_exclusive_group(required=True)
+    where.add_argument("--case", metavar="ROOT:REL")
+    where.add_argument("--root", choices=ALLOWED_ROOTS)
+    cmd.add_argument("--formats", default="png,svg")
     return parser
 
 
@@ -102,6 +111,17 @@ def main(argv: Sequence[str] | None = None, *, roots: Roots | None = None) -> in
                 print(f"{ref.rel:55} {meta.get('case_type', '?'):8} {meta.get('provenance', '?'):26} "
                       f"empirical={'yes' if is_empirical(meta) else 'no'}")
             return 0
+        if args.command == "experiment":
+            from .experiments import render_g3_birth
+
+            formats = tuple(x.strip() for x in args.formats.split(",") if x.strip())
+            refs = [_ref(args.case)] if args.case else [ref for ref, _meta in list_cases(roots, args.root)]
+            worst = 0
+            for ref in refs:
+                result = render_g3_birth(roots, ref, formats=formats)
+                print(f"{ref.root}:{ref.rel}  {args.name} {result.status}  {len(result.outputs)} files  (run {result.run_id})")
+                worst = max(worst, 0 if result.status == "COMPLETED" else 2)
+            return worst
         if args.command == "install-test-cases":
             base = StorageRef(args.root, f"{TREE}/pilots")
             roots.resolve(StorageRef(args.root, f"{TREE}/cases"), writable=True).mkdir(parents=True, exist_ok=True)
