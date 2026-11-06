@@ -11,7 +11,7 @@ gemeinsamen Datenbestand.
 
 > **Status (2026-10-31).** Vorhanden sind Verzeichnisstruktur, Architektur- und Datenverträge, der
 > Resolver für benannte Storage-Roots, Identifikatoren und Statusvokabular – und zwei **Netzwerkpipelines**:
-> `network_v1` (neue Netzwerkerhebung: Fallordner, Prüfung, neun Standardgrafiken, zwei Testfälle) und `network_v0` (früheres Design:
+> `network_v1` (neue Netzwerkerhebung: Fallordner, Prüfung, elf Standardgrafiken, zwei Testfälle) und `network_v0` (früheres Design:
 > Import eines CSV-Pakets, Validierung, Beziehungen aus bestätigten Gruppen, beschreibende Auswertung,
 > neunzehn Grafiken in drei Gruppen – `core`, `supplementary`, `diagnostic` – (darunter kraftbasierte Netzwerkdarstellungen ohne und mit Ego, geografische Zonen und Beziehungsnetze, drei analytische Perspektiven P1–P3) in einem einheitlichen, reduzierten Designsystem und eine Kommandozeile, getestet mit synthetischen Daten. **Nicht vorhanden** sind
 > Intake, Erhaltung, Backup-Läufe, der Import der Excel-Sheets, Register und Transkription. Eine erste

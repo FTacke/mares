@@ -1,18 +1,19 @@
-# Textinventar der neun Standardgrafiken von network_v1 – Ist-Stand
+# Textinventar der elf Standardgrafiken von network_v1 – Ist-Stand
 
-Bestandsaufnahme **aller sichtbaren Texte** der Standardgrafiken G1, G2, G3, P1–P5 und X1, aus dem Quellcode
+Bestandsaufnahme **aller sichtbaren Texte** der Standardgrafiken G1–G5, P1–P5 und X1, aus dem Quellcode
 extrahiert. Das Dokument beschreibt den implementierten Stand, es ist keine Vorgabe; maßgeblich für Inhalt und
 Regeln bleibt [`network-v1.md`](network-v1.md) §5 und §6.
 
 Stand: redaktionelle Vereinheitlichung vom 2026-11-05
-([`ADR-0018`](../decisions/ADR-0018_2026-11-05_netzwerk-v1-redaktioneller-standard.md)). Die vorige Fassung (Iststand
+([`ADR-0018`](../decisions/ADR-0018_2026-11-05_netzwerk-v1-redaktioneller-standard.md)), ergänzt um G4 und G5 am 2026-11-06
+([`ADR-0022`](../decisions/ADR-0022_2026-11-06_netzwerk-v1-g4-g5-kanonisch.md)). Die vorige Fassung (Iststand
 vor der Vereinheitlichung) ist über Git nachvollziehbar. Zeilenangaben gelten für diesen Stand und verschieben sich bei
 späteren Änderungen; die genannten Funktionen und Konstanten bleiben der Anker.
 
 **Konventionen**
 
 - Codeorte als `Pfad:Zeile`, relativ zum Repository; `base.py` = `src/mares/network_v1/figures/base.py`,
-  ebenso `networks.py`, `matrices.py`, `maps.py`, `__init__.py`; `codes.py` und `places.py` liegen in
+  ebenso `networks.py`, `matrices.py`, `maps.py`, `birth_country.py`, `__init__.py`; `codes.py` und `places.py` liegen in
   `src/mares/network_v1/`.
 - `\n` in einem Wortlaut = Zeilenumbruch in der Grafik; `{platzhalter}` = dynamischer Teil; „statisch“ = fester
   Wortlaut im Code.
@@ -47,7 +48,7 @@ späteren Änderungen; die genannten Funktionen und Konstanten bleiben der Anker
 | Authentischer Fall mit Anzeigecode | `FALL · {display_code}` | kein Testfall, `display_code` gesetzt | schwarze Schrift, weißer Grund, dunkler Rahmen |
 | Authentischer Fall ohne Anzeigecode | `FALL · MARES-{number}` | `display_code` fehlt oder leer | wie oben |
 
-### A.3 Fußzeile (`footer_line`, `base.py:180-183`) – in allen neun Grafiken gleich
+### A.3 Fußzeile (`footer_line`, `base.py:180-183`) – in allen elf Grafiken gleich
 
 | Element | Wortlaut / Muster | Herkunft / Bedingung |
 |---|---|---|
@@ -71,6 +72,7 @@ ermittelt über alle Kontakte des Falls, nicht je Grafik.
 | Element | Wortlaut / Muster | Herkunft / Bedingung |
 |---|---|---|
 | ID im Netzwerkknoten (G1, G2, G3, X1) | `{contact_id}` (z. B. `A01`), fett, 7 pt | `draw_nodes`; Schriftfarbe nach Kontrast |
+| ID und Geburtslandkürzel im Knoten (G4, G5) | `{contact_id}` (fett, 7 pt), darunter `{iso3}` (5,4 pt) – z. B. `A07` / `PER`; ohne Angabe `k. A.`, genannt aber nicht codiert `–` | `_code_nodes`, `birth_country.py`; Schriftfarbe Schwarz oder Weiß nach höherem Kontrast (mindestens 4,5:1) |
 | ID neben Matrixpunkt (P1, P2, P5) | `{contact_id}`, 7,6 pt | `point_matrix`; mehrere Kontakte einer Zelle nebeneinander und in Zeilen, nach ID sortiert |
 
 ### A.6 Fehlende Angaben
@@ -116,8 +118,9 @@ ermittelt über alle Kontakte des Falls, nicht je Grafik.
 | Element | Wortlaut | Herkunft |
 |---|---|---|
 | Registertitel | identisch mit dem Grafiktitel (`TITLES`) | `FigureSpec.title`, `__init__.py` |
-| Standardsatz | `{code} {titel}`, Reihenfolge G1, G2, P1, P2, P3, P4, P5, G3, X1 | `run.py` (`standard_set`) |
-| Skip-Gründe | G1 `keine erhobene persönliche Nähe`; G2 `kein Wohnort zuordenbar`; P1 `kein Wohnort zuordenbar` bzw. `keine erhobene persönliche Nähe`; P2 `kein Wohnort zuordenbar` bzw. `keine erhobene Kontakthäufigkeit`; P3 `keine erhobenen Kommunikationsformen`; P4 `keine erhobenen Sprachen`; P5 `keine erhobenen Beziehungsfunktionen`; G3 `keine Gruppen erhoben`; X1 `keine Kartengrundlagen übergeben`, `Ortsverzeichnis fehlt (…)`, `Basiskarte fehlt (…)`, `kein Wohnort zuordenbar` | `__init__.py`, `run.load_geo` |
+| Standardsatz | `{code} {titel}`, Reihenfolge G1, G2, P1, P2, P3, P4, P5, G3, X1, G4, G5 | `run.py` (`standard_set`) |
+| Skip-Gründe | G1 `keine erhobene persönliche Nähe`; G2 `kein Wohnort zuordenbar`; P1 `kein Wohnort zuordenbar` bzw. `keine erhobene persönliche Nähe`; P2 `kein Wohnort zuordenbar` bzw. `keine erhobene Kontakthäufigkeit`; P3 `keine erhobenen Kommunikationsformen`; P4 `keine erhobenen Sprachen`; P5 `keine erhobenen Beziehungsfunktionen`; G3 `keine Gruppen erhoben`; X1 `keine Kartengrundlagen übergeben`, `Ortsverzeichnis fehlt (…)`, `Basiskarte fehlt (…)`, `kein Wohnort zuordenbar`; G4 `keine Gruppen erhoben`, `kein Geburtsland erhoben`; G5 wie G4, dazu `kein Kontakt mit Wohnort in Marburg oder Mittelhessen`, `keine Gruppe mit Mitgliedern in Marburg oder Mittelhessen` | `__init__.py`, `birth_country.py`, `run.load_geo` |
+| Was G5 auslässt | `details` des G5-Eintrags: `contacts_shown`, `contacts_total`, `not_shown_by_area` (IDs je Wohnortbereich), `unresolved_residence`, `groups_without_local_members`, `groups_partly_shown` (`{gruppe}: {n} von {gesamt}`) | `g5_details`, `birth_country.py`; in `figures_index.json` und `run_record.json`, nicht in der Grafik |
 | Abdeckung der Kontaktpaare | Paare, bestätigt, verneint, unbekannt | nicht mehr in G2/G3; vollständig in `validation_report.md` („Abdeckung der Kontaktpaare“), `validation_report.json` und `run_record.json` (`coverage`) |
 | Dateiname | `{case_code}_{code}_{name}.{ext}`, z. B. `002_test_synthetic_G1_persoenliches_netz.png` | `file_name`, `__init__.py` |
 
@@ -179,6 +182,33 @@ ermittelt über alle Kontakte des Falls, nicht je Grafik.
 | Hinweise | – (keine) | – |
 | Fußzeile | A.3 | – |
 | Entfallen | Erklärung der Punktanzeige, Satz „gemeinsame Mitgliedschaft ist keine Verbindung“, Abdeckungszeile | Abdeckung: A.9; Definition in `network-v1.md` §6 |
+
+### G4 · Gruppenstruktur nach Geburtsland (`g4`, `birth_country.py`; Legende `bottom`)
+
+| Element | Aktueller sichtbarer Wortlaut | Herkunft / Bedingung |
+|---|---|---|
+| Titel | `Gruppenstruktur nach Geburtsland` | `TITLES["G4"]` |
+| Untertitel | – | – |
+| Gruppenlabels, lose Kontakte | wie G3 | G3 |
+| Knoten | `{contact_id}` / `{iso3}` | A.5 |
+| Legende 1 – Titel | `Geburtsland` | statisch |
+| Legende 1 – Einträge | `{erhobener Name} ({iso3})` – z. B. `Peru (PER)`; genannt, nicht codiert `{Name} (nicht codiert)`; zuletzt `keine Angabe` | `legend_entries`; nur dargestellte Länder, jedes einzeln, feste Reihenfolge (feste Länder in Tabellenfolge, dann übrige nach Code); Farbe fest je Code (`COUNTRY_COLORS`, `EXTENSION`) |
+| Legende 2, 3 | wie G3 (Zugehörigkeitsskala, fehlende Kurzcodes, `bestätigte Verbindung`, `Mitglied mehrerer Gruppen`) | `belonging_sections`, `networks.py` |
+| Hinweise | – (keine) | – |
+| Fußzeile | A.3 | – |
+
+### G5 · Lokale Gruppenstruktur nach Geburtsland (`g5`, `birth_country.py`; Legende `bottom`)
+
+| Element | Aktueller sichtbarer Wortlaut | Herkunft / Bedingung |
+|---|---|---|
+| Titel | `Lokale Gruppenstruktur nach Geburtsland` | `TITLES["G5"]` |
+| Untertitel | – | – |
+| Gruppenlabel Zeile 1 | `{group_id} · {anzeigename} ({n})` oder, wenn nicht alle Mitglieder lokal wohnen, `({n} von {gesamt})` – z. B. `C04 · Lateinamerikanischer Verein (5 von 7)` | `_label_lines`, `birth_country.py` |
+| Gruppenlabel Zeile 2, lose Kontakte | wie G3 | G3 |
+| Knoten, Legenden | wie G4; die Länderlegende nur mit den lokal dargestellten Ländern | `legend_entries` |
+| Hinweis | `Lokaler Ausschnitt: {n} von {gesamt} Kontakten (Marburg und Mittelhessen).` – z. B. `Lokaler Ausschnitt: 18 von 32 Kontakten (Marburg und Mittelhessen).` | `local_note`, `birth_country.py`; immer |
+| Fußzeile | A.3 (alle Kontakte des Falls) | – |
+| Nicht in der Grafik | nicht zuordenbare Wohnorte, nicht dargestellte Gruppen | A.9 („Was G5 auslässt“) |
 
 ### P1 · Wohnortbereich und persönliche Nähe (`p1`, `matrices.py:54`; Legende `bottom`)
 

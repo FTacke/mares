@@ -1,6 +1,6 @@
 # ADR-0021 – `network_v1`: G3-Herkunft mit zwei Ansichten, ohne geografische Zonen
 
-**Datum:** 2026-11-06 · **Status:** in Kraft als Experiment (keine Kanonisierung). Ersetzt in
+**Datum:** 2026-11-06 · **Status:** kanonisiert durch [`ADR-0022`](ADR-0022_2026-11-06_netzwerk-v1-g4-g5-kanonisch.md) (G4, G5). Ersetzt in
 [`ADR-0020`](ADR-0020_2026-11-06_netzwerk-v1-g3-herkunft-farben-und-zonen.md) die Entscheidungen 3 bis 5 (Zonen, Übersichtskarte,
 kompakte Fläche mit Zonen); Entscheidungen 1 und 2 (Kürzel im Knoten, feste Länderfarben) gelten weiter.
 
