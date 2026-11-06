@@ -1,6 +1,6 @@
 # ADR-0019 – `network_v1`: Experiment G3 nach Geburtsland
 
-**Datum:** 2026-11-06 · **Status:** in Kraft als Experiment (keine Kanonisierung; G3 bleibt unverändert)
+**Datum:** 2026-11-06 · **Status:** in Kraft als Experiment (keine Kanonisierung; G3 bleibt unverändert); Farbvergabe, Beschriftungsvariante und Lokalansicht ersetzt durch [`ADR-0020`](ADR-0020_2026-11-06_netzwerk-v1-g3-herkunft-farben-und-zonen.md)
 
 Aktuelle Regeln: [`network-v1.md`](../architecture/network-v1.md) §2 und §6.2.
 

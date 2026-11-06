@@ -280,28 +280,55 @@ nur hier, nicht in der Grafik.
 
 Code: [`figures/birth_country.py`](../../src/mares/network_v1/figures/birth_country.py),
 [`experiments.py`](../../src/mares/network_v1/experiments.py); Begründung:
-[`ADR-0019`](../decisions/ADR-0019_2026-11-06_netzwerk-v1-experiment-g3-geburtsland.md). **Experiment, nicht kanonisiert**: kein Teil der
-neun Standardgrafiken, nur über `v1 experiment g3-geburtsland` (§8), nie in `graphics/`.
+[`ADR-0019`](../decisions/ADR-0019_2026-11-06_netzwerk-v1-experiment-g3-geburtsland.md),
+[`ADR-0020`](../decisions/ADR-0020_2026-11-06_netzwerk-v1-g3-herkunft-farben-und-zonen.md). **Experiment, nicht kanonisiert**: kein
+Teil der neun Standardgrafiken, nur über `v1 experiment g3-geburtsland` (§8), nie in `graphics/`.
 
-- **Grundlage:** die G3-Implementierung selbst (Layout, Umrisse, Umrissfarben, Beschriftung, Zugehörigkeitsskala, Ringsegmente); nur die
-  Knotenfarbe ist das erhobene Geburtsland (`birth_country_iso3`, in der Legende der erhobene Name). Keine Ableitung von Nationalität
-  oder ethnischer Zugehörigkeit, keine zusätzlichen Verbindungen oder Mitgliedschaften.
+- **Grundlage:** die G3-Implementierung selbst. Layout, Umrisse, Umrissfarben, Beschriftung, Zugehörigkeitsskala und Ringsegmente
+  bleiben; nur die Knotenfarbe ist das erhobene Geburtsland (`birth_country_iso3`, in der Legende der erhobene Name). Keine Ableitung
+  von Nationalität, ethnischer Zugehörigkeit oder Selbstidentifikation, keine zusätzlichen Verbindungen oder Mitgliedschaften.
+- **Knoten:** A-ID (fett) und darunter kleiner das ISO-3166-Alpha-3-Kürzel; Knoten 22 statt 20 pt. Die Schriftfarbe ist Schwarz oder
+  Weiß, je nachdem, was den höheren Kontrast hat (mindestens 4,5:1 bei jeder Länderfarbe). Ohne Angabe (leer, NS/KA/NA): weißer Knoten
+  mit gepunktetem Rand und `k. A.`, nie ein erfundener Code. Ein genanntes, aber nicht codiertes Land: neutrales Grau, `–`, in der
+  Legende „Name (nicht codiert)“. Die reine A-ID-Variante mit Legende neben der Karte ist ein früherer Vergleichsstand und wird nicht
+  mehr erzeugt.
+- **Farben:** fest je ISO-Code (`COUNTRY_COLORS`), in jedem Fall und jeder Ansicht gleich, nie nach Reihenfolge oder Häufigkeit
+  vergeben.
+  - DEU, COL, PER, MEX, ECU, CHL, CUB, VEN, ESP und ARG unterscheiden sich paarweise bei normalem Sehen deutlich (OKLab-ΔE ≥ 16).
+  - Unter Protan-/Deutan-Simulation ist VEN/ESP mit ΔE 6,1 das knappste Paar. Das ist nur mit zweiter Kennzeichnung zulässig, und die
+    leistet das Kürzel im Knoten.
+  - Zehn weitere Länder (BRA, BOL, URY, PRY, DOM, GTM, ITA, GBR, FRA, POL) sind ebenfalls fest zugeordnet.
+  - Jeder andere Code erhält über seinen Code eine der Ergänzungsfarben (`EXTENSION`). Keine davon ist die Farbe eines festen Landes
+    (ΔE ≥ 10). Zwei solche Länder können sich eine Farbe teilen; das Kürzel trennt sie.
+  - Keine Flaggen- oder Symbolfarben; die Beziehungstyp-Palette bleibt unberührt.
+  - Die Legende zeigt nur vorkommende Länder, in fester Reihenfolge: die festen Länder in obiger Folge, dann die übrigen nach Code,
+    `keine Angabe` zuletzt. Die Reihenfolge ist in Gesamt- und Lokalansicht dieselbe.
 - **Gesamtansicht** (`Gruppenstruktur nach Geburtsland`): Kontakte, Gruppen, bestätigte Verbindungen und Positionen wie G3.
-- **Lokalansicht** (`Lokale Gruppenstruktur nach Geburtsland`): nur Kontakte mit Wohnortbereich Marburg (Stadt) oder übriges Mittelhessen
-  (§3); Mitgliedschaften und bestätigte Verbindungen auf sie beschränkt; Gruppen ohne lokales Mitglied entfallen und werden im Hinweis
-  genannt; Gruppen-IDs und Umrissfarben bleiben die des Falls. Das G3-Layout läuft auf diesem Teilnetz. Das Gruppenlabel nennt lokale und
-  gesamte Mitgliederzahl, wo sie sich unterscheiden (`C04 · … (5 von 7)`); ein Hinweis nennt „Dargestellt: n von N Kontakten …“, nicht
-  zuordenbare Wohnorte bleiben unberücksichtigt und werden genannt. Die Fußzeile zählt weiter alle Kontakte des Falls.
-- **Zwei Beschriftungsvarianten:** 1 `kuerzel` – A-ID und darunter das ISO-3166-Alpha-3-Kürzel im Knoten (Knoten 24 statt 20 pt),
-  Länderlegende unter der Karte („Peru (PER)“); 2 `legende` – nur die A-ID, eine kompakte Länderlegende direkt rechts neben der Karte.
-- **Farben:** neun kategoriale Farben, die in allen Paaren auch unter Protan- und Deutan-Simulation unterscheidbar bleiben (OKLab-ΔE ≥ 8,
-  normal ≥ 15); keine Flaggen- oder Symbolfarben. Ein Land hat in beiden Ansichten eines Falls dieselbe Farbe und behält über Fälle hinweg
-  seine Farbe, soweit die übrigen Länder des Falls es zulassen (bevorzugter Platz aus dem Ländercode, belegt → nächster freier). Mehr als
-  neun Länder: die häufigsten erhalten Farben, die übrigen ein gemeinsames Grau „weitere Geburtsländer“, in der Legende namentlich (Variante 2
-  mit den Kontakt-IDs). Ohne Angabe (leer, NS/KA/NA): weißer Knoten mit gepunktetem Rand, `keine Angabe`. Ein genanntes, aber nicht
-  codiertes Land bleibt als eigener Eintrag mit dem erhobenen Namen. Die Legende zeigt nur vorkommende Länder.
-- **Dateien:** `<Fall>/experimental/g3_geburtsland/<Fall>_G3_geburtsland_{gesamt|lokal}_{kuerzel|legende}.{png,svg}`; ein Run-Record
-  unter `WORKSPACE/runs/<RUN-ID>/` enthält nur Zahlen (Kontakte, Gruppen, Verbindungen gesamt/lokal, Zahl der Länder), keine Länder.
+- **Lokalansicht** (`Lokale Gruppenstruktur nach Geburtsland`): ein geografisch gefilterter Ausschnitt des persönlichen Netzwerks,
+  keine Darstellung der lokalen Bevölkerung oder Gemeinschaft.
+  - **Auswahl:** nur Kontakte mit Wohnortbereich Marburg (Stadt) oder übriges Mittelhessen (§3). Mitgliedschaften und bestätigte
+    Verbindungen sind auf sie beschränkt. Gruppen ohne lokales Mitglied entfallen und werden im Hinweis genannt.
+  - **Gruppen und Zahlen:** Gruppen-IDs und Umrissfarben bleiben die des Falls. Das Gruppenlabel nennt lokale und gesamte
+    Mitgliederzahl, wo sie sich unterscheiden (`(5 von 7)`). Die Fußzeile zählt alle Kontakte des Falls.
+  - **Zonen:** zwei schematische, kategoriale Zonen nebeneinander, links „Marburg“, rechts „Übriges Mittelhessen“, sehr helle Flächen
+    in den Wohnortbereichstönen von G2. Jeder Kontakt liegt in der Zone seines erfassten Wohnortbereichs, innerhalb der Zone ohne
+    geografische Bedeutung.
+  - **Gruppen über beide Zonen:** Das G3-Layout läuft auf dem Teilnetz. Ein Gruppenanker liegt horizontal beim Anteil seiner
+    Mitglieder rechts und vertikal in der Gruppenfolge von G3. Eine Gruppe mit Mitgliedern in beiden Zonen ist ein einziger Umriss über
+    die Grenze; Gruppen werden nie geteilt oder verdoppelt.
+  - **Eine Zone:** Kommt nur einer der beiden Bereiche vor, gibt es nur diese Zone, keine leere zweite.
+  - **Größe:** Wenige Kontakte bekommen eine kleinere Fläche, damit keine leeren Bänder entstehen (typischer Nachbarabstand höchstens
+    0,85 Zoll, Mindestgröße 6 × 5,2 Zoll).
+  - **Übersichtskarte rechts oben:** „Marburg und Mittelhessen“, aus der Basiskarte von X1 (Natural Earth, nur Staatsgrenzen).
+    Deutschland mit Rahmen um den Ausschnitt, darunter der Ausschnitt mit Marburg (gefüllt, fett) und den Kreisstädten der übrigen
+    vier Landkreise (Gießen, Wetzlar, Limburg, Lauterbach; feste öffentliche Koordinaten im Code). Bildunterschrift: „Kreisstädte der
+    fünf Landkreise; keine Wohnorte von Kontakten“. Keine Kontakte, keine Wohnorte, keine Verbindungen. Eine Grenze Mittelhessens
+    wird nicht gezeichnet, weil die Basiskarte keine Kreis- oder Bezirksgrenzen enthält.
+  - **Getrennte Dimensionen:** Hintergrundfläche = aktueller Wohnortbereich, Knotenfarbe = Geburtsland, Umriss = Gruppe. Der Hinweis
+    nennt das einmal.
+- **Dateien:** `<Fall>/experimental/g3_geburtsland/<Fall>_G3_geburtsland_{gesamt|lokal}.{png,svg}`. Ältere Vergleichsstände (`…_kuerzel`,
+  `…_legende`) bleiben liegen und werden nicht gelöscht. Ein Run-Record unter `WORKSPACE/runs/<RUN-ID>/` enthält nur Zahlen (Kontakte,
+  Gruppen, Verbindungen gesamt/lokal, Zahl der Zonen und Länder), keine Länder.
 
 ## 7. Testfälle und empirische Fälle
 
