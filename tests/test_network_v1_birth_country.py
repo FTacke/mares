@@ -1,5 +1,5 @@
-"""Experiment G3 by birth country: fixed country colours, codes in the nodes, total view = G3, local view in two
-schematic residence zones with an orientation map, output outside graphics/."""
+"""Experiment G3 by birth country: fixed country colours, codes in the nodes, total view = G3, local view = the G3
+layout of the local sub-network (compacted, no geography), output outside graphics/."""
 
 from __future__ import annotations
 
@@ -17,18 +17,33 @@ from mares.network_v1.experiments import G3_BIRTH_DIR, render_g3_birth
 from mares.network_v1.figures import FIGURES, expected_files
 from mares.network_v1.figures.base import MISSING_FILL, RELATION_COLORS, Context
 from mares.network_v1.figures.birth_country import (
-    COUNTRY_COLORS, EXTENSION, NO_ANSWER_SHORT, SEATS, TITLE_LOCAL, TITLE_TOTAL, UNCODED_FILL, VIEWS, ZONE_TOP, birth_figure,
-    birth_key, countries, country_fill, legend_entries, local_context, local_size, text_color, zones_of,
+    COUNTRY_COLORS, EXTENSION, NO_ANSWER_SHORT, NODE_PT_CODE, TITLE_LOCAL, TITLE_TOTAL, UNCODED_FILL, VIEWS, birth_figure,
+    birth_key, countries, country_fill, legend_entries, local_context, local_size, text_color,
 )
-from mares.network_v1.figures.networks import g3, g3_geometry, group_colors
+from mares.network_v1.figures.networks import g3, g3_geometry, g3_layout, group_colors, intruders, structure_parts
 from mares.network_v1.places import Area
 from mares.network_v1.run import process_case
 from mares.network_v1.testcases import SYNTHETIC_CODE, synthetic_source
 from mares.network_v1.validate import validate
 from mares.networks import cli
-from network_v1_fixtures import copy_002, edit, machine, roots_for
+from network_v1_fixtures import copy_002, edit, machine, read_rows, roots_for, write_rows
 
 LOCAL = (Area.MARBURG, Area.MITTELHESSEN)
+
+
+@pytest.fixture
+def small(tmp_path):
+    """A copy of 002 in which only the members of C01 and C05 live in Marburg: a small local network of two groups that
+    share neither a member nor a tie."""
+    case = copy_002(tmp_path)
+    full = context_of(case)
+    keep = set(full.case.members("C01")) | set(full.case.members("C05"))
+    rows = read_rows(case, "contacts.csv")
+    for row in rows:
+        row["residence_place"], row["residence_country"], row["residence_country_iso3"] = (
+            ("Marburg", "Deutschland", "DEU") if row["contact_id"] in keep else ("Berlin", "Deutschland", "DEU"))
+    write_rows(case, "contacts.csv", rows)
+    return context_of(case)
 FREQUENT = ("DEU", "COL", "PER", "MEX", "ECU", "CHL", "CUB", "VEN", "ESP", "ARG")
 
 
@@ -170,54 +185,55 @@ def test_the_local_view_keeps_only_local_contacts_their_ties_and_groups(ctx):
             assert to_hex(p.get_edgecolor()) == colors[p.get_gid()[6:]].lower()  # outline colours of the case
 
 
-def test_every_local_contact_lies_in_the_zone_of_its_residence(ctx):
-    local = local_context(ctx)
-    zones = zones_of(local)
-    assert zones is not None
-    width, height = local_size(local, zones, 0.153)
-    geometry = g3_geometry(local, node_r=0.153, width=width, height=height, zones=zones, top=ZONE_TOP)
-    for cid, (x, _y) in geometry.positions.items():
-        area = local.derived.area(cid)
-        assert (x < geometry.boundary) == (area is Area.MARBURG), cid
-    mixed = [g.id for g in local.case.groups if len({zones[m] for m in local.case.members(g.id)}) == 2]
-    assert mixed  # 002 has groups living in both zones: one outline each, spanning the boundary
-    ax = draw(ctx, "lokal").axes[0]
-    gids = [p.get_gid() for p in ax.patches]
-    assert gids.count("zone-marburg") == 1 and gids.count("zone-mittelhessen_other") == 1
-    for gid in mixed:
-        assert gids.count(f"group-{gid}") == 1  # a group is never split by the zones
-    assert {"Marburg", "Übriges Mittelhessen"} <= set(texts(ax.figure))
+def local_geometry(ctx_):
+    local = local_context(ctx_)
+    node_r = NODE_PT_CODE / 72 / 2
+    width, height = local_size(local, node_r)
+    return local, node_r, g3_geometry(local, node_r=node_r, width=width, height=height, compact=True)
 
 
-def test_nodes_do_not_overlap_in_the_local_view(ctx):
-    local = local_context(ctx)
-    zones = zones_of(local)
-    width, height = local_size(local, zones, 0.153)
-    positions = g3_geometry(local, node_r=0.153, width=width, height=height, zones=zones, top=ZONE_TOP).positions
-    pts = list(positions.values())
-    assert min(np.hypot(a[0] - b[0], a[1] - b[1]) for i, a in enumerate(pts) for b in pts[i + 1:]) > 2 * 0.153
-
-
-def test_one_zone_only_when_all_local_contacts_share_an_area(tmp_path):
-    case = copy_002(tmp_path)
-    ctx_ = context_of(case)
-    for cid in [c for c in ctx_.case.contact_ids if ctx_.derived.area(c) is Area.MITTELHESSEN]:
-        edit(case, "contacts.csv", cid, "residence_place", "Berlin")
-    ctx_ = context_of(case)
-    assert zones_of(local_context(ctx_)) is None
-    gids = [p.get_gid() for p in draw(ctx_, "lokal").axes[0].patches]
-    assert gids.count("zone-marburg") == 1 and "zone-mittelhessen_other" not in gids
-
-
-def test_the_orientation_map_shows_no_contacts(ctx):
+def test_the_local_view_has_no_geography(ctx):
     figure = draw(ctx, "lokal")
-    maps = [a for a in figure.axes if a.get_gid() == "orientation-map"]
-    assert len(maps) == 2  # Germany with the excerpt, the excerpt with the district seats
-    shown = {t.get_text() for a in maps for t in a.texts}
-    assert shown <= {name for name, *_ in SEATS} | {"Deutschland"}
-    assert not any(t.startswith("A") and t[1:].isdigit() for t in shown)
-    assert all(len(c.get_offsets()) == 1 for a in maps for c in a.collections)  # points only, one per seat
-    assert sum(1 for a in maps for c in a.collections) == len(SEATS)
+    assert len(figure.axes) == 2  # main area and legend: no map axes
+    gids = [p.get_gid() or "" for a in figure.axes for p in a.patches]
+    assert not any(g.startswith("zone-") for g in gids)
+    shown = set(texts(figure))
+    assert not {"Marburg", "Übriges Mittelhessen", "Marburg und Mittelhessen"} & shown
+
+
+def test_compaction_moves_whole_parts_only(small):
+    local = local_context(small)
+    plain, packed = g3_layout(local), g3_layout(local, compact=True)
+    parts = structure_parts(local, list(plain))
+    assert len(parts) >= 2  # the fixture has unconnected local parts
+    for part in parts:  # inside a part every node keeps its place relative to the others (up to the common scale)
+        a, b = np.array([plain[n] for n in part]), np.array([packed[n] for n in part])
+        da, db = a - a[0], b - b[0]
+        scale = (np.linalg.norm(db) / np.linalg.norm(da)) if np.linalg.norm(da) > 0 else 1.0
+        assert np.allclose(db, da * scale, atol=1e-6)
+    gap = lambda pos: min(np.hypot(pos[a][0] - pos[b][0], pos[a][1] - pos[b][1]) for a in parts[0] for b in parts[1])  # noqa: E731
+    assert gap(packed) < gap(plain)  # the parts moved together
+
+
+def test_the_local_layout_is_compact_and_free_of_overlaps(ctx, small):
+    for ctx_ in (ctx, small):
+        local, node_r, geometry = local_geometry(ctx_)
+        pts = list(geometry.positions.values())
+        assert min(np.hypot(a[0] - b[0], a[1] - b[1]) for i, a in enumerate(pts) for b in pts[i + 1:]) > 2 * node_r
+        assert not intruders(local, {c: xy for c, xy in geometry.positions.items() if c not in geometry.loose})
+        for box in geometry.labels.values():
+            for x, y in geometry.positions.values():
+                assert not (box[0] < x + node_r and x - node_r < box[2] and box[1] < y + node_r and y - node_r < box[3])
+
+
+def test_no_label_or_node_leaves_the_main_area(ctx, small):
+    for ctx_ in (ctx, small):
+        local, node_r, geometry = local_geometry(ctx_)
+        width, height = local_size(local, node_r)
+        for x, y in geometry.positions.values():
+            assert node_r <= x <= width - node_r and node_r <= y <= height - node_r
+        for box in geometry.labels.values():
+            assert box[0] >= 0 and box[2] <= width and box[1] >= 0 and box[3] <= height
 
 
 def test_the_local_view_tells_local_from_total_members(ctx):
@@ -230,7 +246,7 @@ def test_the_local_view_tells_local_from_total_members(ctx):
         assert any(t.startswith(f"{g.id} · ") and t.endswith(count) for t in shown), g.id
     hidden = [g.id for g in ctx.case.groups if g.id not in {h.id for h in local.case.groups}]
     assert any(all(h in t for h in hidden) and "nicht dargestellt" in t for t in shown)
-    assert any(t.startswith(f"Dargestellt: {len(local.case.contacts)} von {len(ctx.case.contacts)} Kontakten (Wohnort") for t in shown)
+    assert any(t.startswith(f"Dargestellt: {len(local.case.contacts)} von {len(ctx.case.contacts)} Kontakten mit Wohnort in Marburg") for t in shown)
     assert "MARES · network_v1 · 32 Kontakte" in shown
 
 
@@ -255,7 +271,7 @@ def test_the_experiment_writes_only_into_its_own_folder_and_is_no_standard_figur
     assert {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in graphics.iterdir()} == before
     assert len(FIGURES) == 9 and not any("geburtsland" in n for n in expected_files(SYNTHETIC_CODE, ("png", "svg")))
     record = (folders["workspace"] / "runs" / result.run_id / "run_record.json").read_text(encoding="utf-8")
-    assert '"standard_figure": false' in record and '"local_zones": 2' in record
+    assert '"standard_figure": false' in record
     assert "COL" not in record and "Kolumbien" not in record  # counts only, no countries
 
 

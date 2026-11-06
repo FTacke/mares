@@ -559,46 +559,75 @@ def loose_contacts(ctx: Context) -> list[str]:
     return [cid for cid in ctx.case.contact_ids if not ctx.case.groups_of(cid) and cid not in linked]
 
 
-ZONE_GAP = 0.05  # layout units: half the free strip between the two zones of a zoned layout
-ZONE_MIN_DISTANCE = 0.075  # zoned layout: least distance of two nodes after _fit (unit square)
+COMPACT_GAP = 0.22  # layout units: distance between the bounding boxes of two unconnected parts after compaction
 
 
-def _zone_clamp(zones: dict[str, int] | None):
-    """Keep a contact in its zone: side 0 left of the middle, side 1 right of it (identity without zones)."""
-    if not zones:
-        return lambda _n, p: p
+def structure_parts(ctx: Context, nodes: list[str]) -> list[list[str]]:
+    """The parts of the layout that share neither a confirmed tie nor a group (connected components), largest first."""
+    parent = {n: n for n in nodes}
 
-    def clamp(n, p):
-        side = zones.get(n)
-        if side is None:
-            return p
-        x = min(p[0], 0.5 - ZONE_GAP) if side == 0 else max(p[0], 0.5 + ZONE_GAP)
-        return np.array([x, p[1]]) if isinstance(p, np.ndarray) else (x, p[1])
-    return clamp
+    def find(n):
+        while parent[n] != n:
+            parent[n] = parent[parent[n]]
+            n = parent[n]
+        return n
+
+    links = [e for e in _edges(ctx) if e[0] in parent and e[1] in parent]
+    for g in ctx.case.groups:
+        ms = [m for m in ctx.case.members(g.id) if m in parent]
+        links += list(zip(ms, ms[1:]))
+    for a, b in links:
+        parent[find(a)] = find(b)
+    parts: dict[str, list[str]] = {}
+    for n in nodes:
+        parts.setdefault(find(n), []).append(n)
+    return sorted(parts.values(), key=lambda p: (-len(p), nodes.index(p[0])))
 
 
-def g3_layout(ctx: Context, zones: dict[str, int] | None = None) -> dict[str, tuple[float, float]]:
+def _compact(ctx: Context, positions: dict[str, tuple[float, float]]) -> dict[str, tuple[float, float]]:
+    """Set unconnected parts close together: their distance and direction carry no meaning. The largest part stays;
+    each further part goes right of or below the parts placed so far (centred), COMPACT_GAP apart, whichever keeps
+    the whole nearer to the aspect of the main area (MAX_STRETCH). Inside a part nothing moves."""
+    parts = structure_parts(ctx, list(positions))
+    if len(parts) < 2:
+        return positions
+    pos = {n: np.array(p, dtype=float) for n, p in positions.items()}
+
+    def box(ids):
+        pts = np.array([pos[n] for n in ids])
+        return pts.min(axis=0), pts.max(axis=0)
+
+    placed = list(parts[0])
+    for part in parts[1:]:
+        (px0, py0), (px1, py1) = box(placed)
+        (qx0, qy0), (qx1, qy1) = box(part)
+        right = np.array([px1 + COMPACT_GAP - qx0, (py0 + py1) / 2 - (qy0 + qy1) / 2])
+        below = np.array([(px0 + px1) / 2 - (qx0 + qx1) / 2, py0 - COMPACT_GAP - qy1])
+
+        def aspect_error(shift):
+            lo = np.minimum([px0, py0], [qx0 + shift[0], qy0 + shift[1]])
+            hi = np.maximum([px1, py1], [qx1 + shift[0], qy1 + shift[1]])
+            w, h = max(hi[0] - lo[0], 1e-6), max(hi[1] - lo[1], 1e-6)
+            return abs(math.log(w / h / MAX_STRETCH))
+
+        shift = right if aspect_error(right) <= aspect_error(below) else below
+        for n in part:
+            pos[n] = pos[n] + shift
+        placed += part
+    return {n: (float(p[0]), float(p[1])) for n, p in pos.items()}
+
+
+def g3_layout(ctx: Context, compact: bool = False) -> dict[str, tuple[float, float]]:
     """Members gather around an anchor of their group (several groups: between the anchors; a nested group has no
     anchor of its own); contacts without a group but with ties keep to an outer ring, near the contacts they are
     connected with. Contacts that land inside the outline of a group they do not belong to are pushed out. Contacts
     without group and tie are not part of this layout (:func:`loose_contacts`). Deterministic. Layout units: the unit
-    square.
-
-    ``zones`` (contact -> 0 or 1, for experimental views): every contact stays in its half (left or right), the anchor
-    of a group moves horizontally to the share of its members on the right; a group with members on both sides spans
-    the middle. The group structure itself is unchanged."""
+    square. ``compact`` (experimental views): unconnected parts move together (:func:`_compact`)."""
     order = _group_order(ctx)
     k = max(len(order), 1)
     ring = 0.3 if k > 1 else 0.0
     anchors = {g: (0.5 + ring * math.cos(math.pi / 2 + 2 * math.pi * i / k), 0.5 + ring * math.sin(math.pi / 2 + 2 * math.pi * i / k))
                for i, g in enumerate(order)}
-    if zones:  # x by the share of members on the right, y by the order of the groups (neighbours sharing members adjacent)
-        for i, g in enumerate(order):
-            sides = [zones[m] for m in ctx.case.members(g) if m in zones]
-            share = sum(sides) / len(sides) if sides else 0.5
-            spread = min(0.7, 0.25 * (k - 1))  # few groups stay close together: no empty band between them
-            anchors[g] = (0.2 + 0.6 * share, 0.5 if k == 1 else 0.5 + spread / 2 - spread * i / (k - 1))
-    clamp = _zone_clamp(zones)
     loose = set(loose_contacts(ctx))
     nodes = [cid for cid in ctx.case.contact_ids if cid not in loose]
     groups_of = {cid: [g for g in ctx.case.groups_of(cid) if g in anchors] for cid in nodes}
@@ -617,7 +646,6 @@ def g3_layout(ctx: Context, zones: dict[str, int] | None = None) -> dict[str, tu
         else:
             jx, jy = initial_circle([cid], 0.55)[cid]
             start[cid] = (0.5 + jx, 0.5 + jy)
-        start[cid] = clamp(cid, start[cid])
     outer = ring + 0.25
 
     def pulls(current):
@@ -632,7 +660,7 @@ def g3_layout(ctx: Context, zones: dict[str, int] | None = None) -> dict[str, tu
                 out.append((cid, (0.5 + (x - 0.5) / d * outer, 0.5 + (y - 0.5) / d * outer), 0.08))
         return out
 
-    positions = force_layout(nodes, _edges(ctx), start=start, project=clamp, pulls=pulls, repulsion=0.00012,
+    positions = force_layout(nodes, _edges(ctx), start=start, project=lambda _n, p: p, pulls=pulls, repulsion=0.00012,
                              spring=0.012, iterations=700, min_distance=0.065)
     pads = group_pads(ctx)
     for _ in range(80):
@@ -650,31 +678,12 @@ def g3_layout(ctx: Context, zones: dict[str, int] | None = None) -> dict[str, tu
                 if hull.contains_point(p):
                     direction = p - centre
                     norm_ = float(np.hypot(*direction)) or 1.0
-                    p = clamp(cid, p + direction / norm_ * 0.025)
+                    p = p + direction / norm_ * 0.025
                     positions[cid] = (float(p[0]), float(p[1]))
                     moved = True
         if not moved:
             break
-    if zones:  # the zone limit can hold two pushed nodes together: separate them (target distance after _fit)
-        xs, ys = [q[0] for q in positions.values()], [q[1] for q in positions.values()]
-        gap = ZONE_MIN_DISTANCE * max(max(xs) - min(xs), max(ys) - min(ys), 1e-6) / 0.8
-        for _ in range(200):
-            moved = False
-            for i, a in enumerate(nodes):
-                for b in nodes[i + 1:]:
-                    pa, pb = np.array(positions[a]), np.array(positions[b])
-                    d = float(np.hypot(*(pb - pa)))
-                    if d < gap:
-                        u = (pb - pa) / d if d > 1e-9 else np.array([0.0, 1.0])
-                        if zones.get(a) == zones.get(b) and abs(u[1]) < 0.3:
-                            u = np.array([u[0], 1.0 if u[1] >= 0 else -1.0]) / math.hypot(u[0], 1.0)
-                        step = (gap - d) / 2 + 1e-4
-                        positions[a] = tuple(float(v) for v in clamp(a, pa - u * step))
-                        positions[b] = tuple(float(v) for v in clamp(b, pb + u * step))
-                        moved = True
-            if not moved:
-                break
-    return _fit(positions)
+    return _fit(_compact(ctx, positions) if compact else positions)
 
 
 def intruders(ctx: Context, positions: dict[str, tuple[float, float]]) -> list[tuple[str, str]]:
@@ -828,21 +837,21 @@ def place_labels(ctx: Context, positions: dict[str, tuple[float, float]], hulls:
     return result
 
 
-def g3_positions(ctx: Context, width: float = G3_W, height: float = G3_H, zones: dict[str, int] | None = None,
-                 top: float = 0.0) -> tuple[dict[str, tuple[float, float]], float]:
+def g3_positions(ctx: Context, width: float = G3_W, height: float = G3_H,
+                 compact: bool = False) -> tuple[dict[str, tuple[float, float]], float]:
     """The layout in inches: its bounding box fills the main area above the row of loose contacts (x stretched at most
-    by MAX_STRETCH against y); the second value converts layout distances (outline padding) to inches. ``width``,
-    ``height``, ``zones`` and ``top`` (inches kept free at the top) only for experimental views."""
-    unit = g3_layout(ctx, zones)
+    by MAX_STRETCH against y); the second value converts layout distances (outline padding) to inches. ``width`` and
+    ``height`` (inches) only for experimental views of another size."""
+    unit = g3_layout(ctx, compact)
     floor = LOOSE_H if loose_contacts(ctx) else 0.0
     xs = [x for x, _ in unit.values()]
     ys = [y for _, y in unit.values()]
     w, h = max(max(xs) - min(xs), 1e-6), max(max(ys) - min(ys), 1e-6)
-    sy = (height - top - floor - 2 * G3_MARGIN) / h
+    sy = (height - floor - 2 * G3_MARGIN) / h
     sx = min((width - 2 * G3_MARGIN_X) / w, sy * MAX_STRETCH)
     sy = min(sy, sx * MAX_STRETCH)
     ox = (width - w * sx) / 2 - min(xs) * sx
-    oy = floor + (height - top - floor - h * sy) / 2 - min(ys) * sy
+    oy = floor + (height - floor - h * sy) / 2 - min(ys) * sy
     return {cid: (ox + x * sx, oy + y * sy) for cid, (x, y) in unit.items()}, min(sx, sy)
 
 
@@ -872,16 +881,13 @@ class G3Geometry:
     floor: float
     labels: dict[str, tuple[float, float, float, float]]
     marked: list[str]
-    boundary: float | None = None  # zoned views: x (inches) between the two zones
-    loose_label: str = LOOSE_LABEL
 
 
 def g3_geometry(ctx: Context, *, node_r: float = NODE_R_IN, label_lines: Callable | None = None, width: float = G3_W,
-                height: float = G3_H, zones: dict[str, int] | None = None, top: float = 0.0) -> G3Geometry:
-    """The geometry of G3 for ``ctx`` (deterministic). ``node_r`` and ``label_lines`` as in :func:`place_labels`;
-    ``width``, ``height``, ``zones`` and ``top`` as in :func:`g3_positions` (experimental views). With zones, the
-    row of loose contacts is split at the zone boundary."""
-    positions, span = g3_positions(ctx, width, height, zones, top)
+                height: float = G3_H, compact: bool = False) -> G3Geometry:
+    """The geometry of G3 for ``ctx`` (deterministic). ``node_r`` and ``label_lines`` as in :func:`place_labels`,
+    ``width``, ``height`` and ``compact`` as in :func:`g3_positions` and :func:`g3_layout`."""
+    positions, span = g3_positions(ctx, width, height, compact)
     pads = group_pads(ctx)
     hulls = {}
     for g in ctx.case.groups:
@@ -891,27 +897,13 @@ def g3_geometry(ctx: Context, *, node_r: float = NODE_R_IN, label_lines: Callabl
     labelled = dict(positions)
     loose = loose_contacts(ctx)
     floor = LOOSE_H if loose else 0.05
-    boundary = None
-    if zones:
-        left = [x for cid, (x, _y) in labelled.items() if zones.get(cid) == 0]
-        right = [x for cid, (x, _y) in labelled.items() if zones.get(cid) == 1]
-        boundary = (max(left) + min(right)) / 2 if left and right else width / 2
-    loose_label = LOOSE_LABEL.replace(", ", ",\n") if zones else LOOSE_LABEL  # zoned: two lines, inside the left zone
     if loose:
-        x0 = text_width(loose_label, LABEL_PT - 1.5) + 0.35
-        if zones:
-            row = [cid for cid in loose if zones.get(cid) != 1]
-            for i, cid in enumerate(row):
-                positions[cid] = (x0 + i * 0.5, LOOSE_H / 2)
-            x1 = max(boundary + 0.35, x0 + len(row) * 0.5)
-            for i, cid in enumerate(c for c in loose if zones.get(c) == 1):
-                positions[cid] = (x1 + i * 0.5, LOOSE_H / 2)
-        else:
-            for i, cid in enumerate(loose):
-                positions[cid] = (x0 + i * 0.5, LOOSE_H / 2)
+        x0 = text_width(LOOSE_LABEL, LABEL_PT - 1.5) + 0.35
+        for i, cid in enumerate(loose):
+            positions[cid] = (x0 + i * 0.5, LOOSE_H / 2)
     labels = {gid: box for gid, (_x, _y, _side, box) in
-              place_labels(ctx, labelled, hulls, (width, height - top), floor, node_r=node_r, label_lines=label_lines).items()}
-    return G3Geometry(positions, hulls, loose, floor, labels, membership_marked(ctx), boundary, loose_label)
+              place_labels(ctx, labelled, hulls, (width, height), floor, node_r=node_r, label_lines=label_lines).items()}
+    return G3Geometry(positions, hulls, loose, floor, labels, membership_marked(ctx))
 
 
 def group_colors(ctx: Context) -> dict[str, str]:
@@ -937,7 +929,7 @@ def draw_g3(ax, ctx: Context, geometry: G3Geometry, *, colors: dict[str, str], n
     for a, b in _edges(ctx):
         _tie(ax, _straight(positions[a], positions[b]), color=TIE, width=0.7)
     if geometry.loose:
-        ax.text(0.06, LOOSE_H / 2, geometry.loose_label, fontsize=LABEL_PT - 1.5, color=MUTED, ha="left", va="center", style="italic")
+        ax.text(0.06, LOOSE_H / 2, LOOSE_LABEL, fontsize=LABEL_PT - 1.5, color=MUTED, ha="left", va="center", style="italic")
     if nodes is None:
         draw_nodes(ax, positions, _fills(ctx, positions))
     else:
