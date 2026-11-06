@@ -355,7 +355,7 @@ def test_the_case_run_draws_x1_into_graphics_next_to_the_other_figures(tmp_path)
     result = process_case(roots_for(folders), StorageRef("INTAKE", f"network_v1/pilots/{SYNTHETIC_CODE}"), formats=("png", "svg"))
     assert result.status == "COMPLETED"
     names = {p.name for p in (case / "graphics").iterdir()}
-    assert names == expected_files(SYNTHETIC_CODE, ("png", "svg")) and len(names) == 18
+    assert names == expected_files(SYNTHETIC_CODE, ("png", "svg")) and len(names) == 22
     assert {f"{SYNTHETIC_CODE}_X1_geografische_verteilung.png", f"{SYNTHETIC_CODE}_X1_geografische_verteilung.svg"} <= names
     assert not (case / "experimental").exists()
     sources = result.record["map_sources"]
@@ -372,7 +372,7 @@ def test_without_map_sources_x1_is_skipped_with_the_reason(tmp_path):
     result = process_case(roots_for(folders), StorageRef("INTAKE", f"network_v1/pilots/{SYNTHETIC_CODE}"))
     x1_entry = next(f for f in result.figures if f["code"] == "X1")
     assert x1_entry["status"] == "skipped" and x1_entry["reason"].startswith("Basiskarte fehlt (WORKSPACE:")
-    assert not list((case / "graphics").glob("*X1*")) and len(list((case / "graphics").iterdir())) == 8
+    assert not list((case / "graphics").glob("*X1*")) and len(list((case / "graphics").iterdir())) == 10
     bad = tmp_path / "bad.csv"
     bad.write_text("place;country_iso3;lat;lon;basis\nMarburg;DEU;north;8.77;x\n", encoding="utf-8")
     with pytest.raises(X1Error):

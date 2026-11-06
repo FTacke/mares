@@ -622,7 +622,7 @@ def g3_layout(ctx: Context, compact: bool = False) -> dict[str, tuple[float, flo
     anchor of its own); contacts without a group but with ties keep to an outer ring, near the contacts they are
     connected with. Contacts that land inside the outline of a group they do not belong to are pushed out. Contacts
     without group and tie are not part of this layout (:func:`loose_contacts`). Deterministic. Layout units: the unit
-    square. ``compact`` (experimental views): unconnected parts move together (:func:`_compact`)."""
+    square. ``compact`` (G5): unconnected parts move together (:func:`_compact`)."""
     order = _group_order(ctx)
     k = max(len(order), 1)
     ring = 0.3 if k > 1 else 0.0
@@ -841,7 +841,7 @@ def g3_positions(ctx: Context, width: float = G3_W, height: float = G3_H,
                  compact: bool = False) -> tuple[dict[str, tuple[float, float]], float]:
     """The layout in inches: its bounding box fills the main area above the row of loose contacts (x stretched at most
     by MAX_STRETCH against y); the second value converts layout distances (outline padding) to inches. ``width`` and
-    ``height`` (inches) only for experimental views of another size."""
+    ``height`` (inches) for views of another size (G5)."""
     unit = g3_layout(ctx, compact)
     floor = LOOSE_H if loose_contacts(ctx) else 0.0
     xs = [x for x, _ in unit.values()]

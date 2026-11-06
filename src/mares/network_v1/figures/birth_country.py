@@ -1,15 +1,15 @@
-"""Experiment, not a standard figure: the group map G3 coloured by the contacts' birth country ("G3-Herkunft").
+"""G4 and G5 of network_v1: the group map G3 coloured by the contacts' birth country.
 
-Two views per case:
-
-* **total** (``gesamt``): the group map of G3 unchanged -- same contacts, groups, confirmed ties, positions, outlines,
-  outline colours, labels and belonging scale; the node fill is the birth country instead of the relation type.
-* **local** (``lokal``): only contacts whose residence area is Marburg (Stadt) or übriges Mittelhessen (the definition of
+* **G4** (Gruppenstruktur nach Geburtsland): the group map of G3 unchanged -- same contacts, groups, confirmed ties,
+  positions, outlines, outline colours, labels and belonging scale; the node fill is the birth country instead of the
+  relation type.
+* **G5** (Lokale Gruppenstruktur nach Geburtsland): only contacts whose residence area is Marburg (Stadt) or übriges Mittelhessen (the definition of
   :mod:`~mares.network_v1.places`). The residence is a filter only, never a position: the G3 layout runs unchanged on
   this sub-network. Memberships and confirmed ties are restricted to the shown contacts; groups without a local member are
   left out; group IDs and outline colours stay those of the case; a label names local and total members where they
   differ ('5 von 7'). Unconnected parts of the sub-network move together, and the main area is fitted to it
-  (:func:`local_size`), so a small one gets no empty bands.
+  (:func:`local_size`), so a small one gets no empty bands. One note gives the local share; which contacts and groups
+  are not shown (and why) is in the figure register of the run (:func:`g5_details`).
 
 Nodes carry the contact ID and, smaller, the ISO 3166 alpha-3 code of the birth country (``k. A.`` without an answer,
 ``–`` for a country named but not coded). The full names are in the legend.
@@ -41,11 +41,7 @@ from .networks import (
     G3_H, G3_W, LOOSE_LABEL, belonging_sections, belonging_text, display_name, draw_g3, g3_geometry, group_colors,
 )
 
-CODE = "G3"  # the figure this experiment derives from (file names, records)
-TITLE_TOTAL = "Gruppenstruktur nach Geburtsland"
-TITLE_LOCAL = "Lokale Gruppenstruktur nach Geburtsland"
 LOCAL_AREAS = (Area.MARBURG, Area.MITTELHESSEN)
-VIEWS = ("gesamt", "lokal")
 
 # ------------------------------------------------------------------------------------------------ colours ---
 # Fixed per ISO code, the same in every case. The first ten are the expected frequent birth countries of MARES: they
@@ -225,40 +221,65 @@ def local_size(local: Context, node_r: float) -> tuple[float, float]:
 
 
 # --------------------------------------------------------------------------------------------- the figure ---
-def birth_figure(ctx: Context, view: str):
-    """One of the two figures (``view`` in VIEWS)."""
-    if view not in VIEWS:
-        raise ValueError(f"view must be one of {VIEWS}")
+def g4(ctx: Context):
+    """Gruppenstruktur nach Geburtsland: G3's group map, nodes by birth country."""
     cs = countries(ctx)
     node_r = NODE_PT_CODE / 72 / 2
-    if view == "gesamt":
-        geometry = g3_geometry(ctx, node_r=node_r)
-        ids = list(geometry.positions)
-        sections = [("Geburtsland", legend_entries(cs, ids))] + belonging_sections(ctx, ring=bool(geometry.marked))
-        p = page(ctx, CODE, main_w=G3_W, main_h=G3_H, legend="bottom", sections=sections, title=TITLE_TOTAL)
-        draw_g3(p.main, ctx, geometry, colors=group_colors(ctx), nodes=_code_nodes(cs.of), node_r=node_r)
-        return p.figure
+    geometry = g3_geometry(ctx, node_r=node_r)
+    sections = [("Geburtsland", legend_entries(cs, list(geometry.positions)))] + belonging_sections(ctx, ring=bool(geometry.marked))
+    p = page(ctx, "G4", main_w=G3_W, main_h=G3_H, legend="bottom", sections=sections)
+    draw_g3(p.main, ctx, geometry, colors=group_colors(ctx), nodes=_code_nodes(cs.of), node_r=node_r)
+    return p.figure
+
+
+def local_note(ctx: Context, local: Context) -> str:
+    return f"Lokaler Ausschnitt: {len(local.case.contacts)} von {len(ctx.case.contacts)} Kontakten (Marburg und Mittelhessen)."
+
+
+def g5(ctx: Context):
+    """Lokale Gruppenstruktur nach Geburtsland: the same for the local sub-network, compacted and fitted."""
+    cs = countries(ctx)
+    node_r = NODE_PT_CODE / 72 / 2
     local = local_context(ctx)
     lines = _label_lines(local, ctx)
     width, height = local_size(local, node_r)
     geometry = g3_geometry(local, node_r=node_r, label_lines=lines, width=width, height=height, compact=True)
-    ids = list(geometry.positions)
-    sections = [("Geburtsland", legend_entries(cs, ids))] + belonging_sections(local, ring=bool(geometry.marked))
-    partial = [(len(local.case.members(g.id)), len(ctx.case.members(g.id))) for g in local.case.groups]
-    partial = [(n, t) for n, t in partial if n != t]
-    notes = [f"Dargestellt: {len(ids)} von {len(ctx.case.contacts)} Kontakten mit Wohnort in Marburg oder im übrigen Mittelhessen"
-             + (f"; „{partial[0][0]} von {partial[0][1]}“ = lokale von allen Mitgliedern der Gruppe." if partial else ".")]
-    hidden = [g.id for g in ctx.case.groups if g.id not in {h.id for h in local.case.groups}]
-    tail = [ctx.unresolved_note().rstrip(".")] if ctx.unresolved() else []
-    if hidden:
-        tail.append(f"ohne lokale Mitglieder, nicht dargestellt: {', '.join(hidden)}")
-    if tail:
-        line = "; ".join(tail) + "."
-        notes.append(line[0].upper() + line[1:])
-    p = page(ctx, CODE, main_w=width, main_h=height, legend="bottom", sections=sections, notes=notes, title=TITLE_LOCAL)
+    sections = [("Geburtsland", legend_entries(cs, list(geometry.positions)))] + belonging_sections(local, ring=bool(geometry.marked))
+    p = page(ctx, "G5", main_w=width, main_h=height, legend="bottom", sections=sections, notes=[local_note(ctx, local)])
     draw_g3(p.main, local, geometry, colors=group_colors(ctx), nodes=_code_nodes(cs.of), node_r=node_r, label_lines=lines)
     return p.figure
 
 
-def figure_name(view: str) -> str:
-    return f"geburtsland_{view}"
+def g5_details(ctx: Context) -> dict:
+    """What G5 leaves out, for the figure register and run record (pseudonymous IDs only): contacts outside the two
+    areas by area, contacts with unresolved residence, groups without a local member, groups shown with fewer members."""
+    local = local_context(ctx)
+    shown = set(local.case.contact_ids)
+    outside: dict[str, list[str]] = {}
+    for cid in ctx.case.contact_ids:
+        area = ctx.derived.area(cid)
+        if cid not in shown and area is not Area.UNRESOLVED:
+            outside.setdefault(area.value, []).append(cid)
+    return {
+        "contacts_shown": len(shown), "contacts_total": len(ctx.case.contacts),
+        "not_shown_by_area": outside, "unresolved_residence": ctx.unresolved(),
+        "groups_without_local_members": [g.id for g in ctx.case.groups if g.id not in {h.id for h in local.case.groups}],
+        "groups_partly_shown": {g.id: f"{len(local.case.members(g.id))} von {len(ctx.case.members(g.id))}" for g in local.case.groups
+                                if len(local.case.members(g.id)) != len(ctx.case.members(g.id))},
+    }
+
+
+def g4_missing(ctx: Context) -> str | None:
+    if not ctx.case.groups:
+        return "keine Gruppen erhoben"
+    return None if any(birth_key(c) for c in ctx.case.contacts) else "kein Geburtsland erhoben"
+
+
+def g5_missing(ctx: Context) -> str | None:
+    reason = g4_missing(ctx)
+    if reason:
+        return reason
+    local = local_context(ctx)
+    if not local.case.contacts:
+        return "kein Kontakt mit Wohnort in Marburg oder Mittelhessen"
+    return None if local.case.groups else "keine Gruppe mit Mitgliedern in Marburg oder Mittelhessen"

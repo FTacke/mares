@@ -1,5 +1,5 @@
-"""Experiment G3 by birth country: fixed country colours, codes in the nodes, total view = G3, local view = the G3
-layout of the local sub-network (compacted, no geography), output outside graphics/."""
+"""G4 and G5 (group map by birth country): fixed country colours, codes in the nodes, G4 = G3's map, G5 = the G3 layout
+of the local sub-network (compacted, no geography), one local note, skip reasons and register details."""
 
 from __future__ import annotations
 
@@ -13,11 +13,10 @@ from matplotlib.colors import to_hex
 from mares.core.refs import StorageRef
 from mares.network_v0.figures.style import luminance, rc
 from mares.network_v1.case import read_case
-from mares.network_v1.experiments import G3_BIRTH_DIR, render_g3_birth
 from mares.network_v1.figures import FIGURES, expected_files
 from mares.network_v1.figures.base import MISSING_FILL, RELATION_COLORS, Context
 from mares.network_v1.figures.birth_country import (
-    COUNTRY_COLORS, EXTENSION, NO_ANSWER_SHORT, NODE_PT_CODE, TITLE_LOCAL, TITLE_TOTAL, UNCODED_FILL, VIEWS, birth_figure,
+    COUNTRY_COLORS, EXTENSION, NO_ANSWER_SHORT, NODE_PT_CODE, UNCODED_FILL, g4, g4_missing, g5, g5_details, g5_missing,
     birth_key, countries, country_fill, legend_entries, local_context, local_size, text_color,
 )
 from mares.network_v1.figures.networks import g3, g3_geometry, g3_layout, group_colors, intruders, structure_parts
@@ -58,9 +57,12 @@ def context_of(folder) -> Context:
     return Context(case, validate(case).derived)
 
 
+VIEWS = ("gesamt", "lokal")
+
+
 def draw(ctx_, view):
     with rc():
-        return birth_figure(ctx_, view)
+        return (g4 if view == "gesamt" else g5)(ctx_)
 
 
 def texts(figure) -> list[str]:
@@ -166,7 +168,7 @@ def test_the_total_view_is_the_group_map_of_g3(ctx):
     assert outlines(ax) == outlines(reference)
     assert sum(p.get_gid() == "tie" for p in ax.patches) == len(ctx.derived.confirmed_edges)
     assert g3_geometry(ctx).positions == g3_geometry(ctx, node_r=0.2).positions  # larger nodes do not move them
-    assert TITLE_TOTAL in texts(ax.figure)
+    assert "Gruppenstruktur nach Geburtsland" in texts(ax.figure)
 
 
 def test_the_local_view_keeps_only_local_contacts_their_ties_and_groups(ctx):
@@ -239,53 +241,68 @@ def test_no_label_or_node_leaves_the_main_area(ctx, small):
 def test_the_local_view_tells_local_from_total_members(ctx):
     local = local_context(ctx)
     shown = texts(draw(ctx, "lokal"))
-    assert TITLE_LOCAL in shown
+    assert "Lokale Gruppenstruktur nach Geburtsland" in shown
     for g in local.case.groups:
         n, total = len(local.case.members(g.id)), len(ctx.case.members(g.id))
         count = f"({n})" if n == total else f"({n} von {total})"
         assert any(t.startswith(f"{g.id} · ") and t.endswith(count) for t in shown), g.id
-    hidden = [g.id for g in ctx.case.groups if g.id not in {h.id for h in local.case.groups}]
-    assert any(all(h in t for h in hidden) and "nicht dargestellt" in t for t in shown)
-    assert any(t.startswith(f"Dargestellt: {len(local.case.contacts)} von {len(ctx.case.contacts)} Kontakten mit Wohnort in Marburg") for t in shown)
-    assert "MARES · network_v1 · 32 Kontakte" in shown
+    assert any("5 von 7" in t for t in shown)  # 002: C04 has five of seven members in the area
 
 
-def test_unknown_view():
-    with pytest.raises(ValueError):
-        birth_figure(Context(read_case(synthetic_source()), validate(read_case(synthetic_source())).derived), "regional")
+def test_the_local_view_has_exactly_one_short_note(ctx):
+    local = local_context(ctx)
+    shown = texts(draw(ctx, "lokal"))
+    note = f"Lokaler Ausschnitt: {len(local.case.contacts)} von {len(ctx.case.contacts)} Kontakten (Marburg und Mittelhessen)."
+    assert note in shown
+    assert not any(t.startswith(("Wohnort nicht zuordenbar", "Dargestellt", "Ohne lokale")) or "nicht dargestellt" in t for t in shown)
+    assert "MARES · network_v1 · 32 Kontakte" in shown  # the footer counts the whole case
 
 
-# --------------------------------------------------------------------------------------- output paths ---
-def test_the_experiment_writes_only_into_its_own_folder_and_is_no_standard_figure(tmp_path):
+def test_what_the_local_view_leaves_out_is_in_the_register(ctx):
+    details = g5_details(ctx)
+    local = local_context(ctx)
+    assert details["contacts_shown"] == len(local.case.contacts) and details["contacts_total"] == 32
+    assert details["unresolved_residence"] == ctx.unresolved()
+    assert set(details["groups_without_local_members"]) == {g.id for g in ctx.case.groups} - {g.id for g in local.case.groups}
+    assert details["groups_partly_shown"]["C04"] == "5 von 7"
+    left_out = {c for ids in details["not_shown_by_area"].values() for c in ids} | set(details["unresolved_residence"])
+    assert left_out == set(ctx.case.contact_ids) - set(local.case.contact_ids)
+
+
+# ----------------------------------------------------------------------------------- skips and output ---
+def test_skip_reasons(tmp_path, ctx):
+    assert g4_missing(ctx) is None and g5_missing(ctx) is None
+    no_groups = Context(replace(ctx.case, groups=[], memberships=[]), ctx.derived)
+    assert g4_missing(no_groups) == g5_missing(no_groups) == "keine Gruppen erhoben"
+    nobody = Context(replace(ctx.case, contacts=[replace(c, birth_country="", birth_country_iso3="") for c in ctx.case.contacts]),
+                     ctx.derived)
+    assert g4_missing(nobody) == "kein Geburtsland erhoben"
+    case = copy_002(tmp_path)
+    for row in read_rows(case, "contacts.csv"):
+        edit(case, "contacts.csv", row["contact_id"], "residence_place", "Berlin")
+    far = context_of(case)
+    assert g4_missing(far) is None and g5_missing(far) == "kein Kontakt mit Wohnort in Marburg oder Mittelhessen"
+
+
+def test_g4_and_g5_are_standard_figures_in_graphics(tmp_path):
     folders = machine(tmp_path)
     copy_002(folders["intake"])
     roots = roots_for(folders)
-    ref = StorageRef("INTAKE", f"network_v1/pilots/{SYNTHETIC_CODE}")
-    process_case(roots, ref, formats=("png",))
-    graphics = folders["intake"] / "network_v1" / "pilots" / SYNTHETIC_CODE / "graphics"
-    before = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in graphics.iterdir()}
-    result = render_g3_birth(roots, ref)
+    result = process_case(roots, StorageRef("INTAKE", f"network_v1/pilots/{SYNTHETIC_CODE}"), formats=("png", "svg"))
     assert result.status == "COMPLETED"
-    folder = folders["intake"] / "network_v1" / "pilots" / SYNTHETIC_CODE / "/".join(G3_BIRTH_DIR)
-    assert {p.name for p in folder.iterdir()} == {f"{SYNTHETIC_CODE}_G3_geburtsland_{v}.{e}" for v in VIEWS for e in ("png", "svg")}
-    assert {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in graphics.iterdir()} == before
-    assert len(FIGURES) == 9 and not any("geburtsland" in n for n in expected_files(SYNTHETIC_CODE, ("png", "svg")))
-    record = (folders["workspace"] / "runs" / result.run_id / "run_record.json").read_text(encoding="utf-8")
-    assert '"standard_figure": false' in record
-    assert "COL" not in record and "Kolumbien" not in record  # counts only, no countries
+    graphics = folders["intake"] / "network_v1" / "pilots" / SYNTHETIC_CODE / "graphics"
+    names = {p.name for p in graphics.iterdir()}
+    assert names == expected_files(SYNTHETIC_CODE, ("png", "svg")) and len(names) == 22
+    assert {f"{SYNTHETIC_CODE}_G4_gruppen_geburtsland.png", f"{SYNTHETIC_CODE}_G5_lokale_gruppen_geburtsland.svg"} <= names
+    assert not (graphics.parent / "experimental").exists()
+    record = result.record
+    g5_entry = next(f for f in record["figures"] if f["code"] == "G5")
+    assert g5_entry["status"] == "rendered" and g5_entry["details"]["groups_partly_shown"] == {"C04": "5 von 7"}
+    index = (folders["workspace"] / "runs" / result.run_id / "figures_index.json").read_text(encoding="utf-8")
+    assert '"G4"' in index and '"G5"' in index and "Kolumbien" not in index  # no country names in the register
 
 
-def test_a_case_with_validation_errors_gets_no_experimental_figure(tmp_path):
-    folders = machine(tmp_path)
-    case = copy_002(folders["intake"])
-    edit(case, "contacts.csv", "A01", "birth_country_iso3", "XXX")
-    result = render_g3_birth(roots_for(folders), StorageRef("INTAKE", f"network_v1/pilots/{SYNTHETIC_CODE}"))
-    assert result.status == "FAILED_VALIDATION" and not result.outputs
-    assert not (case / G3_BIRTH_DIR[0]).exists()
-
-
-def test_command_line(tmp_path, capsys):
-    folders = machine(tmp_path)
-    copy_002(folders["intake"])
-    assert cli.main(["v1", "experiment", "g3-geburtsland", "--root", "INTAKE", "--formats", "png"], roots=roots_for(folders)) == 0
-    assert "g3-geburtsland COMPLETED  2 files" in capsys.readouterr().out
+def test_the_experiment_command_is_gone():
+    from mares.network_v1.cli import build_parser
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["experiment", "g3-geburtsland", "--root", "INTAKE"])

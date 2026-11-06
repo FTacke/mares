@@ -1,4 +1,4 @@
-"""The fixed set of nine standard figures of network_v1 -- no more, no automatic combinations.
+"""The fixed set of eleven standard figures of network_v1 -- no more, no automatic combinations.
 
 A figure whose data are missing is not drawn; its entry carries the reason instead (``skipped``), so nothing
 pretends to show what was not surveyed.
@@ -15,6 +15,7 @@ from mares.network_v0.figures.style import rc, save_figure
 
 from ..places import Area
 from .base import TITLES, Context, file_name
+from .birth_country import g4, g4_missing, g5, g5_details, g5_missing
 from .maps import x1
 from .matrices import p1, p2, p3, p4, p5
 from .networks import g1, g2, g3
@@ -28,6 +29,7 @@ class FigureSpec:
     inputs: tuple[str, ...]
     draw: Callable
     missing: Callable[[Context], str | None]  # reason why the figure cannot be drawn, or None
+    details: Callable[[Context], dict] | None = None  # extra facts for the register (e.g. what a filtered view leaves out)
 
 
 def _no(ctx: Context, test, reason: str) -> str | None:
@@ -65,6 +67,10 @@ FIGURES: tuple[FigureSpec, ...] = (
                lambda ctx: None if ctx.case.groups else "keine Gruppen erhoben"),
     FigureSpec("X1", "geografische_verteilung", TITLES["X1"],
                ("A: Wohnort, Wohnland", "A: Beziehungstyp", "Ortsverzeichnis", "Basiskarte"), x1, lambda ctx: _x1_missing(ctx)),
+    FigureSpec("G4", "gruppen_geburtsland", TITLES["G4"], ("C: Gruppen, Mitglieder, Zugehörigkeit", "C: bestätigte Verbindungen",
+               "A: Geburtsland"), g4, g4_missing),
+    FigureSpec("G5", "lokale_gruppen_geburtsland", TITLES["G5"], ("C: Gruppen, Mitglieder, Zugehörigkeit", "C: bestätigte Verbindungen",
+               "A: Geburtsland", "A: Wohnort, Wohnland"), g5, g5_missing, g5_details),
 )
 FORMATS = ("png", "svg")
 
@@ -86,13 +92,15 @@ def _save(figure, stem: Path, formats: tuple[str, ...]) -> list[Path]:
 
 
 def render(ctx: Context, target: Path, formats: tuple[str, ...] = ("png",)) -> list[dict]:
-    """Draw the nine figures into ``target`` (the case's ``graphics/``); returns one entry per figure."""
+    """Draw the eleven figures into ``target`` (the case's ``graphics/``); returns one entry per figure."""
     if not formats or not set(formats) <= set(FORMATS):
         raise ValueError(f"formats must be a non-empty subset of {', '.join(FORMATS)}")
     target.mkdir(parents=True, exist_ok=True)
     entries = []
     for spec in FIGURES:
         entry = {"code": spec.code, "title": spec.title, "inputs": list(spec.inputs)}
+        if spec.details:
+            entry["details"] = spec.details(ctx)
         reason = spec.missing(ctx)
         if reason:
             entries.append({**entry, "status": "skipped", "reason": reason, "files": []})

@@ -45,7 +45,7 @@ def test_a_case_run_writes_graphics_to_the_case_and_everything_else_to_the_works
     assert ":\\" not in json.dumps(record) and str(folders["intake"]) not in json.dumps(record)
 
 
-def test_a_rerun_replaces_the_nine_files_and_keeps_foreign_files(folders):
+def test_a_rerun_replaces_the_standard_files_and_keeps_foreign_files(folders):
     copy_002(folders["intake"])
     roots = roots_for(folders)
     ref = StorageRef("INTAKE", f"network_v1/pilots/{SYNTHETIC_CODE}")

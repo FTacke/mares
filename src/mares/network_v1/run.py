@@ -1,4 +1,4 @@
-"""Processing a network_v1 case: read -> validate -> derive -> nine standard figures.
+"""Processing a network_v1 case: read -> validate -> derive -> eleven standard figures.
 
 Locations (logical references only):
 
@@ -6,7 +6,7 @@ Locations (logical references only):
   ``BACKUP``, ``EXCHANGE`` or ``WORKSPACE``
 * the map sources of X1: the place directory ``ROOT:network_v1/reference/gazetteer.csv`` in the root of the case and
   the basemap ``WORKSPACE:cache/basemaps/...`` (read only; if one is missing, X1 is skipped with the reason)
-* the finished figures: the case's ``graphics/`` -- the nine standard files and nothing else; a re-run replaces exactly
+* the finished figures: the case's ``graphics/`` -- the eleven standard files and nothing else; a re-run replaces exactly
   these files and never deletes anything
 * everything technical (validation report, derived tables, figure register, run record): ``WORKSPACE/runs/<RUN-ID>/``
 
@@ -199,7 +199,7 @@ def process_case(
         "inputs": [{"ref": case_ref.child("data", p.name).to_dict(), "sha256": sha256_file(p), "size": p.stat().st_size} for p in data_files],
         "validation": validation.to_dict()["counts"] | {"status": validation.status},
         "coverage": validation.derived.coverage.to_dict() if validation.derived else None,
-        "figures": [{k: f[k] for k in ("code", "status", "reason", "files")} for f in figures],
+        "figures": [{k: f[k] for k in ("code", "status", "reason", "files", "details") if k in f} for f in figures],
         "foreign_files_in_graphics": foreign,
         "map_sources": geo.sources or {"missing": geo.missing},
         "software": _software(),

@@ -29,8 +29,9 @@ def ctx(tmp_path_factory):
     return context(synthetic_source(), tmp_path_factory.mktemp("geo"))
 
 
-def test_exactly_nine_standard_figures():
-    assert [s.code for s in FIGURES] == ["G1", "G2", "P1", "P2", "P3", "P4", "P5", "G3", "X1"]
+def test_exactly_eleven_standard_figures():
+    assert [s.code for s in FIGURES] == ["G1", "G2", "P1", "P2", "P3", "P4", "P5", "G3", "X1", "G4", "G5"]
+    assert [s.name for s in FIGURES[-2:]] == ["gruppen_geburtsland", "lokale_gruppen_geburtsland"]
 
 
 def test_file_names_are_stable_and_ascii():
@@ -40,7 +41,7 @@ def test_file_names_are_stable_and_ascii():
     assert all(n.isascii() for n in expected_files("002_test_synthetic", ("png", "svg")))
 
 
-def test_render_writes_only_the_nine_files_and_is_reproducible(ctx, tmp_path):
+def test_render_writes_only_the_eleven_files_and_is_reproducible(ctx, tmp_path):
     first = render(ctx, tmp_path / "a")
     second = render(ctx, tmp_path / "b")
     names = sorted(p.name for p in (tmp_path / "a").iterdir())
@@ -116,6 +117,6 @@ def test_a_figure_without_data_is_skipped_with_a_reason(tmp_path):
 
 def test_svg_is_optional(ctx, tmp_path):
     render(ctx, tmp_path, ("png", "svg"))
-    assert len(list(tmp_path.glob("*.svg"))) == 9
+    assert len(list(tmp_path.glob("*.svg"))) == 11
     with pytest.raises(ValueError):
         render(ctx, tmp_path, ("pdf",))
