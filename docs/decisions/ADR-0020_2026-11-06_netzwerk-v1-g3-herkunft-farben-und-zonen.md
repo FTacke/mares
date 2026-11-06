@@ -1,6 +1,6 @@
 # ADR-0020 – `network_v1`: G3-Herkunft mit festen Länderfarben, Kürzeln im Knoten und lokalen Zonen
 
-**Datum:** 2026-11-06 · **Status:** in Kraft als Experiment (keine Kanonisierung). Ersetzt in
+**Datum:** 2026-11-06 · **Status:** Entscheidungen 1–2 in Kraft; 3–5 ersetzt durch [`ADR-0021`](ADR-0021_2026-11-06_netzwerk-v1-g3-herkunft-zwei-ansichten.md). Ersetzt in
 [`ADR-0019`](ADR-0019_2026-11-06_netzwerk-v1-experiment-g3-geburtsland.md) die Farbvergabe (Entscheidungen 3 und 4), die zweite
 Beschriftungsvariante und die Gestaltung der Lokalansicht.
 
