@@ -40,7 +40,9 @@ eine Kopfzeile. Beispiel: [`examples/synthetic/network_v1/002_test_synthetic/`](
 | `places.csv` | optional: ausdrückliche Einordnung deutscher Orte (§3) |
 
 `<Fall>/graphics/` enthält ausschließlich die fertigen Standardgrafiken (§6), je Format genau eine Datei je Grafik. Ältere
-Entwicklungsstände der Karte X1 können noch unter `<Fall>/experimental/` liegen; die Pipeline liest und schreibt dort nichts. Prüfberichte, Ableitungstabellen und das
+Entwicklungsstände der Karte X1 können noch unter `<Fall>/experimental/` liegen. `<Fall>/experimental/<Experiment>/` nimmt experimentelle Grafiken außerhalb der
+Standardgrafiken auf (derzeit `g3_geburtsland/`, §6.2); nur der jeweilige Experimentbefehl schreibt dort, ausschließlich in seinen Ordner, und
+die reguläre Pipeline (`render`, `render-all`) liest und schreibt dort nichts. Prüfberichte, Ableitungstabellen und das
 Laufprotokoll liegen unter `WORKSPACE/runs/<RUN-ID>/`.
 
 ### 2.1 Tabelle A – `contacts.csv`
@@ -274,6 +276,33 @@ nur hier, nicht in der Grafik.
 |---|---|---|---|
 | X1 | `X1_geografische_verteilung` (Fassung 2.8) | **Wo leben die Kontakte?** Kartenpanels von links nach rechts Amerika · Europa (ohne Deutschland) · Deutschland, immer alle drei, oben bündig; **Deutschland ist das größte Panel**, die übrigen sind 0,8-mal so hoch. **Ausschnitte nach den Daten:** Umriss aller Orte des Panels plus Rand, mindestens eine Orientierungsgröße (Amerika 30° × 30°, Europa 13° × 10°, Deutschland 9° × 7,5°), Seitenverhältnis 0,65–1,5; Deutschland bleibt im Deutschland-Rahmen; ein Panel ohne Kontakte zeigt seinen Standardausschnitt (Amerika: Mexiko bis Südamerika, Europa: Portugal bis etwas östlich von Deutschland). Panels haben eigene Maßstäbe; Entfernungen sind zwischen Panels nicht vergleichbar (steht nicht in der Grafik). Weitere Weltregionen (Afrika, Asien, Ozeanien, Weitere) nur bei Bedarf zwischen Amerika und Europa. Zuordnung über den Wohnortbereich (§3): Deutschland, übriges Europa, sonst Kontinent des Wohnlands. **Keine Kontakt-Kontakt- und keine Ego-Linien**; Knotenfarbe = Beziehungstyp. **Ortspunkt** (dunkel, weiß umrandet) **an der wahren Lage, immer sichtbar**; die Kontakte stehen **daneben** auf einer sehr hellen Fläche (bis 10 ein Ring, sonst Ringe zu 6, 12, …; nach Ort und Beziehungstyp sortiert), mit einer feinen Linie an den Ortspunkt angebunden – auch ein einzelner Kontakt. **Fläche und Label bilden ein Callout:** das Label dockt direkt am Rand der Fläche an (Ortsname fett, Land und Zahl kompakt in derselben Zeile, z. B. „Bogotá · Kolumbien · n = 3“, ein einzelner Kontakt ohne Zahl; Einzelorte einer Gruppe kleiner und grauer darunter; bei Bedarf zweizeilig), ohne Rahmen, nur mit weißem Halo und einer sehr blassen, weich gerundeten Fläche. X1 zeigt die geografische Verteilung, nicht exakte Kontaktpositionen. **„… und Umgebung“** (Darstellungsentscheidung, maßstabsabhängig): Ein Ort kommt zu dem Ort, dem ihn das Ortsverzeichnis in `group_with` zuordnet (Stadtteil, Umlandgemeinde oder Nachbarstadt eines größeren Ortes; zentral gepflegt und begründet), wenn dieser Ort im selben Panel Kontakte hat, höchstens 40 km Luftlinie entfernt ist und beide Punkte im Panel weniger als etwa 15 mm auseinanderliegen – auf einem größeren Maßstab bleiben sie getrennt; eine Stufe, keine Ketten; ohne Zuordnung bleibt jeder Ort für sich, weiter entfernte Städte werden nie zusammengefasst. Die Kontakte stehen nach Ort sortiert im Ring; die wahren Punkte der weiteren Orte bleiben als kleine hohle Ringe sichtbar. Kasten „Marburg und Umgebung · n = 14“, darunter klein und heller die Einzelorte („Marburg 10 · Cölbe · …“). **Land im Kasten:** außerhalb Deutschlands „Bogotá · Kolumbien · n = 3“ bzw. „Madrid · Spanien“, im Deutschland-Panel nur der Ort; keine Länderbeschriftung auf der Karte. Die Gruppierung ist eine Darstellungsentscheidung; die erhobenen Wohnorte bleiben unverändert. **Platzierung mit Vorrang** (je Panel Ort für Ort, größte zuerst; **Fläche und Label werden gemeinsam platziert**: die Fläche kommt an die nächstgelegene zulässige Position, an der ihre vollständige Beschriftung unmittelbar am Kreis frei Platz findet – benachbarte Gruppen werden dafür auseinandergezogen, die Ortspunkte nie; danach eine Nachbesserungsrunde für alle Labels): (1) Ortspunkte und Ortsnamen bleiben frei – keine Fläche, kein Knoten und kein Label auf einem Ortspunkt (auch nicht auf den hohlen Ringen weiterer Orte einer Gruppe), kein Knoten und keine Fläche auf einem Label; (2) Ortsgruppen sauber getrennt – Flächen überlappen nicht, Linien kreuzen sich nicht und laufen nicht unter Flächen, Labels oder über fremde Ortspunkte; (3) **geografische Leserichtung**, soweit layoutseitig vermeidbar: Bei nahen Orten (Punkte im Panel unter etwa 38 mm auseinander) kehren weder Flächen noch Labels eine klare Nord-Süd- oder West-Ost-Relation um (klar = Versatz mindestens 1,5-mal so groß wie quer dazu; ein nördlicherer Ort wird nicht unter einem südlicheren beschriftet), bei diagonal zueinander liegenden Orten nicht die Gesamtrichtung; dafür werden auch die Flächen umgesetzt, und ein früh gesetzter Ort lässt die Seite der noch folgenden Nachbarn frei. Eine Umkehrung wiegt etwa 5 cm zusätzliche Linienlänge auf, nie ein verdecktes Element; (4) erst dann möglichst nah am Ortspunkt. Jedes Label liegt – von seiner Mitte aus gemessen – näher an der eigenen Fläche als an jeder fremden. Linien und Punkte liegen über allen Flächen, die Knoten oben. Asymmetrische Positionen ergeben sich aus diesen Regeln, nicht aus Ortsnamen; Titel bei Bedarf zweizeilig (Ort / Land und Zahl); Seitenverhältnis eines Panels mindestens 0,8. Nur Wohnland bekannt: Länderpunkt der Basiskarte, gestrichelte Fläche, „· nur Land bekannt“, nie eine erfundene Stadt. Nicht zuordenbarer Wohnort und Ort ohne Eintrag im Ortsverzeichnis: nicht gezeichnet, gemeinsam genannt („Wohnort nicht darstellbar: …“). Koordinaten nur aus dem Ortsverzeichnis `ROOT:network_v1/reference/gazetteer.csv` (`place; country_iso3; lat; lon; basis; group_with`, `group_with` = zugeordneter Ort derselben Länderangabe oder leer, von Hand gepflegt, im Root der Fälle, nie im Repository, kein Geocoding-Dienst); Basiskarte Natural Earth 1:50m (gemeinfrei) in `WORKSPACE/cache/basemaps/`. Entwicklungsstände (darunter Fassung 1 unter `<Fall>/experimental/x1_fassung_1/`) bleiben historisch liegen | bottom |
 
+### 6.2 Experiment: G3 nach Geburtsland (keine Standardgrafik)
+
+Code: [`figures/birth_country.py`](../../src/mares/network_v1/figures/birth_country.py),
+[`experiments.py`](../../src/mares/network_v1/experiments.py); Begründung:
+[`ADR-0019`](../decisions/ADR-0019_2026-11-06_netzwerk-v1-experiment-g3-geburtsland.md). **Experiment, nicht kanonisiert**: kein Teil der
+neun Standardgrafiken, nur über `v1 experiment g3-geburtsland` (§8), nie in `graphics/`.
+
+- **Grundlage:** die G3-Implementierung selbst (Layout, Umrisse, Umrissfarben, Beschriftung, Zugehörigkeitsskala, Ringsegmente); nur die
+  Knotenfarbe ist das erhobene Geburtsland (`birth_country_iso3`, in der Legende der erhobene Name). Keine Ableitung von Nationalität
+  oder ethnischer Zugehörigkeit, keine zusätzlichen Verbindungen oder Mitgliedschaften.
+- **Gesamtansicht** (`Gruppenstruktur nach Geburtsland`): Kontakte, Gruppen, bestätigte Verbindungen und Positionen wie G3.
+- **Lokalansicht** (`Lokale Gruppenstruktur nach Geburtsland`): nur Kontakte mit Wohnortbereich Marburg (Stadt) oder übriges Mittelhessen
+  (§3); Mitgliedschaften und bestätigte Verbindungen auf sie beschränkt; Gruppen ohne lokales Mitglied entfallen und werden im Hinweis
+  genannt; Gruppen-IDs und Umrissfarben bleiben die des Falls. Das G3-Layout läuft auf diesem Teilnetz. Das Gruppenlabel nennt lokale und
+  gesamte Mitgliederzahl, wo sie sich unterscheiden (`C04 · … (5 von 7)`); ein Hinweis nennt „Dargestellt: n von N Kontakten …“, nicht
+  zuordenbare Wohnorte bleiben unberücksichtigt und werden genannt. Die Fußzeile zählt weiter alle Kontakte des Falls.
+- **Zwei Beschriftungsvarianten:** 1 `kuerzel` – A-ID und darunter das ISO-3166-Alpha-3-Kürzel im Knoten (Knoten 24 statt 20 pt),
+  Länderlegende unter der Karte („Peru (PER)“); 2 `legende` – nur die A-ID, eine kompakte Länderlegende direkt rechts neben der Karte.
+- **Farben:** neun kategoriale Farben, die in allen Paaren auch unter Protan- und Deutan-Simulation unterscheidbar bleiben (OKLab-ΔE ≥ 8,
+  normal ≥ 15); keine Flaggen- oder Symbolfarben. Ein Land hat in beiden Ansichten eines Falls dieselbe Farbe und behält über Fälle hinweg
+  seine Farbe, soweit die übrigen Länder des Falls es zulassen (bevorzugter Platz aus dem Ländercode, belegt → nächster freier). Mehr als
+  neun Länder: die häufigsten erhalten Farben, die übrigen ein gemeinsames Grau „weitere Geburtsländer“, in der Legende namentlich (Variante 2
+  mit den Kontakt-IDs). Ohne Angabe (leer, NS/KA/NA): weißer Knoten mit gepunktetem Rand, `keine Angabe`. Ein genanntes, aber nicht
+  codiertes Land bleibt als eigener Eintrag mit dem erhobenen Namen. Die Legende zeigt nur vorkommende Länder.
+- **Dateien:** `<Fall>/experimental/g3_geburtsland/<Fall>_G3_geburtsland_{gesamt|lokal}_{kuerzel|legende}.{png,svg}`; ein Run-Record
+  unter `WORKSPACE/runs/<RUN-ID>/` enthält nur Zahlen (Kontakte, Gruppen, Verbindungen gesamt/lokal, Zahl der Länder), keine Länder.
+
 ## 7. Testfälle und empirische Fälle
 
 | Fall | `case_type` | `provenance` | `empirical_analysis_eligible` | Herkunft |
@@ -308,7 +337,8 @@ Erhebungen liegen unter `cases/` mit `case_type: regular` und demselben Datenmod
 .venv\Scripts\python -m mares.networks v1 render-all --root INTAKE [--formats png,svg]
 .venv\Scripts\python -m mares.networks v1 list --root INTAKE [--empirical]
 .venv\Scripts\python -m mares.networks v1 install-test-cases --root INTAKE [--v0-package INTAKE:inbox/<Lieferung>/contents]
+.venv\Scripts\python -m mares.networks v1 experiment g3-geburtsland (--case INTAKE:network_v1/<…>/<Fall> | --root INTAKE) [--formats png,svg]
 ```
 
 Fälle nur aus `INTAKE` oder `PRIMARY`. `render` ersetzt in `graphics/` genau die neun Standarddateien des Falls und löscht nichts; fremde Dateien
-werden im Run-Record gemeldet. `install-test-cases` ersetzt nur Testfälle. Exit-Status 0 erledigt, 2 Prüffehler, 1 nicht startbar.
+werden im Run-Record gemeldet. `install-test-cases` ersetzt nur Testfälle. `experiment` schreibt nur in den Ordner seines Experiments unter `<Fall>/experimental/` (§6.2). Exit-Status 0 erledigt, 2 Prüffehler, 1 nicht startbar.

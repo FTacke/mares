@@ -193,7 +193,7 @@ Cache-Schlüssels.
 
 **Fallbaum der Netzwerkerhebungen (Übergang).** Bis `PRIMARY` eingerichtet ist, liegen die Netzwerkfälle in `INTAKE` unter
 `network_v0/` (Verweise auf v0-Lieferungen) und `network_v1/{pilots,cases,student_pilot}/<Fall>/{data,graphics}/` (`student_pilot`: getrenntes Korpus der
-studentischen Peer-Piloten, [`network-v1.md`](network-v1.md) §7; ältere Entwicklungsstände der Karte X1 unter `<Fall>/experimental/`) sowie das
+studentischen Peer-Piloten, [`network-v1.md`](network-v1.md) §7; ältere Entwicklungsstände der Karte X1 und experimentelle Grafiken unter `<Fall>/experimental/`) sowie das
 von Hand gepflegte Ortsverzeichnis `network_v1/reference/gazetteer.csv` (Quelle der Standardgrafik X1, §6.1 dort)
 ([`network-versions.md`](network-versions.md) §2). Sie werden nur als logische Referenz angesprochen; ihr Ziel ist `PRIMARY`, die
 Stelle im `PRIMARY`-Layout wird bei dessen Einrichtung festgelegt.
