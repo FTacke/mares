@@ -17,5 +17,5 @@ Bisher festgehaltene Eckpunkte (aus dem Projektauftrag, noch ohne eigenes Dokume
 - Audiointerviews und narrative Episoden werden transkribiert und für die Forschung
   pseudonymisiert beziehungsweise anonymisiert.
 
-Erster Fall: [`pilot-case-001-2.md`](pilot-case-001-2.md). Offen und hier zu dokumentieren, sobald entschieden: Namensgenerator und Attributkatalog des
+Erster Fall: [`pilot-case-001-2.md`](pilot-case-001-2.md); zweiter Fall: [`pilot-case-002.md`](pilot-case-002.md). Offen und hier zu dokumentieren, sobald entschieden: Namensgenerator und Attributkatalog des
 Netzwerk-Sheets, Auswahl und Definition der Kennzahlen, Transkriptionskonventionen.

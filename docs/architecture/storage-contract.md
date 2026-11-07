@@ -40,7 +40,7 @@ Root in Betrieb genommen wird; ein geplanter Ort wird nie so beschrieben, als ex
 |---|---|---|---|
 | Repository | `C:\dev\mares\mares` | vorhanden | — |
 | `WORKSPACE` | `C:\dev\mares\mares_workspace` | **vorhanden**; enthält Läufe unter `runs/` (Netzwerkläufe, ein Pilotlauf) | ja (`.env`) |
-| `INTAKE` | `C:\dev\mares\mares_storage` | **vorhanden**; Altbestandsinventar und Lieferprotokoll in `reports/`, eine Datenlieferung (Pilotfall `001-2`) in `inbox/` – nicht nach dem Intake-Vertrag geprüft, nicht erhalten | ja (`.env`) |
+| `INTAKE` | `C:\dev\mares\mares_storage` | **vorhanden**; Altbestandsinventar und Lieferprotokoll in `reports/`, Datenlieferungen (Pilotfälle `001-2` und `002`) in `inbox/` – nicht nach dem Intake-Vertrag geprüft, nicht erhalten | ja (`.env`) |
 | `PRIMARY` | geplant: eigener MARES-Projektordner auf dem Gruppenlaufwerk der Universität (auf dem Arbeitsplatz als `K:` eingebunden), später New_FS | **nicht angelegt** | nein |
 | `BACKUP` | geplant: MARES-Bereich im bestehenden Forschungsbackup auf der externen SSD (`D:\projects\…`) | **nicht angelegt** | nein |
 | `EXCHANGE` | geplant: Ordner `MARES` im synchronisierten Nextbox-Verzeichnis | **nicht angelegt** | nein |

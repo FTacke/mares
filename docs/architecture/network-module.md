@@ -13,7 +13,8 @@ nicht berechnet. Es ergänzt [`modules.md`](modules.md) (Umfang) und [`data-cont
 [`ADR-0002`](../decisions/ADR-0002_2026-10-12_netzwerkmodul.md) und
 [`ADR-0003`](../decisions/ADR-0003_2026-10-12_erhebungsmethode-und-kuratierung.md). Grafiken:
 [`visualization-conventions.md`](visualization-conventions.md). Der erste Fall:
-[`../methodology/pilot-case-001-2.md`](../methodology/pilot-case-001-2.md).
+[`../methodology/pilot-case-001-2.md`](../methodology/pilot-case-001-2.md); der zweite (ohne Cliquenregel):
+[`../methodology/pilot-case-002.md`](../methodology/pilot-case-002.md).
 
 Code: [`src/mares/network_v0/`](../../src/mares/network_v0/__init__.py)
 
@@ -92,6 +93,9 @@ Attribute (erwartet = Warnung, wenn leer; optional = nur gezählt):
 aufsteigender Bereich wird zu Einzelcodes aufgelöst (`1-6`, `1–6`, `G1-G3`, `G1-3`) und als Hinweis vermerkt;
 Duplikate, leere Elemente, absteigende oder unplausibel weite Bereiche sind Syntaxfehler. Gültigkeit entscheidet
 das **Codebuch des Pakets**, nicht der Code: ein Bereich, der über das Codebuch hinausreicht, ist ein Fehler.
+Ein **Zwischenwert** wie `3.5` (Original „3–4“ oder „4–3“, von der Projektleitung als Zwischenstufe geklärt) ist ein eigener
+Code und nur gültig, wenn das Codebuch des Pakets ihn für das Feld definiert; er wird nie gerundet. Das Paket hält die
+Originalschreibweise fest (bei 002 in einer zusätzlichen Spalte `source_notation`, die der Leser ignoriert).
 
 **Nähe:** maßgeblich ist ausschließlich `table_ring_near_value` (Codebuch `closeness_1_5`, Werte 1–5). Die Position
 auf der handgezeichneten Karte und ihre abweichende Legende werden weder gelesen noch umgerechnet.
@@ -117,7 +121,7 @@ Aussagen, die das Paket nicht trägt und die eine Person später trifft, stehen 
 [`examples/synthetic/network-curation-0000/`](../../examples/synthetic/network-curation-0000/curation.json).
 
 - `survey`: `elicitation` (`asked_per_pair` | `not_stated`), `documentation` (`group_outlines` | `not_stated`),
-  `group_rule` (`all_members_know_each_other`), `pair_coverage` (`not_established` | `complete`), `basis`
+  `group_rule` (`all_members_know_each_other` | `membership_only`, §4), `pair_coverage` (`not_established` | `complete`), `basis`
   (Pflicht, sobald eine Aussage getroffen wird).
 - `dispositions`: je Prüfhinweis (`ref` = Review-ID oder `flag:<Kontakt>:<MARKIERUNG>`) eine Kategorie (§5), der Urheber
   (`project_lead` oder `agent_proposal`), die Begründung und eine Notiz.
@@ -150,6 +154,12 @@ Regeln:
 6. Die Kantentabelle des Pakets ist ein **Beleg**: Der Validator vergleicht sie mit der Ableitung (fehlende, nicht
    ableitbare, doppelte, selbstbezügliche Kanten; abweichende Gruppen; Anzahl laut Manifest). Eine Abweichung ist ein
    harter Fehler; übernommen wird immer die Ableitung.
+
+7. **Gruppenregel `membership_only`** (Kuratierung, [`ADR-0024`](../decisions/ADR-0024_2026-11-07_netzwerk-v0-gruppenregel-nur-zugehoerigkeit-und-fall-002.md)):
+   Die Erhebung dokumentiert Gruppen, aber keine Beziehungen zwischen den Mitgliedern. Bestätigte Gruppen und
+   Mehrfachmitgliedschaften bleiben erhalten, die Cliquenregel entfällt: Es entsteht **keine** Beziehung, alle Paare bleiben
+   unbekannt. Die Mitgliedschaften tragen dann `derivable_edge = no`, Klärungen die Regel `membership_only`; der Validator prüft
+   beides gegen die Kuratierung. Ohne Angabe gilt die Cliquenregel wie bisher.
 
 Das Modell kann zusätzlich explizite Ja/Nein/Unbekannt-Angaben speichern (`build_network(dataset, explicit_ties=…)`).
 
@@ -230,12 +240,12 @@ v0-Skalen und -Wortlaute aus dem Codebuch des Pakets; nichts wird nach v1 umcodi
 
 | | v0 in den Standardgrafiken |
 |---|---|
-| Nähe | Tabellenwert 1–5, **5 = sehr nah** (G1: Ring 5 innen bis 1 außen; Legende „Tabellenwert der Erhebung, nicht die Kartenposition“; P1/P5 Zeilen 5 … 1) |
-| Kontakthäufigkeit | v0-Stufen, „täglich oder fast täglich“ oben |
+| Nähe | Tabellenwert 1–5, **5 = sehr nah** (G1: Ring 5 innen bis 1 außen; Legende „Tabellenwert der Erhebung, nicht die Kartenposition“; P1/P5 Zeilen 5 … 1). Ein im Codebuch definierter Zwischenwert (3,5) ist eine eigene Stufe: gestrichelter Ring ohne Zahl in G1, eigene Zeile in P1/P5 |
+| Kontakthäufigkeit | v0-Stufen, „täglich oder fast täglich“ oben; ein definierter Zwischenwert ist eine eigene Zeile in P2 |
 | Beziehung | eine Farbe je v0-Beziehungscode (gleiche Bedeutung = gleiche Farbe wie v1; Arbeit, Studium, Nachbarschaft/Community eigene Farben); mehrere Codes = **geteilter Knoten**, keine Hauptbeziehung; G1-Sektoren je Codekombination |
 | Medien, Sprachen, Funktionen | v0-Codes (P3 Medien in vier Gruppen, P4 alle Sprachen je Kontakt, P5 Funktionen); Mehrfachnennungen vollständig; Kategorien, die kein Kontakt hat, entfallen (keine Spalte oder Zeile mit n = 0); die Stufen von Nähe und Häufigkeit bleiben immer vollständig |
 | Gruppen | nur bestätigte Gruppen und Mitgliedschaften; v0 erhebt keine Zugehörigkeit, daher einzeilige Gruppenlabels ohne Skala |
-| Verbindungen | nur die bestätigten Beziehungen des v0-Netzwerks (§4); fehlende bleiben unbekannt |
+| Verbindungen | nur die bestätigten Beziehungen des v0-Netzwerks (§4); fehlende bleiben unbekannt. Ohne jede Beziehung (`membership_only`) nennt keine Legende eine Verbindungslinie |
 | Geografie | v0-Klassifikation (§6, [`geographic-classification.md`](geographic-classification.md)): Marburg · Region Marburg · übriges Deutschland · übriges Europa · außerhalb Europas; X1 mit dem Ortsverzeichnis von v1, eine Regionalangabe („Nähe Marburg“) ohne Koordinate („Wohnort nicht darstellbar“); Wohnorte in direkten Nachbarländern Deutschlands (DNK, POL, CZE, AUT, CHE, FRA, LUX, BEL, NLD) stehen auf der Deutschland-Karte, deren Ausschnitt dafür wächst und deren Titel das Land nennt („Deutschland und Österreich“); das Europa-Panel erscheint nur für weitere europäische Wohnorte. Die Wohnortbereiche der Matrizen bleiben unverändert (ein Nachbarland bleibt „übriges Europa“) |
 | Kennzeichnung | Fußzeile `MARES · network_v0 · <n> Kontakte`, Fallkennzeichen `FALL · v0-Pilot <Quellkennung>` |
 

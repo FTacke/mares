@@ -36,6 +36,7 @@ gemeinsamen Datenbestand.
 | Wie funktioniert das Netzwerkmodul (Paketformat, Regeln, Läufe)? | [`docs/architecture/network-module.md`](docs/architecture/network-module.md) |
 | Wie werden Grafiken gestaltet? | [`docs/architecture/visualization-conventions.md`](docs/architecture/visualization-conventions.md) |
 | Was ist der Pilotfall `001-2`, und was schränkt ihn ein? | [`docs/methodology/pilot-case-001-2.md`](docs/methodology/pilot-case-001-2.md) |
+| Was ist der Pilotfall `002`, und was schränkt ihn ein? | [`docs/methodology/pilot-case-002.md`](docs/methodology/pilot-case-002.md) |
 | Was ist geplant? | [`docs/architecture/modules.md`](docs/architecture/modules.md), [`docs/plans/`](docs/plans/) |
 
 ## Architektur in Kürze
