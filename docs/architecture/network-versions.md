@@ -15,7 +15,7 @@ nicht nach v1 umcodiert, v1 liest keine v0-Pakete, und die Fälle der einen Vers
 | Geografie | Marburg · Region Marburg · übriges Deutschland · übriges Europa · außerhalb Europas | Marburg (Stadt) · übriges Mittelhessen · übriges Deutschland · übriges Europa · außerhalb Europas |
 | Code | [`src/mares/network_v0/`](../../src/mares/network_v0/__init__.py) | [`src/mares/network_v1/`](../../src/mares/network_v1/__init__.py) |
 | Vertrag | [`network-module.md`](network-module.md), [`visualization-conventions.md`](visualization-conventions.md) | [`network-v1.md`](network-v1.md) |
-| Ausgaben | `WORKSPACE/runs/<RUN-ID>/` (19 Abbildungen, Berichte) | elf Standardgrafiken in `<Fall>/graphics/`, Berichte in `WORKSPACE/runs/<RUN-ID>/` |
+| Ausgaben | neun Standardgrafiken (G1, G2, P1–P5, G3, X1) in `<Fall>/graphics/` bzw. im Lauf, Berichte in `WORKSPACE/runs/<RUN-ID>/` | elf Standardgrafiken in `<Fall>/graphics/`, Berichte in `WORKSPACE/runs/<RUN-ID>/` |
 | Tests | `tests/test_network_v0_*.py` | `tests/test_network_v1_*.py` |
 
 ## 1. Ein Bedienweg
@@ -50,9 +50,8 @@ nicht nach v1 umcodiert, v1 liest keine v0-Pakete, und die Fälle der einen Vers
   (die genaue Stelle im `PRIMARY`-Layout wird bei dessen Einrichtung festgelegt; [`storage-contract.md`](storage-contract.md) §4.4). Weil jeder Fall nur als
   logische Referenz (`INTAKE:network_v1/pilots/<Fall>`) angesprochen wird, ist der Umzug ein Wechsel des Rootnamens.
 - **v0-Fälle** bleiben, wo ihre Lieferung liegt (`INTAKE:inbox/…`); `network_v0/pilots/<Fall>/data/case.json` verweist mit
-  Referenz und SHA-256 auf Paket und Kuratierung. Weitere zwei bis drei v0-Pilotfälle erhalten denselben Eintrag. Die v0-Grafiken
-  entstehen weiterhin in den Läufen unter `WORKSPACE/runs/` (unverändert); ein `graphics/`-Ordner für v0 ist vorgesehen, aber noch nicht
-  befüllt (offen, siehe Run-Bericht 2026-10-31).
+  Referenz und SHA-256 auf Paket und Kuratierung. Weitere v0-Pilotfälle erhalten denselben Eintrag. `v0 render-case --case
+  INTAKE:network_v0/pilots/<Fall>` schreibt die neun Standardgrafiken nach `<Fall>/graphics/` ([`network-module.md`](network-module.md) §7).
 - **Test oder empirisch** entscheidet nie der Ordnername, sondern `metadata.json` (`case_type`, `provenance`,
   `empirical_analysis_eligible`; [`network-v1.md`](network-v1.md) §7).
 
@@ -64,6 +63,8 @@ nicht nach v1 umcodiert, v1 liest keine v0-Pakete, und die Fälle der einen Vers
 - Frühere Run-Berichte verweisen auf die alten Pfade; sie sind historische Journale und bleiben unverändert.
 - v1 nutzt versionsneutrale Bausteine aus v0 (ISO-Ländertabellen und UN-Geoschema in `network_v0.geo`, Renderprimitive in
   `network_v0.figures.style`, Laufhelfer in `network_v0.run`), statt sie zu kopieren.
+- Seit 2026-11-07 nutzt v0 umgekehrt die Grafikfunktionen von v1 mit einem v0-Profil (Skalen, Kategorien, Wortlaute aus dem
+  v0-Codebuch); die Daten bleiben v0, nichts wird umcodiert ([`ADR-0023`](../decisions/ADR-0023_2026-11-07_netzwerk-v0-standardgrafiken-und-fall-001-2.md)).
 
 ## 4. Testfall 001: Lesart der v0-Codes
 

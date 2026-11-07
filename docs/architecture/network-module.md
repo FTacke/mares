@@ -25,7 +25,7 @@ Code: [`src/mares/network_v0/`](../../src/mares/network_v0/__init__.py)
 | Prüfung | Validator mit Fehlern, Warnungen und Prüfhinweisen in vier Kategorien (§5) | fachliche Prüfung gegen die Originalbögen |
 | Netzwerk | Alter-Alter-Beziehungen aus bestätigten Gruppen; Erhebungsmethode, Dokumentationsform und Paarabdeckung getrennt geführt (§4) | Format für einzeln erfragte Paare im Paket |
 | Auswertung | beschreibende Häufigkeiten, Gruppengrößen, Mehrfachzugehörigkeiten; Strukturmaße nur bei bestätigter Paarabdeckung (§6) | Kennzahlen bei unbelegter Abdeckung |
-| Ausgabe | ein Lauf je Aufruf unter `WORKSPACE/runs/<RUN-ID>/` mit Berichten, Tabellen, Review-Register, dreizehn Grafiken (§7) | Ablage in `PRIMARY/derived/`, Datensatzversion `DS-…` |
+| Ausgabe | ein Lauf je Aufruf unter `WORKSPACE/runs/<RUN-ID>/` mit Berichten, Tabellen, Review-Register und den neun Standardgrafiken (§7); für einen registrierten Fall die Standardgrafiken in `<Fall>/graphics/` | Ablage in `PRIMARY/derived/`, Datensatzversion `DS-…` |
 
 Die Ergebnisse eines Laufs sind **regenerierbare Arbeitsdaten**. Sie sind weder erhalten noch gesichert und
 tragen keine Datensatzversion, solange `PRIMARY` und das Register fehlen.
@@ -206,8 +206,8 @@ Datenqualität).
 ## 7. Ausführung
 
 ```text
-.venv\Scripts\python -m mares.networks <Schritt> --package ROOT:relativer/Pfad [--curation ROOT:rel/curation.json] [--local-place NAME] [--formats svg,png,pdf]
-    [--profiles clean,analysis] [--language-view mode|mode:<code>|lang:<code>|multilingual] [--tie-highlight between|within|none]
+.venv\Scripts\python -m mares.networks <Schritt> --package ROOT:relativer/Pfad [--curation ROOT:rel/curation.json] [--local-place NAME] [--formats png,svg]
+.venv\Scripts\python -m mares.networks v0 render-case --case INTAKE:network_v0/pilots/<Fall> [--formats png,svg]
 ```
 
 | Schritt | zusätzlich zum vorherigen |
@@ -215,12 +215,32 @@ Datenqualität).
 | `validate` | Prüfbericht (`validation_report.md/.json`), `review/review_register.csv` |
 | `import` | kanonisches Netzwerk (`canonical/dataset.json`, `contacts.csv`, `ties.csv`, `group_memberships.csv`) mit Rohwerten und abgeleiteten Kategorien |
 | `analyze` | beschreibende Tabellen (`analysis/*.csv`, `tables.md`, `survey_status.json`) |
-| `figures` | neunzehn Abbildungen (SVG, PNG, PDF), gegliedert in `figures/core/` (B3, G2-B, P1, P2), `figures/supplementary/` (A, B1, B2, G1, G2-A, P3, C, D1, D2, E) und `figures/diagnostic/` (B0, B3-0, G2-0, G2-1, frühere G2-Fassung); die Abbildungen aus `core` und `supplementary` zusätzlich in der Arbeitsfassung (Profil `analysis`) unter `figures/analysis/<tier>/`; dazu das Register `figures/figures_index.json` (Gliederung: [`visualization-conventions.md`](visualization-conventions.md) §3.8) |
+| `figures` | die neun Standardgrafiken G1, G2, P1–P5, G3, X1 (PNG, SVG) unter `figures/` und das Register `figures/figures_index.json` (§7.1) |
 | `run` | Verarbeitungsbericht (`processing_report.md`) |
 
-**Optionen der Designabbildungen.** `--profiles` (Standard beide; gilt für `core` und `supplementary`), `--language-view` (Sprachansicht von P2; Standard `mode`), `--tie-highlight` (Hervorhebung in G2; Standard `between`).
-Sie ändern nur die Darstellung und stehen als `figure_options` im `run_record.json`. `figures_index.json` (`mares-figures-index/v0-draft`) ist das **Abbildungsregister des Laufs**: je Abbildung Tier, Frage, Basislayout, Kodierungen, Grenzen, Kandidaten-/Altmarkierung und Dateien; die drei räumlichen Bedeutungen
-(Nähe, Struktur, Geografie); die Gliederung; und die **vollständige Provenienz und den Datenqualitätsstatus** (`provenance`), die die Bilder nur als `MARES · 001-2 · vorläufig` andeuten.
+`render-case` liest den Fallverweis `<Fall>/data/case.json` (Paket und Kuratierung als logische Referenz mit SHA-256), prüft die
+Hashes, führt alle Schritte aus und schreibt die neun Standardgrafiken in `<Fall>/graphics/` (nur diese Dateien, nichts wird
+gelöscht). Pilotstatus, Eignung und Freigabe im Fallverweis ändert er nie.
+
+### 7.1 Standardgrafiken
+
+Seit [`ADR-0023`](../decisions/ADR-0023_2026-11-07_netzwerk-v0-standardgrafiken-und-fall-001-2.md) nutzt v0 die Grafikfunktionen von `network_v1` ([`network-v1.md`](network-v1.md) §6) mit einem eigenen
+**v0-Profil** ([`standard.py`](../../src/mares/network_v0/standard.py)); es gibt keinen zweiten Grafikcode. Das Profil liefert die
+v0-Skalen und -Wortlaute aus dem Codebuch des Pakets; nichts wird nach v1 umcodiert:
+
+| | v0 in den Standardgrafiken |
+|---|---|
+| Nähe | Tabellenwert 1–5, **5 = sehr nah** (G1: Ring 5 innen bis 1 außen; Legende „Tabellenwert der Erhebung, nicht die Kartenposition“; P1/P5 Zeilen 5 … 1) |
+| Kontakthäufigkeit | v0-Stufen, „täglich oder fast täglich“ oben |
+| Beziehung | eine Farbe je v0-Beziehungscode (gleiche Bedeutung = gleiche Farbe wie v1; Arbeit, Studium, Nachbarschaft/Community eigene Farben); mehrere Codes = **geteilter Knoten**, keine Hauptbeziehung; G1-Sektoren je Codekombination |
+| Medien, Sprachen, Funktionen | v0-Codes (P3 Medien in vier Gruppen, P4 alle Sprachen je Kontakt, P5 Funktionen); Mehrfachnennungen vollständig; Kategorien, die kein Kontakt hat, entfallen (keine Spalte oder Zeile mit n = 0); die Stufen von Nähe und Häufigkeit bleiben immer vollständig |
+| Gruppen | nur bestätigte Gruppen und Mitgliedschaften; v0 erhebt keine Zugehörigkeit, daher einzeilige Gruppenlabels ohne Skala |
+| Verbindungen | nur die bestätigten Beziehungen des v0-Netzwerks (§4); fehlende bleiben unbekannt |
+| Geografie | v0-Klassifikation (§6, [`geographic-classification.md`](geographic-classification.md)): Marburg · Region Marburg · übriges Deutschland · übriges Europa · außerhalb Europas; X1 mit dem Ortsverzeichnis von v1, eine Regionalangabe („Nähe Marburg“) ohne Koordinate („Wohnort nicht darstellbar“) |
+| Kennzeichnung | Fußzeile `MARES · network_v0 · <n> Kontakte`, Fallkennzeichen `FALL · v0-Pilot <Quellkennung>` |
+
+Die Dateinamen folgen v1 (`<Fall>_G1_persoenliches_netz.png` …). Die früheren neunzehn v0-Abbildungen (Profile `clean`/`analysis`,
+Ebenen `core`/`supplementary`/`diagnostic`) und ihre Module sind entfallen; frühere Läufe unter `WORKSPACE/runs/` bleiben, wie sie sind.
 
 `--package` und `--curation` sind **logische Referenzen** (`INTAKE:inbox/<Lieferung>/contents`); erlaubt sind nur `INTAKE`
 und `PRIMARY`. `BACKUP`, `EXCHANGE`, `WORKSPACE` und `LEGACY_IMPORT` sind nie Datenquelle. Ausgaben entstehen nur unter
@@ -246,7 +266,8 @@ byteidentische Tabellen und Grafiken, auch über Prozessgrenzen.
 | `model.py`, `geo.py` | Modell; Länder-, Orts- und Geburtslandregeln, fünfstufige geografische Klassifikation ([`geographic-classification.md`](geographic-classification.md)) |
 | `validate.py`, `build.py` | Prüfung und Prüfhinweise; Netzwerkkonstruktion |
 | `analysis.py`, `canonical.py`, `report.py` | Auswertung; kanonische Ausgabe; Berichte und Review-Register |
-| `figures/` | Konventionen (`style.py`), Kontaktsicht und Ring-Layout (`common.py`), kraftbasierte Layouts (`layouts.py`), Netzwerkfiguren B0–B2 (`network.py`), Ego im Netzwerk B3 (`ego_layouts.py`, `ego_network.py`), geografische Zonen G1/G2 (`geo_zones.py`), Designsystem (`design.py`, `figure_notes.py`), Perspektiven P1–P3 (`perspectives.py`), geografische Beziehungsnetze G2-A/G2-B (`geo_network.py`), Abbildungsregister und Gliederung (`registry.py`), `ego.py` (Ringe A, D2), `geography.py`, `language.py`, `overview.py` |
+| `standard.py` | v0-Profil der gemeinsamen Standardgrafiken, Übersetzung des v0-Datensatzes in die Fallstruktur der Grafikfunktionen, Rendern (§7.1) |
+| `figures/style.py` | versionsneutrale Renderprimitive (Schrift, Speichern), auch von v1 genutzt |
 | `run.py`, `cli.py` | Lauf und Kommandozeile |
 
 ## 9. Offen

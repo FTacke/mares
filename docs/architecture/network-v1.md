@@ -220,7 +220,9 @@ Begründung: [`ADR-0018`](../decisions/ADR-0018_2026-11-05_netzwerk-v1-redaktion
 
 ## 6. Die elf Standardgrafiken ([`figures/`](../../src/mares/network_v1/figures/__init__.py))
 
-Fehlen die Daten einer Grafik, entsteht keine Datei; der Lauf nennt den Grund (`figures_index.json`). Gemeinsame Bausteine: Punktmatrix
+Fehlen die Daten einer Grafik, entsteht keine Datei; der Lauf nennt den Grund (`figures_index.json`). Die Grafikfunktionen lesen
+Skalen, Kategorien, Farben und Bereichsnamen aus einem **Versionsprofil** (`base.Scheme`; für v1 die hier beschriebenen Werte); `network_v0`
+nutzt dieselben Funktionen G1, G2, P1–P5, G3 und X1 mit seinem eigenen Profil ([`network-module.md`](network-module.md) §7.1). Gemeinsame Bausteine: Punktmatrix
 (P1, P2, P5: gleiche Punkt- und Beschriftungsgröße, Kontakte einer Zelle nebeneinander und in Zeilen, nie überlappend) und Heatmap (P3, P4).
 Reihenfolge im Register: G1, G2, P1, P2, P3, P4, P5, G3, X1, G4, G5. Alle sichtbaren Texte der elf Grafiken mit Herkunft und Bedingung:
 [`network-v1-visualization-text-inventory.md`](network-v1-visualization-text-inventory.md) (Iststand, Grundlage der redaktionellen Prüfung).

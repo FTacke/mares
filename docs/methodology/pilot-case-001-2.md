@@ -32,9 +32,12 @@ Daraus folgt die Unterscheidung zwischen
 - **Dokumentationsform:** Gruppenumrandungen der Netzwerkkarte (die Gruppenzugehörigkeit steht nicht im Tabellenblatt);
 - **Paarabdeckung:** ob *jedes* der 231 möglichen Kontaktpaare erfasst wurde.
 
-Die Cliquenregel („alle in einer Umrandung kennen sich“) ist deshalb für die sechs bestätigten Gruppen zulässig; die **41**
-daraus folgenden ungerichteten Beziehungen (Überlappungen einfach gezählt) sind durch die Erhebung gedeckt, nicht durch
-eine unbelegte Annahme.
+**Klarstellung der Projektleitung vom 2026-11-07:** Verbindlich sind **vier** Gruppen (C01–C04). Ergänzende Umrandungen der
+Netzwerkkarte veranschaulichen Zusammenhänge, sind aber keine Gruppen und begründen keine Beziehungen. Für alle vier Gruppen gilt
+die Cliquenregel („alle in einer Gruppe kennen sich“, Entscheidung der Projektleitung); die **41** daraus folgenden ungerichteten
+Beziehungen (Überlappungen einfach gezählt) sind durch diese Entscheidung gedeckt. Gegenüber Paketversion 1.1 kommen drei Beziehungen
+eines Kontakts zur erweiterten Familiengruppe hinzu; drei Beziehungen, die nur aus einer ergänzenden Umrandung folgten, entfallen
+und sind wieder unbekannt.
 
 **Was die vorliegenden Informationen nicht belegen:** dass jedes der 231 Paare erfragt wurde. Weder das Paket noch die
 Klarstellung sagen, dass für Paare außerhalb der Gruppen eine Verneinung erhoben wurde. Deshalb bleiben die übrigen **190** Paare
@@ -49,7 +52,15 @@ sind unverändert.
 
 ## 3. Umfang der Lieferung
 
-22 Kontakte; sechs bestätigte Kontaktgruppen (Paketversion 1.1); 41 ungerichtete Beziehungen. Die Kontakte stammen von zwei
+**Stand Paketversion 1.2 (2026-11-07):** 22 Kontakte; vier bestätigte Gruppen mit 7, 5, 6 und 2 Mitgliedern (vier Kontakte in zwei
+Gruppen, sechs ohne Gruppe); 41 ungerichtete Beziehungen. Version 1.2 entstand aus 1.1 (unverändert in `INTAKE`) nach dem Abgleich mit
+einer geprüften Transkription beider Erhebungsblätter durch die Projektleitung; geändert sind nur die Gruppen (siehe §2) und die
+Funktionscodes eines Kontakts (zwei zusätzliche Funktionen bestätigt). Alle übrigen Werte stimmten mit 1.1 überein. Die Original-PDFs
+(Erhebungsblatt, Netzwerkkarte) liegen seit 2026-11-07 als eigene Lieferung in `INTAKE`; für Version 1.2 wurden sie nicht maschinell
+gelesen, ein Abgleich mit der Handschrift steht aus. Kuratierung und Fallverweis zeigen auf Version 1.2; Pilotstatus, Eignung und
+Freigabe sind unverändert.
+
+Bisheriger Stand (Paketversion 1.1): sechs bestätigte Kontaktgruppen; 41 ungerichtete Beziehungen. Die Kontakte stammen von zwei
 Erhebungsblättern; auf dem zweiten Blatt wurde die lokale Nummerierung irrtümlich neu begonnen und im Paket auf `A16`–`A22`
 abgebildet. Die ursprünglichen Nummern und das Blatt bleiben als Provenienz erhalten. Die sechs Gruppen überlappen: eine kleine
 Gruppe liegt vollständig im Durchschnitt zweier größerer; die Überlappung zählt keine Beziehung doppelt.
@@ -74,7 +85,11 @@ Jede Entscheidung trägt ihren Urheber (Projektleitung oder Vorschlag des Agente
 | Datenschutzhinweis (keine Namen im Paket) | geklärt | kein Datenproblem (Vorschlag) |
 | Normalisierung einer Standardabkürzung eines Ortsnamens | geklärt | im Paket vermerkt (Vorschlag, zu bestätigen) |
 | handschriftliche Ergänzungen zu Sprachmodus und Sprachwahl bei drei Kontakten; ein nicht übertragener Freitext | dokumentierte Mehrdeutigkeit | Codes bleiben wie erhoben; ohne Originalbogen nichts ergänzt (Vorschlag, zu bestätigen) |
-| möglicherweise zusätzliche Funktionscodes bei einem Kontakt | **offen** | nur am Originalbogen entscheidbar; nicht übernommen |
+| zusätzliche Funktionscodes bei einem Kontakt | geklärt (2026-11-07) | von der Projektleitung bestätigt und in 1.2 übernommen |
+| Sprachmodus 6 bei zwei weiteren Kontakten (Portugiesisch) | dokumentierte Mehrdeutigkeit (2026-11-07) | Rückmeldung nicht eindeutig; Code 6 bleibt, keine Umcodierung (Projektleitung) |
+| situationsabhängige Sprachwahl eines Kontakts (Erläuterung) | dokumentierte Mehrdeutigkeit (2026-11-07) | dem richtigen Kontakt zugeordnet; Sprachmodus 5 bleibt (Projektleitung) |
+| abweichende Länderannotation auf der Karte bei einem Kontakt | geklärt (2026-11-07) | Wohnort laut Erhebungsblatt; Kartenannotation ist Quellenabweichung (Projektleitung) |
+| Entstehung eines Kontakts über einen anderen | dokumentiert (2026-11-07) | Kontextnotiz; keine zusätzliche Beziehung, die Beziehung ist bereits über eine Gruppe belegt |
 | Paarabdeckung (werden alle 231 Paare erfragt?) | **offen** | siehe §2 |
 | Fall-ID, Provenienz, Quellenprüfung | **offen** | Registeraufgaben |
 
@@ -93,11 +108,12 @@ ob sich offene Fragen dort klären lassen, ist eine Aufgabe der Quellenprüfung.
    Die Einordnung „Marburg“ gilt nur bei exakt benanntem Ort.
 5. **Das Netzwerk eines einzelnen Falls** erlaubt keine Schlüsse auf Gruppen oder Populationen; auch bei bestätigter Paarabdeckung wären
    Strukturmaße explorativ und beschreibend.
-6. **Darstellung:** die Netzwerkabbildung ist ein kraftbasiertes Layout. Die Position eines Kontakts ergibt sich aus seinen
-   Beziehungen; sie ist keine räumliche oder soziale Nähe zu Ego, und der Abstand getrennter Teilnetze hat keine Bedeutung.
+6. **Darstellung:** Seit 2026-11-07 entstehen die neun Standardgrafiken (G1, G2, P1–P5, G3, X1) mit den Grafikfunktionen von
+   `network_v1` und einem v0-Profil ([`network-module.md`](../architecture/network-module.md) §7.1). G1 zeigt den Tabellenwert der Nähe,
+   nicht die Kartenposition; in G3 ist die Lage einer Gruppe Layout, ihr Abstand zu anderen hat keine Bedeutung.
 
 ## 6. Nächste fachliche Schritte
 
-Bestätigung der Paarabdeckung (Explorator/Projektleitung); Quellenprüfung der Daten gegen die Originalbögen, insbesondere die
-Funktionscodes eines Kontakts und die handschriftlichen Ergänzungen; Bestätigung der als Vorschlag gekennzeichneten
+Bestätigung der Paarabdeckung (Explorator/Projektleitung); Quellenprüfung der Daten gegen die Originalbögen (seit 2026-11-07 als PDF
+in `INTAKE`), insbesondere die handschriftlichen Ergänzungen; Bestätigung der als Vorschlag gekennzeichneten
 Kuratierungseinträge; Registrierung des Falls und Verknüpfung mit der früheren Erhebung (Fall-ID, Provenienz).
