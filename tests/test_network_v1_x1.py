@@ -395,3 +395,28 @@ def test_the_experimental_command_is_gone(tmp_path):
 
     with pytest.raises(SystemExit):
         build_parser().parse_args(["experimental-x1", "--root", "INTAKE"])
+
+
+def test_the_neighbour_option_puts_neighbouring_countries_on_the_germany_map(tmp_path):
+    """Off in network_v1 (the Europa panel shows them); a scheme may switch it on (network_v0 does)."""
+    from mares.network_v1.case import read_case as read
+    from mares.network_v1.figures.base import Context as Ctx, Scheme
+    from mares.network_v1.figures.maps import x1_layout as layout_of
+    from mares.network_v1.testcases import synthetic_source as source
+    from mares.network_v1.validate import validate as check
+    from network_v1_fixtures import geo as geo_of
+
+    class Together(Scheme):
+        x1_neighbours_with_germany = True
+
+    case = read(source())
+    g = geo_of(tmp_path)
+    plain = layout_of(Ctx(case, check(case).derived, g), g.gazetteer, g.countries)
+    together = layout_of(Ctx(case, check(case).derived, g, Together()), g.gazetteer, g.countries)
+    french = lambda lay: [p for p in lay.places if p.key and p.key[1] == "FRA"]  # noqa: E731
+    assert french(plain) and all(p.region == "europe" for p in french(plain))
+    assert french(together) and all(p.region == "germany" for p in french(together))
+    germany = next(pn for pn in together.panels if pn.region.key == "germany")
+    assert germany.region.title == "Deutschland und Frankreich"
+    assert any("Frankreich" in p.tail for p in french(together))  # a place outside Germany names its country
+    assert any(pn.region.key == "europe" for pn in together.panels)  # Spain is no neighbour: Europa stays

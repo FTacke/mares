@@ -177,6 +177,7 @@ class V0Scheme(Scheme):
     function_none = None
     p5_width = 16.0  # up to eleven function columns
     drop_empty = True  # functions, media and languages that no contact has are not shown
+    x1_neighbours_with_germany = True  # X1: contacts in a neighbouring country on the Germany map, no extra Europe panel
 
     def function_label(self, key):
         if key == "missing":

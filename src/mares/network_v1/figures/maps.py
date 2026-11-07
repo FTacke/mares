@@ -20,7 +20,7 @@ import csv
 import io
 import json
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from matplotlib import patheffects
@@ -88,6 +88,8 @@ REGIONS = (
            frame=((5.5, 15.5), (47.0, 55.3))),
 )
 ALWAYS = ("germany", "europe", "americas")
+# the direct neighbours of Germany: with Scheme.x1_neighbours_with_germany their places join the Germany panel
+NEIGHBOURS = ("DNK", "POL", "CZE", "AUT", "CHE", "FRA", "LUX", "BEL", "NLD")
 ASPECT_RANGE = (0.8, 1.5)  # width : height of a panel (degrees, latitude-corrected); a narrower extent is widened
 CONTINENT_REGION = {"North America": "americas", "South America": "americas", "Africa": "africa", "Asia": "asia", "Oceania": "oceania"}
 
@@ -188,8 +190,8 @@ class Place:
         parts = []
         if self.country_only:
             parts.append("nur Land bekannt")
-        elif self.country and self.region != "germany":
-            parts.append(self.country)
+        elif self.country and (self.region != "germany" or (self.key is not None and self.key[1] != "DEU")):
+            parts.append(self.country)  # in the Germany panel only a place in a neighbouring country names its country
         if total > 1:
             parts.append(f"n = {total}")
         return "".join(f" · {x}" for x in parts)
@@ -284,7 +286,8 @@ def _region_of(ctx: Context, cid: str, countries: dict[str, dict]) -> str | None
     if area in GERMANY:
         return "germany"
     if area is Area.EUROPE_OTHER:
-        return "europe"
+        neighbour = ctx.case.contact(cid).residence_country_iso3 in NEIGHBOURS
+        return "germany" if ctx.scheme.x1_neighbours_with_germany and neighbour else "europe"
     if area is Area.OUTSIDE_EUROPE:
         feature = countries.get(ctx.case.contact(cid).residence_country_iso3)
         continent = feature["properties"].get("CONTINENT") if feature else None
@@ -591,6 +594,22 @@ def _extent(region: Region, points: list[tuple[float, float]]) -> tuple[tuple[fl
     return (max(lon[0], -180.0), min(lon[1], 180.0)), (max(lat[0], -85.0), min(lat[1], 85.0))
 
 
+def _germany_with_neighbours(region: Region, places: list, countries: dict[str, dict]) -> Region:
+    """The Germany panel with places in neighbouring countries: the frame grows to take them in (with the margin), and
+    the title names those countries ('Deutschland und Österreich'). Without such places the region is unchanged."""
+    outside = [p for p in places if p.key is not None and p.key[1] != "DEU"]
+    if not outside:
+        return region
+    (lo0, lo1), (la0, la1) = region.frame
+    for p in outside:
+        lat, lon = p.anchor
+        lo0, lo1 = min(lo0, lon - region.margin), max(lo1, lon + region.margin)
+        la0, la1 = min(la0, lat - region.margin), max(la1, lat + region.margin)
+    names = sorted({(countries.get(p.key[1], {}).get("properties") or {}).get("NAME_DE") or p.country or p.key[1] for p in outside})
+    title = "Deutschland und " + (names[0] if len(names) == 1 else ", ".join(names[:-1]) + " und " + names[-1])
+    return replace(region, title=title, frame=((lo0, lo1), (la0, la1)))
+
+
 def x1_layout(ctx: Context, gazetteer: dict, countries: dict[str, dict]) -> X1Layout:
     """Places (or place groups, or countries), panels per region, place boxes and node positions. Deterministic."""
     unresolved, missing = [], []
@@ -623,9 +642,13 @@ def x1_layout(ctx: Context, gazetteer: dict, countries: dict[str, dict]) -> X1La
     for p in places:
         p.places = [(p.places[0][0], len(p.members))]
     used = {p.region for p in places}
+    together = ctx.scheme.x1_neighbours_with_germany
+    always = ("germany", "americas") if together else ALWAYS  # with neighbours on the Germany map: Europa only when needed
     panels = []
     for region in REGIONS:
-        if region.key in ALWAYS or region.key in used:
+        if region.key in always or region.key in used:
+            if together and region.key == "germany":
+                region = _germany_with_neighbours(region, [p for p in places if p.region == "germany"], countries)
             lon, lat = _extent(region, [p.anchor for p in places if p.region == region.key])
             panels.append(Panel(region, lon, lat))
     scale = [1.0 if pn.region.key == "germany" else OTHER_SCALE for pn in panels]

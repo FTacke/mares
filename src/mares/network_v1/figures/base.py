@@ -237,6 +237,7 @@ class Scheme:
     function_keys = ("1", "2", "3", "4", "5")
     function_none = "0"  # exclusive 'none of these'; a column only when it occurs
     p5_width: float | None = None  # main area width of P5 (None: as the other matrices)
+    x1_neighbours_with_germany = False  # True: X1 puts places in Germany's neighbouring countries on the Germany map
     drop_empty = False  # True: nominal categories without any contact (P3/P4 rows, P5 columns) are left out; scale steps always stay
 
     def function_label(self, key: str) -> str:
