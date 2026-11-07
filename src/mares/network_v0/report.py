@@ -17,6 +17,12 @@ from .validate import OpenQuestion, ValidationReport
 _DECIDERS = {"project_lead": "Projektleitung", "agent_proposal": "Vorschlag des Agenten (zu bestätigen)", "package": "Paket (empfohlene Aktion)"}
 
 
+GROUP_RULE_TEXT = {
+    "all_members_know_each_other": "alle Mitglieder derselben bestätigten Gruppe kennen sich gegenseitig",
+    "membership_only": "Gruppen dokumentieren nur Zugehörigkeit; aus ihnen folgt keine Beziehung (Paare unbekannt)",
+}
+
+
 def limits(status: SurveyStatus | None) -> tuple[str, ...]:
     """The known methodological limits of a run, stated for its survey status."""
     if status is None:
@@ -220,7 +226,7 @@ def processing_markdown(
         "",
         f"- Erhebungsmethode: {ELICITATION[curation.survey.elicitation]}",
         f"- Dokumentationsform: {DOCUMENTATION[curation.survey.documentation]}",
-        f"- Regel: {'alle Mitglieder derselben bestätigten Gruppe kennen sich gegenseitig' if curation.survey.group_rule else 'nicht angegeben'}",
+        f"- Regel: {GROUP_RULE_TEXT.get(curation.survey.group_rule, 'nicht angegeben')}",
         f"- Paarabdeckung: {'alle Paare erfasst' if curation.survey.coverage_complete else 'nicht belegt'}",
         f"- Grundlage: {curation.survey.basis or 'keine Kuratierung'}",
         "",

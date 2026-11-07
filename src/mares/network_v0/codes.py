@@ -18,7 +18,7 @@ from pathlib import Path
 SEPARATOR = "|"
 
 _RANGE = re.compile(r"([A-Za-z]*)(\d+)\s*[-–—]\s*(?:\1)?(\d+)")
-_ATOM = re.compile(r"[A-Za-z0-9_]+")
+_ATOM = re.compile(r"[A-Za-z0-9_]+(?:\.[0-9]+)?")  # a decimal code (3.5) only counts if the codebook defines it
 # A range that is not expanded blindly: a range spanning more than this is most likely a typo.
 _MAX_RANGE = 99
 

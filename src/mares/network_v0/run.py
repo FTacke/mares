@@ -186,7 +186,8 @@ def run_pipeline(
         outcome = "FAILED_VALIDATION"
     else:
         outcome = "COMPLETED"
-        network = build_network(dataset, coverage_complete=curation.survey.coverage_complete)
+        network = build_network(dataset, coverage_complete=curation.survey.coverage_complete,
+                                clique_rule=curation.survey.group_rule != "membership_only")
         status = survey_status(dataset, network, curation)
         if level >= 1:
             folder.write_text("canonical/dataset.json", canonical.dataset_json(dataset, network, params, curation))

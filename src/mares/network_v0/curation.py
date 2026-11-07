@@ -33,7 +33,7 @@ FORMAT = "mares-network-curation/v0-draft"
 ELICITATION = {"asked_per_pair": "Beziehungen einzeln erfragt", "not_stated": "Erhebungsmethode nicht angegeben"}
 DOCUMENTATION = {"group_outlines": "Gruppenumrandungen der Netzwerkkarte", "not_stated": "Dokumentationsform nicht angegeben"}
 COVERAGE = ("not_established", "complete")
-GROUP_RULES = ("all_members_know_each_other",)
+GROUP_RULES = ("all_members_know_each_other", "membership_only")  # membership_only: groups imply no tie (no clique rule)
 DECIDERS = ("project_lead", "agent_proposal")
 
 _FLAG_REF = re.compile(r"flag:(A(?:0[1-9]|[1-9][0-9]+)):([A-Za-z0-9_]+)")

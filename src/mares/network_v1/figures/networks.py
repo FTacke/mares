@@ -425,11 +425,11 @@ def g2(ctx: Context):
     unassigned = any(Area.UNRESOLVED in (area[a], area[b]) for a, b in edges)  # dashed like ties between areas
     sections = [
         ctx.scheme.relation_section(ctx.case),
-        ("Verbindungen", [
+        *([("Verbindungen", [
             ("line", "innerhalb eines Bereichs", {"color": TIE, "linewidth": 1.0}),
             ("line", "zwischen Bereichen" + (" · ohne Bereich" if unassigned else ""),
              {"color": TIE_BETWEEN, "linewidth": 0.8, "linestyle": (0, (4, 2.5))}),
-        ]),
+        ])] if edges else []),  # no tie at all (v0 membership only): the legend explains no line
         (None, [("area", "gleicher Wohnort / gleiches Wohnland", {"facecolor": "#FFFFFF", "edgecolor": "#B8C0C8", "linewidth": 0.7})]),
     ]
     p = page(ctx, "G2", main_w=G2_W, main_h=layout.height, legend="bottom", sections=sections,
@@ -967,20 +967,17 @@ def belonging_sections(ctx: Context, *, ring: bool) -> list[tuple]:
     """The legend sections of G3 after the node colours: the belonging scale (with the missing codes that occur), the
     confirmed tie and -- if any contact has ring segments -- the several-groups marker. Without a recorded belonging
     (network_v0) there is no scale."""
-    ties = (None, [("line", "bestätigte Verbindung", {"color": TIE, "linewidth": 1.0})]
-                  + ([("ring", "Mitglied mehrerer Gruppen", [GROUP_COLORS[0], GROUP_COLORS[1]])] if ring else []))
+    tie = [("line", "bestätigte Verbindung", {"color": TIE, "linewidth": 1.0})] if ctx.derived.confirmed_edges else []
+    ties = (None, tie + ([("ring", "Mitglied mehrerer Gruppen", [GROUP_COLORS[0], GROUP_COLORS[1]])] if ring else []))
+    tail = [ties] if ties[1] else []  # an empty section is not drawn
     if not ctx.scheme.belonging:
-        return [ties]
+        return tail
     scale = [("scale", "Zugehörigkeit: 1 sehr stark – 5 überhaupt nicht", "2")]
     missing = sorted({g.belonging.missing for g in ctx.case.groups if not g.belonging.value}, key=list(MISSING_SHORT).index)
     if missing:  # only the short codes that occur, with an empty scale
         named = " · ".join(f"{MISSING_SHORT[m]} = {codes.MISSING_LABELS[m].split(' (')[0]}" for m in missing)
         scale.append(("scale", named, None))
-    return [
-        (None, scale),
-        (None, [("line", "bestätigte Verbindung", {"color": TIE, "linewidth": 1.0})]
-               + ([("ring", "Mitglied mehrerer Gruppen", [GROUP_COLORS[0], GROUP_COLORS[1]])] if ring else [])),
-    ]
+    return [(None, scale)] + tail
 
 
 def g3(ctx: Context):

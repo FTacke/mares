@@ -60,6 +60,11 @@ class SchemeError(ValueError):
     """The codebook of a package does not have the meanings the v0 scheme was made for. Nothing is drawn."""
 
 
+def _num(value: float) -> str:
+    """5.0 -> '5', 3.5 -> '3,5' (German decimal comma)."""
+    return str(int(value)) if value == int(value) else f"{value:g}".replace(".", ",")
+
+
 def _cap(text: str) -> str:
     return text[:1].upper() + text[1:]
 
@@ -131,18 +136,27 @@ class V0Scheme(Scheme):
     def g1_radius(self, value):
         return 6.0 - value  # 5 (very close) innermost ... 1 outermost
 
+    def _steps(self, field: str) -> list[str]:
+        """The codes of a scale, highest first; a decimal code (3.5) is a step of its own if the codebook defines it."""
+        return sorted(self.book[field], key=float, reverse=True)
+
     def g1_rings(self):
-        return [(6.0 - v, str(v), True) for v in range(5, 0, -1)]
+        steps = [float(c) for c in self._steps("closeness_1_5")]
+        return [(6.0 - v, _num(v) if v == int(v) else None, v == int(v)) for v in steps]  # an intermediate step: dashed
 
     def g1_legend(self):
         words = self.book["closeness_1_5"]
-        text = "\n".join(f"{v} {words[str(v)]}" for v in range(5, 0, -1))
-        return [("line", text, {"color": "#9AA5B1", "linewidth": 1.0}),
-                ("text", "Tabellenwert der Erhebung,\nnicht die Kartenposition", None)]
+        whole = [c for c in self._steps("closeness_1_5") if float(c) == int(float(c))]
+        half = [c for c in self._steps("closeness_1_5") if float(c) != int(float(c))]
+        entries = [("line", "\n".join(f"{_num(float(c))} {words[c]}" for c in whole), {"color": "#9AA5B1", "linewidth": 1.0})]
+        if half:
+            entries.append(("line", "Zwischenwert " + " · ".join(_num(float(c)) for c in half),
+                            {"color": "#C3CAD1", "linewidth": 0.7, "linestyle": (0, (2, 3))}))
+        return entries + [("text", "Tabellenwert der Erhebung,\nnicht die Kartenposition", None)]
 
     def closeness_rows(self, include_missing):
         words = self.book["closeness_1_5"]
-        rows = [(float(v), f"{v} · {words[str(v)]}") for v in range(5, 0, -1)]
+        rows = [(float(c), f"{_num(float(c))} · {words[c]}") for c in self._steps("closeness_1_5")]
         return rows + ([("missing", MISSING_LABEL)] if include_missing else [])
 
     def closeness_key(self, contact):
@@ -152,7 +166,7 @@ class V0Scheme(Scheme):
     # contact frequency: 5 = daily on top
     def frequency_rows(self):
         words = self.book["contact_frequency"]
-        return [(code, _cap(words[code])) for code in sorted(words, key=int, reverse=True)]
+        return [(code, _cap(words[code])) for code in self._steps("contact_frequency")]
 
     def frequency_key(self, contact):
         return contact.contact_frequency.value if contact.contact_frequency.recorded else "missing"

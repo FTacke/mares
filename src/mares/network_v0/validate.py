@@ -34,6 +34,7 @@ from .package import CONTACT_COLUMNS
 
 _SEVERITY_ORDER = {Severity.ERROR: 0, Severity.WARNING: 1, Severity.INFO: 2}
 _EXPECTED_RULE = "all_pairs_know_each_other"
+_MEMBERSHIP_RULE = "membership_only"  # curation group_rule membership_only: the clarification confirms membership only
 _EXPECTED_RELATION = "know_each_other"
 # Review actions after which the package itself documents a decision; every other action is open.
 # Without a curation statement the package's own recommended action is the fallback.
@@ -203,7 +204,7 @@ def _contact_findings(dataset: NetworkDataset, local_places: tuple[str, ...], cu
     return ids_ok
 
 
-def _group_findings(dataset: NetworkDataset, found: list[Finding]) -> None:
+def _group_findings(dataset: NetworkDataset, found: list[Finding], clique_rule: bool = True) -> None:
     group_ids = [g.group_id for g in dataset.groups]
     for group_id, count in Counter(group_ids).items():
         if count > 1:
@@ -222,7 +223,7 @@ def _group_findings(dataset: NetworkDataset, found: list[Finding]) -> None:
             _add(found, Severity.ERROR, "membership_contact_unknown", m.group_id, f"Mitgliedschaft verweist auf unbekannten Kontakt {m.contact_id!r}.")
         if m.status not in (CONFIRMED, CANDIDATE):
             _add(found, Severity.ERROR, "membership_status_unknown", m.group_id, f"{m.contact_id}: unbekannter Status {m.status!r}.")
-        if m.derivable_edge not in ("yes", "no") or (m.derivable_edge == "yes") != (m.status == CONFIRMED):
+        if m.derivable_edge not in ("yes", "no") or (m.derivable_edge == "yes") != (m.status == CONFIRMED and clique_rule):
             _add(found, Severity.ERROR, "derivable_edge_inconsistent", m.group_id, f"{m.contact_id}: 'derivable_edge' ({m.derivable_edge}) passt nicht zum Status ({m.status}).")
         group = groups.get(m.group_id)
         if group is not None and m.status == CONFIRMED and not group.confirmed:
@@ -233,7 +234,7 @@ def _group_findings(dataset: NetworkDataset, found: list[Finding]) -> None:
 
     for group in dataset.groups:
         confirmed = [m for m in dataset.memberships if m.group_id == group.group_id and m.status == CONFIRMED]
-        if group.confirmed and len(confirmed) < 2:
+        if group.confirmed and len(confirmed) < 2 and clique_rule:
             _add(found, Severity.WARNING, "group_too_small", group.group_id, f"Bestätigte Gruppe mit {len(confirmed)} bestätigten Mitgliedern erzeugt keine Beziehung.")
         if not any(m.group_id == group.group_id for m in dataset.memberships):
             _add(found, Severity.WARNING, "group_without_members", group.group_id, "Gruppe ohne Mitgliedschaften.")
@@ -246,7 +247,7 @@ def _group_findings(dataset: NetworkDataset, found: list[Finding]) -> None:
             continue
         if set(clar.member_contact_ids) != confirmed:
             _add(found, Severity.ERROR, "clarification_mismatch", clar.clarification_id, f"Die geklärten Mitglieder von {clar.group_id} stimmen nicht mit den bestätigten Mitgliedschaften überein.")
-        if clar.relationship_rule != _EXPECTED_RULE:
+        if clar.relationship_rule != (_EXPECTED_RULE if clique_rule else _MEMBERSHIP_RULE):  # must match the curation's group rule
             _add(found, Severity.WARNING, "clarification_rule_unknown", clar.clarification_id, f"Unbekannte Beziehungsregel {clar.relationship_rule!r}.")
         _add(
             found, Severity.INFO, "group_basis_user_statement", clar.group_id,
@@ -265,9 +266,9 @@ def _review_findings(dataset: NetworkDataset, found: list[Finding]) -> None:
             _add(found, Severity.WARNING, "review_reference_unknown", item.review_id, f"Verweis {item.reference!r} bezeichnet weder Kontakt noch Gruppe noch 'all'.")
 
 
-def _network_findings(dataset: NetworkDataset, found: list[Finding]) -> Network | None:
+def _network_findings(dataset: NetworkDataset, found: list[Finding], clique_rule: bool = True) -> Network | None:
     try:
-        network = build_network(dataset)
+        network = build_network(dataset, clique_rule=clique_rule)
     except (NetworkConstructionError, ValueError) as error:
         _add(found, Severity.ERROR, "network_not_constructible", "dataset", str(error))
         return None
@@ -436,9 +437,10 @@ def validate(
     _package_findings(dataset, found)
     _curation_findings(dataset, curation, found)
     ids_ok = _contact_findings(dataset, local_places, curation, found)
-    _group_findings(dataset, found)
+    clique_rule = curation.survey.group_rule != "membership_only"
+    _group_findings(dataset, found, clique_rule)
     _review_findings(dataset, found)
     if ids_ok:
-        _network_findings(dataset, found)
+        _network_findings(dataset, found, clique_rule)
     found.sort(key=lambda f: (_SEVERITY_ORDER[f.severity], f.code, f.subject, f.message))
     return ValidationReport(tuple(found), _open_questions(dataset, curation), _completeness(dataset), len(dataset.contacts))

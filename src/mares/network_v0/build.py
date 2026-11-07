@@ -72,7 +72,10 @@ class Network:
         return tuple(group for group, members in self.confirmed_groups if contact_id in members)
 
 
-def build_network(dataset: NetworkDataset, explicit_ties: Iterable[Tie] = (), *, coverage_complete: bool = False) -> Network:
+def build_network(dataset: NetworkDataset, explicit_ties: Iterable[Tie] = (), *, coverage_complete: bool = False,
+                  clique_rule: bool = True) -> Network:
+    """``clique_rule=False`` (curation ``group_rule: membership_only``): confirmed groups stay groups, but no tie follows
+    from them -- the survey documented membership only."""
     known = set(dataset.contact_ids)
     confirmed_groups = {group.group_id for group in dataset.groups if group.confirmed}
 
@@ -90,8 +93,9 @@ def build_network(dataset: NetworkDataset, explicit_ties: Iterable[Tie] = (), *,
     for group_id in sorted(members_by_group):
         members = sorted(set(members_by_group[group_id]), key=ids.contact_number)
         members_by_group[group_id] = members
-        for a, b in combinations(members, 2):
-            origin.setdefault((a, b), []).append(group_id)
+        if clique_rule:
+            for a, b in combinations(members, 2):
+                origin.setdefault((a, b), []).append(group_id)
 
     ties: dict[tuple[str, str], Tie] = {
         pair: Tie(pair[0], pair[1], TieState.YES, TieBasis.CLIQUE_RULE, tuple(groups))
