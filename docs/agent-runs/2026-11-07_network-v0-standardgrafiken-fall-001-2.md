@@ -80,6 +80,10 @@ Vorab: Working Tree sauber, `main` = `origin/main` (`7bba3e5`).
   - überall geteilter Knoten für den Kontakt mit zwei Beziehungscodes, keine Überlagerungen.
 - **Tests:** 497 bestanden.
 
+## 4a. Nachtrag im Lauf
+
+Auf Wunsch der Projektleitung: In v0 kommen Wohnorte in direkten Nachbarländern Deutschlands auf die Deutschland-Karte von X1 (bei 001-2 ein gemeinsames Panel „Deutschland und Österreich“, kein Europa-Panel). Umgesetzt als Option des Versionsprofils (`x1_neighbours_with_germany`), in v1 aus; v1 bytegleich geprüft, ein Test dazu.
+
 ## 5. Status und offene Punkte
 
 - Implementiert, getestet und gerendert; nicht wissenschaftlich validiert. Datenqualität `UNREVIEWED`.
