@@ -12,7 +12,6 @@ import pytest
 import network_v0_fixtures as fx
 from mares.network_v0.analysis import AnalysisParams, descriptive_tables, geo_labels, residence_of
 from mares.network_v0.build import build_network
-from mares.network_v0.figures.common import contact_views
 from mares.network_v0.figures.style import GEO_COLORS, GEO_ORDER
 from mares.network_v0.geo import EUROPE_ISO3, ISO3, GeoCategory, classify_residence
 from mares.network_v0.package import read_package
@@ -84,12 +83,12 @@ def test_the_classification_does_not_change_the_data(tmp_path):
     rows[1].update(residence_city="Bogotá", residence_country_iso3="COL")
     dataset = read_package(fx.build_package(tmp_path / "p", contacts=rows))
     before = [(c.contact_id, dict(c.text), {k: v.codes for k, v in c.codes.items()}) for c in dataset.contacts]
-    views = {v.contact_id: v for v in contact_views(dataset, PARAMS)}
+    views = {c.contact_id: residence_of(c, PARAMS) for c in dataset.contacts}
     residence_of(dataset.contacts[0], PARAMS)
     descriptive_tables(dataset, build_network(dataset), PARAMS)
     assert [(c.contact_id, dict(c.text), {k: v.codes for k, v in c.codes.items()}) for c in dataset.contacts] == before  # attributes unchanged
-    assert views["A01"].geo is GeoCategory.EUROPE_OTHER and views["A01"].city == "Wien" and views["A01"].residence_country == "AUT"  # the real place and country stay
-    assert views["A02"].geo is GeoCategory.OUTSIDE_EUROPE and views["A02"].residence_country == "COL"
+    assert views["A01"].category is GeoCategory.EUROPE_OTHER and views["A01"].city == "Wien" and views["A01"].country == "AUT"  # the real place and country stay
+    assert views["A02"].category is GeoCategory.OUTSIDE_EUROPE and views["A02"].country == "COL"
 
 
 def test_the_residence_table_counts_all_five_steps(tmp_path):

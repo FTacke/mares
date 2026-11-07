@@ -2,13 +2,15 @@
 
 One call is one run (``RUN-...``) with its own folder ``WORKSPACE/runs/<RUN-ID>``. The ladder of
 stages is cumulative: ``validate`` stops after validation, ``import`` also writes the canonical
-network, ``analyze`` the descriptive tables, ``figures`` the graphics, ``run`` additionally the
-processing report. Everything is recomputed from the input each time; nothing is cached, so a repeated
+network, ``analyze`` the descriptive tables, ``figures`` the nine standard figures (G1, G2, P1-P5, G3, X1, drawn
+by the shared figure functions of network_v1 with the v0 scheme, :mod:`mares.network_v0.standard`), ``run``
+additionally the processing report. Everything is recomputed from the input each time; nothing is cached, so a repeated
 run on a revised data version is just another run.
 
 Locations: the input is a logical reference (``INTAKE`` or ``PRIMARY`` plus a relative path) -- the package
 folder and, optionally, a curation file (statements about the package; see :mod:`mares.network_v0.curation`) --
-the output is always below ``WORKSPACE``. ``BACKUP`` and ``EXCHANGE`` are never a data source, and nothing is
+the output is below ``WORKSPACE``; only the standard figures of a registered case go to the case's ``graphics/``
+(:func:`render_case`). ``BACKUP`` and ``EXCHANGE`` are never a data source, and nothing is
 written anywhere else. A package with validation errors is not processed further.
 """
 
@@ -16,6 +18,7 @@ from __future__ import annotations
 
 import json
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -32,19 +35,18 @@ from mares.core.refs import StorageRef
 from mares.core.roots import Roots
 
 from . import canonical, report as reports
+from . import standard
 from .curation import NO_CURATION, Curation, CurationError, read_curation
 from .analysis import AnalysisParams, descriptive_tables, survey_status
 from .build import build_network
-from .figures import ego_layouts, ego_network, layouts, registry
-from .figures import network as network_figures
-from .figures.registry import FigureContext, FigureOptions
-from .figures.style import rc, save_figure
 from .package import FORMAT, PackageError, read_package
 from .validate import validate
 
 STAGES = ("validate", "import", "analyze", "figures", "run")
 ALLOWED_INPUT_ROOTS = ("INTAKE", "PRIMARY")  # BACKUP and EXCHANGE are never a data source
-DEFAULT_FORMATS = ("svg", "png", "pdf")
+DEFAULT_FORMATS = ("png", "svg")  # as the standard figures of network_v1
+CASE_POINTER = "mares-network-v0-case-pointer/v1"
+TREE = "network_v0"
 
 class PipelineError(RuntimeError):
     """The run cannot start or continue (an unusable input location, an unknown stage ...)."""
@@ -140,16 +142,17 @@ def run_pipeline(
     *,
     curation_ref: StorageRef | None = None,
     params: AnalysisParams | None = None,
-    options: FigureOptions | None = None,
     formats: tuple[str, ...] = DEFAULT_FORMATS,
     clock: Callable[[], datetime] = lambda: datetime.now(timezone.utc),
+    case_code: str | None = None,
+    graphics: StorageRef | None = None,
+    case_type: str = "pilot",
 ) -> RunResult:
     if stage not in STAGES:
         raise PipelineError(f"unknown stage {stage!r}; one of {', '.join(STAGES)}")
     if package.root not in ALLOWED_INPUT_ROOTS:
         raise PipelineError(f"{package.root} is not a permitted data source; use one of {', '.join(ALLOWED_INPUT_ROOTS)}")
     params = params or AnalysisParams()
-    options = options or FigureOptions()
     level = STAGES.index(stage)
 
     if curation_ref is not None and curation_ref.root not in ALLOWED_INPUT_ROOTS:
@@ -197,27 +200,24 @@ def run_pipeline(
             folder.write_text("analysis/tables.md", "\n\n".join(t.to_markdown() for t in tables) + "\n")
             folder.write_text("analysis/survey_status.json", json.dumps(status.to_dict(), indent=2, ensure_ascii=False) + "\n")
         if level >= 3:
-            figures_dir = folder.path("figures")
-            figures_dir.mkdir(parents=True, exist_ok=True)
-            context = FigureContext(
-                dataset, status, params, network,
-                structure=network_figures.build_structure(network, params_layout(params)),  # one layout for B1 and B2
-                ego_structure=ego_network.build_ego_structure(network),  # B3 and P2: the same contact positions, ego added
-                options=options,
-            )
-            for spec in registry.SPECS:
-                for profile in registry.profiles_of(spec, options):
-                    target = registry.target_dir(figures_dir, spec, profile)
-                    target.mkdir(parents=True, exist_ok=True)
-                    figure = spec.build(context, profile or "clean")
-                    with rc():
-                        save_figure(figure, target / spec.stem, formats)
-            folder.write_text("figures/figures_index.json", json.dumps(registry.figure_index(options, formats, status), indent=2, ensure_ascii=False) + "\n")
+            from mares.network_v1.run import load_geo  # the map sources of X1 (place directory, basemap); imported late: v1 uses this module
+
+            geo = load_geo(roots, package.root)
+            code = case_code or "v0_" + re.sub(r"[^A-Za-z0-9]", "_", dataset.case.source_label)
+            context = standard.figure_context(dataset, network, case_code=code, local_places=params.local_places, geo=geo, case_type=case_type)
+            target = roots.resolve(graphics, writable=True) if graphics is not None else folder.path("figures")
+            figures = standard.render_standard(context, target, formats)
+            folder.write_text("figures/figures_index.json", json.dumps({
+                "format": "mares-network-v0-figures/v2", "case_code": code, "dataset_version": "network_v0",
+                "figure_functions": "network_v1 (shared), scheme network_v0", "graphics": graphics.to_dict() if graphics else None,
+                "standard_set": [f"{c}" for c in standard.STANDARD_CODES], "figures": figures,
+                "map_sources": geo.sources or {"missing": geo.missing},
+            }, indent=2, ensure_ascii=False) + "\n")
 
     finished = clock()
     if level >= 4:
         record = _record(run_id, stage, outcome, started, finished, package, dataset, validation, params, formats, [], None, status,
-                         curation=curation, curation_ref=curation_ref, options=options)
+                         curation=curation, curation_ref=curation_ref)
         outputs = folder.outputs(run_ref, exclude=("run_record.json", "processing_report.md"))
         folder.write_text(
             "processing_report.md",
@@ -226,18 +226,13 @@ def run_pipeline(
         )
     outputs = folder.outputs(run_ref, exclude=("run_record.json",))
     record = _record(run_id, stage, outcome, started, finished, package, dataset, validation, params, formats, outputs, None, status,
-                     curation=curation, curation_ref=curation_ref, options=options)
+                     curation=curation, curation_ref=curation_ref)
     folder.write_text("run_record.json", json.dumps(record, indent=2, ensure_ascii=False) + "\n")
     return RunResult(run_id, run_ref, run_dir, outcome, record)
 
 
-def params_layout(params: AnalysisParams) -> str:
-    """The layout variant of the network figures: a documented choice, see the layout comparison."""
-    return layouts.DEFAULT_VARIANT
-
-
 def _record(run_id, stage, outcome, started, finished, package, dataset, validation, params, formats, outputs, error, status=None,
-            *, curation: Curation = NO_CURATION, curation_ref: StorageRef | None = None, options: FigureOptions | None = None):
+            *, curation: Curation = NO_CURATION, curation_ref: StorageRef | None = None):
     groups = validation.by_category() if validation is not None else {}
     return {
         "schema": "mares-run-record/v0-draft",
@@ -274,9 +269,9 @@ def _record(run_id, stage, outcome, started, finished, package, dataset, validat
         },
         "dataset_version": None,
         "software": _software(),
-        "parameters": {**params.to_dict(), "figure_formats": list(formats), "layout_seed": layouts.SEED,
-                       "network_layout": layouts.DEFAULT_VARIANT, "ego_layout": ego_layouts.DEFAULT_EGO_VARIANT, "stage": stage,
-                       "figure_options": (options or FigureOptions()).to_dict(), "font": "DejaVu Sans"},
+        "parameters": {**params.to_dict(), "figure_formats": list(formats), "stage": stage,
+                       "figure_set": "standard figures G1, G2, P1-P5, G3, X1 (network_v1 figure functions, network_v0 scheme)",
+                       "font": "DejaVu Sans"},
         "data_quality": None
         if validation is None
         else {
@@ -296,3 +291,32 @@ def _record(run_id, stage, outcome, started, finished, package, dataset, validat
         "methodological_limits": list(reports.limits(status)),
     }
 
+
+
+def render_case(roots: Roots, case_ref: StorageRef, *, formats: tuple[str, ...] = DEFAULT_FORMATS,
+                params: AnalysisParams | None = None) -> RunResult:
+    """A registered v0 case (``ROOT:network_v0/pilots/<case>``): read its pointer ``data/case.json`` (package and curation
+    as logical references with SHA-256), check the hashes, run everything and draw the nine standard figures into the
+    case's ``graphics/`` (only these files; nothing is deleted). The pointer stays as it is: pilot status, eligibility and
+    release are never changed here."""
+    if case_ref.root not in ALLOWED_INPUT_ROOTS or len(case_ref.parts) != 3 or case_ref.parts[0] != TREE:
+        raise PipelineError(f"a v0 case is addressed as ROOT:{TREE}/<kind>/<case> in INTAKE or PRIMARY, not {case_ref.root}:{case_ref.rel}")
+    pointer_path = roots.resolve(case_ref.child("data", "case.json"))
+    try:
+        pointer = json.loads(pointer_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise PipelineError(f"{case_ref.root}:{case_ref.rel}/data/case.json unreadable: {error}") from error
+    if pointer.get("format") != CASE_POINTER or pointer.get("dataset_version") != TREE:
+        raise PipelineError("data/case.json is no network_v0 case pointer")
+    package = StorageRef.from_dict(pointer["package"]["ref"])
+    package_dir = roots.resolve(package)
+    for entry in pointer["package"].get("files", []):
+        if sha256_file(package_dir / entry["name"]) != entry["sha256"]:
+            raise PipelineError(f"package file {entry['name']} does not match the hash in case.json")
+    curation = pointer.get("curation")
+    curation_ref = StorageRef.from_dict(curation["ref"]) if curation else None
+    if curation and sha256_file(roots.resolve(curation_ref)) != curation["sha256"]:
+        raise PipelineError("the curation file does not match the hash in case.json")
+    return run_pipeline(roots, package, "run", curation_ref=curation_ref, params=params, formats=formats,
+                        case_code=str(pointer["case_code"]), graphics=case_ref.child("graphics"),
+                        case_type=str(pointer.get("case_type", "pilot")))

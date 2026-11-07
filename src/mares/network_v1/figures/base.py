@@ -19,6 +19,7 @@ from __future__ import annotations
 import math
 import zlib
 from dataclasses import dataclass, field
+from collections import Counter
 from typing import Callable, Sequence
 
 import numpy as np
@@ -26,6 +27,7 @@ from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 from matplotlib.font_manager import FontProperties
 from matplotlib.lines import Line2D
+from matplotlib.patheffects import withStroke
 from matplotlib.patches import Circle, FancyBboxPatch, Rectangle, Wedge
 from matplotlib.textpath import TextPath
 
@@ -129,6 +131,127 @@ def relation_section(case: Case) -> tuple[str, list[tuple]]:
     return "Beziehungstyp", relation_entries(case)
 
 
+# --------------------------------------------------------------------------------------- survey scheme ---
+class Scheme:
+    """What the figures take from the survey design: version name, scales, categories, labels and colours.
+
+    The figure functions are shared by network_v1 and network_v0; each version brings its own scheme, so a v0 case is
+    drawn with v0 codes, scales and wordings (never recoded to v1). This class is the network_v1 scheme; the network_v0
+    one lives in :mod:`mares.network_v0.standard`.
+    """
+
+    version = "network_v1"
+    belonging = True  # groups carry a recorded belonging (scale in G3)
+    closeness_title = "Persönliche Nähe"
+    frequency_title = "Kontakthäufigkeit"
+    bracket = BRACKET_LABEL  # above the first two residence areas
+    area_labels = AREA_LABELS
+    g1_missing_radius = 4.75  # the outer arc of contacts without closeness
+
+    # relation types: node colour and legend
+    def fill(self, case: Case, contact_id: str):
+        """The node colour: one colour, several (a split node) or None (no answer)."""
+        return relation_fill(case, contact_id)
+
+    def relation_section(self, case: Case) -> tuple[str, list[tuple]]:
+        return relation_section(case)
+
+    def sector_order(self, case: Case) -> tuple[str, ...]:
+        """G1: the angular sectors in their fixed order ('' = no answer)."""
+        return tuple(codes.RELATION_TYPE) + ("",)
+
+    def sector_key(self, case: Case, contact_id: str) -> str:
+        cell = case.contact(contact_id).relation_type
+        return cell.value if cell.recorded and cell.value in codes.RELATION_TYPE else ""
+
+    # closeness
+    def closeness(self, contact) -> float | None:
+        return codes.closeness_value(contact.closeness)
+
+    def g1_radius(self, value: float) -> float:
+        return value
+
+    def g1_rings(self) -> list[tuple[float, str | None, bool]]:
+        """(radius, ring number or None, whole step) of every ring of G1."""
+        return [(v, f"{int(v)}" if v == int(v) else None, v == int(v)) for v in codes.CLOSENESS_LEVELS]
+
+    def g1_legend(self) -> list[tuple]:
+        return [  # the dashed rings are always drawn, so their line always explains them
+            ("line", "1 sehr nah · 2 nah ·\n3 weniger nah ·\n4 außerhalb der Kreise", {"color": "#9AA5B1", "linewidth": 1.0}),
+            ("line", "Zwischenwerte: 1,5 · 2,5 · 3,5", {"color": "#C3CAD1", "linewidth": 0.7, "linestyle": (0, (2, 3))}),
+        ]
+
+    def closeness_rows(self, include_missing: bool) -> list[tuple[object, str]]:
+        return closeness_rows(include_missing)
+
+    def closeness_key(self, contact):
+        value = codes.closeness_value(contact.closeness)
+        return value if value is not None else "missing"
+
+    # contact frequency (P2)
+    def frequency_rows(self) -> list[tuple[str, str]]:
+        return list(codes.CONTACT_FREQUENCY.items())
+
+    def frequency_key(self, contact):
+        return contact.contact_frequency.value if contact.contact_frequency.recorded else "missing"
+
+    # communication (P3)
+    def communication_sections(self) -> list[tuple[str, list[tuple[str, str]]]]:
+        sections = (("Persönliche Kommunikation", ("1",)), ("Synchron auf Distanz", ("2", "3")), ("Asynchron", ("4", "5")),
+                    ("Weitere Formen", ("6",)))
+        return [(title, [(code, codes.COMMUNICATION_FORMS[code]) for code in keys]) for title, keys in sections]
+
+    def forms(self, case: Case, contact_id: str):
+        b = case.communication.get(contact_id)
+        return b.forms.values if b is not None and b.forms.recorded else None
+
+    # languages (P4)
+    def language_rows(self, case: Case) -> tuple[list[tuple[str, str]], dict[str, tuple[str, ...]]]:
+        """Rows of P4 and the row keys of every contact. Every named other language is a row of its own (most frequent
+        first, then alphabetical); code 5 without a name has a row of its own."""
+        named: Counter = Counter()
+        for b in case.communication.values():
+            if b.other_languages.recorded:
+                named.update(b.other_languages.values)
+        shown = [name for name, _ in sorted(named.items(), key=lambda kv: (-kv[1], kv[0]))]
+        rows = [(code, label) for code, label in codes.LANGUAGES.items() if code != codes.LANGUAGE_OTHER]
+        rows += [(f"other:{name}", name) for name in shown]
+        keys: dict[str, tuple[str, ...]] = {}
+        unnamed = False
+        for cid, b in case.communication.items():
+            if not b.languages.recorded:
+                continue
+            ks = [v for v in b.languages.values if v != codes.LANGUAGE_OTHER]
+            if codes.LANGUAGE_OTHER in b.languages.values:
+                names = b.other_languages.values if b.other_languages.recorded else ()
+                if not names:
+                    ks.append("other:?")
+                    unnamed = True
+                ks += [f"other:{name}" for name in names]
+            keys[cid] = tuple(dict.fromkeys(ks))
+        if unnamed:
+            rows.append(("other:?", "Andere Sprache (ohne Bezeichnung)"))
+        return rows, keys
+
+    # relation functions (P5)
+    function_keys = ("1", "2", "3", "4", "5")
+    function_none = "0"  # exclusive 'none of these'; a column only when it occurs
+    p5_width: float | None = None  # main area width of P5 (None: as the other matrices)
+    drop_empty = False  # True: nominal categories without any contact (P3/P4 rows, P5 columns) are left out; scale steps always stay
+
+    def function_label(self, key: str) -> str:
+        return {
+            "1": "Persönlicher\nRückhalt / Rat", "2": "Gemeinsame\nAktivitäten /\nGespräche", "3": "Praktische Hilfe\nim Alltag",
+            "4": "Sprachliche Hilfe /\nÜbersetzung", "5": "Sonstiges", "0": "Nichts davon", "missing": MISSING_LABEL,
+        }[key]
+
+    def functions(self, contact):
+        return contact.functions.values if contact.functions.recorded else None
+
+
+V1 = Scheme()
+
+
 # ------------------------------------------------------------------------------------------------ case context ---
 @dataclass(frozen=True)
 class Geo:
@@ -147,6 +270,7 @@ class Context:
     case: Case
     derived: Derived
     geo: Geo | None = None
+    scheme: Scheme = V1
 
     @property
     def code(self) -> str:
@@ -182,7 +306,7 @@ def case_badge(ctx: Context) -> str:
 def footer_line(ctx: Context) -> str:
     """The same footer on every figure: the number of contacts recorded in the case. Data quality, review state and
     provenance stay in the metadata and run records (the badge marks test cases)."""
-    return f"MARES · network_v1 · {len(ctx.case.contacts)} Kontakte"
+    return f"MARES · {ctx.scheme.version} · {len(ctx.case.contacts)} Kontakte"
 
 
 def file_name(case_code: str, figure_code: str, name: str, ext: str) -> str:
@@ -278,6 +402,8 @@ def _swatch(ax: Axes, kind: str, x: float, y: float, payload) -> None:
                                edgecolor="none", clip_on=False, zorder=4))
     elif kind == "scale":
         ordinal_dots(ax, x + 0.02, y, payload, clip=False)
+    elif kind == "split":
+        split_node(ax, cx, y, payload, 0.066, zorder=3, clip=False)
     elif kind == "ramp":
         for i, share in enumerate((0.0, 0.25, 0.5, 0.75, 1.0)):
             ax.add_patch(Rectangle((x + i * 0.2, y - 0.075), 0.18, 0.15, facecolor=heat_fill(share), edgecolor=CELL_RIM,
@@ -389,10 +515,32 @@ def scatter_kwargs(style: dict) -> dict:
             "linestyle": style.get("linestyle", "solid")}
 
 
+SPLIT_TEXT = "#111111"  # the ID on a split node: dark, with a white halo (no single fill decides the contrast)
+
+
+def split_node(ax: Axes, x: float, y: float, colors: Sequence[str], radius: float, *, zorder: int = 4, clip: bool = True) -> None:
+    """A node with several relation codes: equal segments from the top, clockwise, in code order (no main relation)."""
+    n = len(colors)
+    for i, color in enumerate(colors):
+        ax.add_patch(Wedge((x, y), radius, 90 - 360 * (i + 1) / n, 90 - 360 * i / n, facecolor=color, edgecolor="#FFFFFF",
+                           linewidth=0.5, zorder=zorder, clip_on=clip))
+    ax.add_patch(Circle((x, y), radius, fill=False, edgecolor=NODE_RIM, linewidth=0.6, zorder=zorder, clip_on=clip))
+
+
 def draw_nodes(ax: Axes, positions: dict[str, tuple[float, float]], fills: dict[str, str | None], *, zorder: int = 4) -> None:
-    """Network nodes: relation-type fill, fine neutral rim, contact ID inside."""
+    """Network nodes: relation-type fill, fine neutral rim, contact ID inside. A tuple of colours is a split node."""
     for cid, (x, y) in positions.items():
-        style = node_style(fills.get(cid))
+        fill = fills.get(cid)
+        if isinstance(fill, tuple) and len(fill) > 1:  # radius in data units (G1 draws in ring units, the others in inches)
+            box = ax.get_position()
+            per_inch = (ax.get_xlim()[1] - ax.get_xlim()[0]) / (box.width * ax.figure.get_figwidth())
+            split_node(ax, x, y, fill, NODE_PT / 72 / 2 * per_inch, zorder=zorder)
+            ax.text(x, y, cid, fontsize=NODE_ID_PT, color=SPLIT_TEXT, ha="center", va="center", zorder=zorder + 1, fontweight="bold",
+                    path_effects=[withStroke(linewidth=2.2, foreground="#FFFFFF")])
+            continue
+        if isinstance(fill, tuple):
+            fill = fill[0]
+        style = node_style(fill)
         ax.scatter([x], [y], s=node_size(), zorder=zorder, **scatter_kwargs(style))
         ax.text(x, y, cid, fontsize=NODE_ID_PT, color=label_color(style["facecolor"]), ha="center", va="center",
                 zorder=zorder + 1, fontweight="bold")
@@ -495,9 +643,9 @@ OUTSIDE_GAP = 0.18  # a little more room before 'außerhalb Europas' (a category
 MISSING_GAP = 0.3  # before 'keine Angabe'
 
 
-def area_columns() -> list[tuple[Area, str]]:
+def area_columns(scheme: Scheme = V1) -> list[tuple[Area, str]]:
     """The five display areas in their fixed order; 'nicht zuordenbar' is never a column."""
-    return [(a, AREA_LABELS[a].replace("übriges ", "übriges\n").replace("außerhalb ", "außerhalb\n").replace(" (Stadt)", "\n(Stadt)"))
+    return [(a, scheme.area_labels[a].replace("übriges ", "übriges\n").replace("außerhalb ", "außerhalb\n").replace(" (Stadt)", "\n(Stadt)"))
             for a in AREA_ORDER]
 
 
@@ -518,7 +666,7 @@ def area_gaps(keys: Sequence[object]) -> dict[int, float]:
 
 
 def _headers(ax: Axes, xs: dict, col_w: float, columns: Sequence[tuple[object, str]], counts: dict[object, int], top: float,
-             y_title: str | None) -> None:
+             y_title: str | None, bracket: str = BRACKET_LABEL) -> None:
     for key, label in columns:
         ax.text(xs[key] + col_w / 2, top - 0.08, f"{label}\nn = {counts.get(key, 0)}", ha="center", va="top", fontsize=LABEL_PT,
                 color=INK, linespacing=1.2)
@@ -527,7 +675,7 @@ def _headers(ax: Axes, xs: dict, col_w: float, columns: Sequence[tuple[object, s
         x0, x1 = xs[Area.MARBURG] + 0.1, xs[Area.MITTELHESSEN] + col_w - 0.1
         y = top + 0.08
         ax.plot([x0, x0, x1, x1], [y - 0.06, y, y, y - 0.06], color=MUTED, linewidth=0.8)
-        ax.text((x0 + x1) / 2, y + 0.04, BRACKET_LABEL, ha="center", va="bottom", fontsize=LABEL_PT - 0.5, color=MUTED)
+        ax.text((x0 + x1) / 2, y + 0.04, bracket, ha="center", va="bottom", fontsize=LABEL_PT - 0.5, color=MUTED)
     if y_title:
         ax.text(0, top - HEADER_ROWS_H + 0.06, y_title, ha="left", va="bottom", fontsize=LABEL_PT, fontweight="bold", color=INK)
 
@@ -575,6 +723,7 @@ def point_matrix(
     column_counts: dict[object, int],
     tints: dict[object, str] | None = None,
     y_title: str | None = None,
+    bracket: str = BRACKET_LABEL,
 ) -> dict[str, tuple[float, float]]:
     """Categories on both axes; every contact is a dot with its ID in its cell, several side by side and in lines.
     Draws into ``ax`` in inch coordinates; returns the dot positions (for tests)."""
@@ -602,7 +751,7 @@ def point_matrix(
         ax.text(shift - 0.14, y0 - geometry.row_h / 2, label, ha="right", va="center", fontsize=LABEL_PT,
                 color=MUTED if key == "missing" else INK, style="italic" if key == "missing" else "normal")
     ax.plot([shift - 0.1, width], [grid_bottom, grid_bottom], color="#E5E8EB", linewidth=0.6, zorder=1)
-    _headers(ax, xs, col_w, columns, column_counts, top, y_title)
+    _headers(ax, xs, col_w, columns, column_counts, top, y_title, bracket)
     cells: dict[tuple[object, object], list[Item]] = {}
     for item in items:
         cells.setdefault((item.column, item.row), []).append(item)
@@ -616,8 +765,11 @@ def point_matrix(
             line, slot = divmod(k, geometry.per_line)
             cx = x_start + slot * SLOT_W + 0.07
             cy = ys[rk] - geometry.row_h / 2 - (line - (n_lines - 1) / 2) * SLOT_H
-            style = node_style(item.color)
-            ax.scatter([cx], [cy], s=node_size(DOT_PT), zorder=3, **scatter_kwargs(style))
+            if isinstance(item.color, tuple) and len(item.color) > 1:  # several relation codes (network_v0)
+                split_node(ax, cx, cy, item.color, DOT_PT / 72 / 2, zorder=3)
+            else:
+                style = node_style(item.color[0] if isinstance(item.color, tuple) else item.color)
+                ax.scatter([cx], [cy], s=node_size(DOT_PT), zorder=3, **scatter_kwargs(style))
             ax.text(cx + 0.075, cy, item.contact_id, fontsize=ID_PT, color=INK, ha="left", va="center", zorder=4)
             positions[f"{item.contact_id}@{ck}"] = (cx, cy)
     return positions
@@ -659,6 +811,7 @@ def heat_matrix(
     counts: dict[tuple[object, object], int],
     bases: dict[object, int],
     missing: dict[object, int],
+    bracket: str = BRACKET_LABEL,
 ) -> dict[tuple[object, object], str]:
     """Rows (in visual sections) x area columns. A cell shows the number of contacts; its shade is the share among the
     column's contacts with an answer (n in the header). Returns the cell texts (for tests)."""
@@ -669,7 +822,7 @@ def heat_matrix(
     ax.set_xlim(0, width)
     ax.set_ylim(0, height)
     top = height - BRACKET_H
-    _headers(ax, xs, col_w, columns, bases, top, None)
+    _headers(ax, xs, col_w, columns, bases, top, None, bracket)
     y = top - HEADER_ROWS_H
     texts = {}
     for title, rows in sections:

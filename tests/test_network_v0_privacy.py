@@ -99,7 +99,9 @@ def test_the_cli_runs_on_a_copy_of_the_example_in_synthetic_roots(tmp_path):
     roots = Roots(load_root_specs(), env, checkout=folders["checkout"])
     assert cli.main(["figures", "--package", "INTAKE:inbox/example", "--formats", "svg"], roots=roots) == 0
     (run,) = (folders["workspace"] / "runs").iterdir()
-    assert len(list((run / "figures").glob("*/*.svg"))) == 19  # core 4, supplementary 10, diagnostic 5; the analysis versions are one level deeper
+    index = json.loads((run / "figures" / "figures_index.json").read_text(encoding="utf-8"))
+    rendered = [f for f in index["figures"] if f["status"] == "rendered"]
+    assert len(rendered) == 8 and len(list((run / "figures").glob("*.svg"))) == 8  # the nine standard figures; X1 without map sources
 
 
 def test_no_source_text_carries_a_label_of_a_real_case():

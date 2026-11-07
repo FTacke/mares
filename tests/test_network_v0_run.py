@@ -17,7 +17,7 @@ import network_v0_fixtures as fx
 from mares.core.refs import StorageRef
 from mares.core.roots import RootError, Roots, load_root_specs
 from mares.network_v0 import cli
-from mares.network_v0.figures import registry
+from mares.network_v0 import standard
 from mares.network_v0.run import PipelineError, STAGES, _RunFolder, parse_ref, run_pipeline
 
 SPECS = load_root_specs()
@@ -61,10 +61,15 @@ def test_a_full_run_writes_only_below_the_workspace_run_folder(machine):
     names = {p.relative_to(result.run_dir).as_posix() for p in result.run_dir.rglob("*") if p.is_file()}
     assert {"run_record.json", "processing_report.md", "validation_report.md", "validation_report.json", "canonical/dataset.json",
             "canonical/ties.csv", "analysis/tables.md", "analysis/survey_status.json", "review/review_register.csv"} <= names
-    for spec in registry.SPECS:  # every figure in the folder of its tier; the working version of the clean ones in figures/analysis/<tier>
-        folder = f"figures/{spec.tier}/{spec.stem}"
-        assert {f"{folder}.svg", f"{folder}.png"} <= names and f"{folder}.pdf" not in names, spec.stem
-    assert "figures/figures_index.json" in names
+    index = json.loads((result.run_dir / "figures" / "figures_index.json").read_text(encoding="utf-8"))
+    assert [f["code"] for f in index["figures"]] == ["G1", "G2", "P1", "P2", "P3", "P4", "P5", "G3", "X1"]  # the nine standard figures
+    for entry in index["figures"]:
+        if entry["code"] == "X1":  # no map sources in this machine: skipped with the reason, never drawn from elsewhere
+            assert entry["status"] == "skipped" and "fehlt" in entry["reason"]
+            continue
+        assert entry["status"] == "rendered" and {f"figures/{f}" for f in entry["files"]} <= names, entry["code"]
+        assert {f.rsplit(".", 1)[1] for f in entry["files"]} == {"svg", "png"}
+    assert index["dataset_version"] == "network_v0" and index["graphics"] is None
 
 
 def test_the_run_record_documents_inputs_parameters_status_and_outputs(machine):
@@ -123,7 +128,7 @@ def test_stages_are_cumulative(machine):
         "validate": {"validation_report.md"},
         "import": {"canonical/dataset.json"},
         "analyze": {"analysis/tables.md"},
-        "figures": {"figures/supplementary/fig_A_ego_naehe_wohnort.png"},
+        "figures": {"figures/figures_index.json"},
         "run": {"processing_report.md"},
     }
     seen: set[str] = set()

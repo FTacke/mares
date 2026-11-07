@@ -701,7 +701,7 @@ def x1(ctx: Context, gazetteer: dict | None = None, countries: dict[str, dict] |
     country_only = any(p.country_only for p in layout.places)
     others = any(p.others for p in layout.places)
     sections = [
-        relation_section(ctx.case),
+        ctx.scheme.relation_section(ctx.case),
         (None, [("dot", "Wohnort (Ortspunkt)", POINT)]
                + ([("text", "○ weiterer Ort einer Ortsgruppe", None)] if others else [])
                + ([("area", "nur Wohnland bekannt (Lage unscharf)", {"facecolor": "none", "edgecolor": MUTED, "linewidth": 0.8,
@@ -744,5 +744,5 @@ def x1(ctx: Context, gazetteer: dict | None = None, countries: dict[str, dict] |
         if p.sub:
             ax.text(x0 + BOX_PAD, y0 + BOX_PAD, p.sub, fontsize=BOX_SUB_PT, color="#7B8590", ha="left", va="bottom", zorder=8,
                     linespacing=1.1, path_effects=halo)
-    draw_nodes(ax, layout.positions, {cid: relation_fill(ctx.case, cid) for cid in layout.positions}, zorder=5)
+    draw_nodes(ax, layout.positions, {cid: ctx.scheme.fill(ctx.case, cid) for cid in layout.positions}, zorder=5)
     return p_.figure

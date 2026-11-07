@@ -230,7 +230,7 @@ def processing_markdown(
         f"{' (Arbeitsverzeichnis mit uncommitteten Änderungen)' if software['git_dirty'] else ''}",
         f"- Python {software['python']} · " + " · ".join(f"{k} {v}" for k, v in software["dependencies"].items()),
         f"- Parameter: Orte der Referenzlokalität = {', '.join(params['local_places'])}; Formate = {', '.join(params['figure_formats'])}; "
-        f"Layout-Seed (Netzwerkfigur) = {params['layout_seed']}; Layout = {params['network_layout']}; Ego-Layout (B3) = {params['ego_layout']}",
+        f"Grafiken = {params['figure_set']}",
         "",
         "## Datenqualitätsstatus",
         "",

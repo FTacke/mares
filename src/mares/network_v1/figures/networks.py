@@ -36,7 +36,7 @@ def _edges(ctx: Context) -> list[tuple[str, str]]:
 
 
 def _fills(ctx: Context, ids) -> dict[str, str | None]:
-    return {cid: relation_fill(ctx.case, cid) for cid in ids}
+    return {cid: ctx.scheme.fill(ctx.case, cid) for cid in ids}
 
 
 def _tie(ax, path: MplPath, *, color: str, width: float, dashed: bool = False, zorder: int = 2) -> None:
@@ -50,7 +50,7 @@ def _straight(p1, p2) -> MplPath:
 
 
 # ---------------------------------------------------------------------------------------------------- G1 ---
-MISSING_RADIUS = 4.75
+MISSING_RADIUS = 4.75  # network_v1 (Scheme.g1_missing_radius)
 LABEL_HALF_WIDTH = 0.42  # half the width kept free for the ring numbers at the top, in ring units
 G1_SIZE = 8.4  # inches, square main area
 SECTOR_ORDER = tuple(codes.RELATION_TYPE) + ("",)  # the six relation types, then 'keine Angabe' -- in every case
@@ -59,21 +59,22 @@ NODE_GAP_IN = 0.08  # free space between two nodes on one ring (inches)
 
 
 def relation_code(ctx: Context, cid: str) -> str:
-    cell = ctx.case.contact(cid).relation_type
-    return cell.value if cell.recorded and cell.value in codes.RELATION_TYPE else ""
+    """The G1 sector of a contact (its relation type; '' = no answer), as the scheme of the case defines it."""
+    return ctx.scheme.sector_key(ctx.case, cid)
 
 
 def g1_sectors(ctx: Context) -> dict[str, tuple[float, float]]:
     """Angular sector per relation type as a share (0 ... 1) of the circle, in the fixed order of SECTOR_ORDER,
     counter-clockwise from the ring numbers at the top. Width ∝ number of contacts; absent types get no width but keep
     their place in the order."""
-    counts = {code: 0 for code in SECTOR_ORDER}
+    order = ctx.scheme.sector_order(ctx.case)
+    counts = {code: 0 for code in order}
     for cid in ctx.case.contact_ids:
         counts[relation_code(ctx, cid)] += 1
-    present = [code for code in SECTOR_ORDER if counts[code]]
+    present = [code for code in order if counts[code]]
     total = sum(counts.values()) + SECTOR_GAP * len(present)
     sectors, f = {}, 0.0
-    for code in SECTOR_ORDER:
+    for code in order:
         w = counts[code] / total if total else 0.0
         if counts[code]:
             f += SECTOR_GAP / 2 / total
@@ -106,12 +107,14 @@ def g1_layout(ctx: Context) -> dict[str, tuple[float, float]]:
     a type are spread over their sector (in ID order) and then pushed apart just enough that no two nodes overlap; the
     ring numbers at the top stay free. Only the angle is layout; no contact is ever moved to another radius.
     Deterministic."""
+    scheme = ctx.scheme
     radius = {}
     for c in ctx.case.contacts:
-        value = codes.closeness_value(c.closeness)
-        radius[c.id] = value if value is not None else MISSING_RADIUS
+        value = scheme.closeness(c)
+        radius[c.id] = scheme.g1_radius(value) if value is not None else scheme.g1_missing_radius
     sectors = g1_sectors(ctx)
-    lim = (MISSING_RADIUS if MISSING_RADIUS in radius.values() else max(codes.CLOSENESS_LEVELS)) + 0.45
+    outer = max(r for r, _label, _whole in scheme.g1_rings())
+    lim = (scheme.g1_missing_radius if scheme.g1_missing_radius in radius.values() else outer) + 0.45
     node = (2 * NODE_R_IN + NODE_GAP_IN) * 2 * lim / G1_SIZE  # node diameter plus gap, in ring units
     by_ring: dict[float, dict[str, list[str]]] = defaultdict(lambda: defaultdict(list))
     for cid in ctx.case.contact_ids:
@@ -121,7 +124,7 @@ def g1_layout(ctx: Context) -> dict[str, tuple[float, float]]:
         wedge = math.atan2(LABEL_HALF_WIDTH, r)  # wider on inner rings
         start, span = math.pi / 2 + wedge, 2 * math.pi - 2 * wedge
         ids, wanted = [], []
-        for code in SECTOR_ORDER:
+        for code in scheme.sector_order(ctx.case):
             f0, f1 = sectors[code]
             members = sorted(by_type.get(code, []))
             for i, cid in enumerate(members):
@@ -135,30 +138,26 @@ def g1_layout(ctx: Context) -> dict[str, tuple[float, float]]:
 
 def g1(ctx: Context):
     """Closeness and relation type only. Contact-contact ties are shown in G2 and G3, not here."""
-    sections = [
-        relation_section(ctx.case),
-        ("Persönliche Nähe", [  # the dashed rings are always drawn, so their line always explains them
-            ("line", "1 sehr nah · 2 nah ·\n3 weniger nah ·\n4 außerhalb der Kreise", {"color": "#9AA5B1", "linewidth": 1.0}),
-            ("line", "Zwischenwerte: 1,5 · 2,5 · 3,5", {"color": "#C3CAD1", "linewidth": 0.7, "linestyle": (0, (2, 3))}),
-        ]),
-    ]
+    scheme = ctx.scheme
+    sections = [scheme.relation_section(ctx.case), (scheme.closeness_title, scheme.g1_legend())]
     p = page(ctx, "G1", main_w=G1_SIZE, main_h=G1_SIZE, legend="side", sections=sections)
     ax = p.main
-    without = any(codes.closeness_value(c.closeness) is None for c in ctx.case.contacts)
-    lim = (MISSING_RADIUS if without else max(codes.CLOSENESS_LEVELS)) + 0.45  # the outer arc only when it is needed
+    rings = scheme.g1_rings()
+    missing_r = scheme.g1_missing_radius
+    without = any(scheme.closeness(c) is None for c in ctx.case.contacts)
+    lim = (missing_r if without else max(r for r, _label, _whole in rings)) + 0.45  # the outer arc only when it is needed
     ax.set_xlim(-lim, lim)
     ax.set_ylim(-lim, lim)
-    for value in codes.CLOSENESS_LEVELS:
-        whole = value == int(value)
+    for value, label, whole in rings:
         ax.add_patch(Circle((0, 0), value, fill=False, edgecolor="#9AA5B1" if whole else "#C3CAD1",
                             linewidth=1.0 if whole else 0.7, linestyle="solid" if whole else (0, (2, 3)), zorder=0))
-        if whole:
-            ax.text(0, value, f"{int(value)}", fontsize=LABEL_PT - 1, color=MUTED, ha="center", va="center", zorder=1,
+        if label:
+            ax.text(0, value, label, fontsize=LABEL_PT - 1, color=MUTED, ha="center", va="center", zorder=1,
                     bbox={"boxstyle": "round,pad=0.12", "facecolor": "white", "edgecolor": "none"})
     positions = g1_layout(ctx)
     if without:
-        ax.add_patch(Circle((0, 0), MISSING_RADIUS, fill=False, edgecolor="#C9CED3", linewidth=0.6, linestyle=(0, (1, 3))))
-        ax.text(0, -MISSING_RADIUS - 0.22, MISSING_LABEL, fontsize=LABEL_PT - 1.5, color=MUTED, ha="center", va="top", style="italic")
+        ax.add_patch(Circle((0, 0), missing_r, fill=False, edgecolor="#C9CED3", linewidth=0.6, linestyle=(0, (1, 3))))
+        ax.text(0, -missing_r - 0.22, MISSING_LABEL, fontsize=LABEL_PT - 1.5, color=MUTED, ha="center", va="top", style="italic")
     ax.add_patch(Circle((0, 0), 0.36, facecolor=EGO_FILL, edgecolor="white", zorder=5))
     ax.text(0, 0, "Ego", color="white", fontsize=LABEL_PT - 1, ha="center", va="center", fontweight="bold", zorder=6)
     draw_nodes(ax, positions, _fills(ctx, positions))
@@ -425,7 +424,7 @@ def g2(ctx: Context):
     area = {cid: ctx.derived.area(cid) for cid in ctx.case.contact_ids}
     unassigned = any(Area.UNRESOLVED in (area[a], area[b]) for a, b in edges)  # dashed like ties between areas
     sections = [
-        relation_section(ctx.case),
+        ctx.scheme.relation_section(ctx.case),
         ("Verbindungen", [
             ("line", "innerhalb eines Bereichs", {"color": TIE, "linewidth": 1.0}),
             ("line", "zwischen Bereichen" + (" · ohne Bereich" if unassigned else ""),
@@ -443,12 +442,12 @@ def g2(ctx: Context):
     header_y = layout.zone_top + 0.08
     for a, (x0, x1) in layout.bands.items():
         ax.add_patch(Rectangle((x0, zone_bottom), x1 - x0, layout.zone_top - zone_bottom, facecolor=AREA_TINTS[a], edgecolor="none", zorder=0))
-        ax.text((x0 + x1) / 2, header_y, f"{AREA_LABELS[a]}\nn = {counts[a]}", ha="center", va="bottom", fontsize=LABEL_PT,
+        ax.text((x0 + x1) / 2, header_y, f"{ctx.scheme.area_labels[a]}\nn = {counts[a]}", ha="center", va="bottom", fontsize=LABEL_PT,
                 color=INK, linespacing=1.2)
     m0, m1 = layout.bands[Area.MARBURG][0] + 0.1, layout.bands[Area.MITTELHESSEN][1] - 0.1
     yb = layout.height - BRACKET_H_G2 + 0.06
     ax.plot([m0, m0, m1, m1], [yb - 0.06, yb, yb, yb - 0.06], color=MUTED, linewidth=0.8)
-    ax.text((m0 + m1) / 2, yb + 0.04, BRACKET_LABEL, ha="center", va="bottom", fontsize=LABEL_PT - 0.5, color=MUTED)
+    ax.text((m0 + m1) / 2, yb + 0.04, ctx.scheme.bracket, ha="center", va="bottom", fontsize=LABEL_PT - 0.5, color=MUTED)
     if layout.isolated_top is not None:
         y = layout.isolated_top
         ax.plot([0, G2_W], [y, y], color="#B8C0C8", linewidth=0.7, linestyle=(0, (3, 3)), zorder=1)
@@ -729,12 +728,19 @@ def display_name(label: str) -> str:
     return name if len(name) <= NAME_MAX else name[: NAME_MAX - 1].rstrip() + "…"
 
 
-def group_label_lines(ctx: Context, group) -> tuple[str, str]:
-    """First line of a group label ('C04 · name (3)'), and the text after the belonging dots."""
-    return f"{group.id} · {display_name(group.label)} ({len(ctx.case.members(group.id))})", belonging_text(group)
+def group_label_lines(ctx: Context, group) -> tuple[str, str | None]:
+    """First line of a group label ('C04 · name (3)'), and the text after the belonging dots (None: the survey records
+    no belonging, the label has one line)."""
+    second = belonging_text(group) if ctx.scheme.belonging else None
+    return f"{group.id} · {display_name(group.label)} ({len(ctx.case.members(group.id))})", second
 
 
-def _label_width(first: str, second: str) -> float:
+LABEL_H_ONE = 0.22  # a label without belonging line
+
+
+def _label_width(first: str, second: str | None) -> float:
+    if second is None:
+        return text_width(first, LEGEND_PT, bold=True) + 0.1
     line2 = scale_width() + 0.08 + text_width(second, LEGEND_PT - 0.6, bold=True)
     return max(text_width(first, LEGEND_PT, bold=True), line2) + 0.1
 
@@ -811,7 +817,8 @@ def place_labels(ctx: Context, positions: dict[str, tuple[float, float]], hulls:
     result = {}
     groups = sorted((g for g in ctx.case.groups if g.id in hulls), key=lambda g: -len(ctx.case.members(g.id)))
     for g in groups:
-        w, h = _label_width(*label_lines(g)), LABEL_H
+        lines = label_lines(g)
+        w, h = _label_width(*lines), (LABEL_H if lines[1] is not None else LABEL_H_ONE)
         hull = hulls[g.id]
         best, best_cost = None, None
         for box, rank in label_candidates(hull, w, h):
@@ -947,6 +954,8 @@ def draw_g3(ax, ctx: Context, geometry: G3Geometry, *, colors: dict[str, str], n
         ax.add_patch(FancyBboxPatch((box[0], box[1]), box[2] - box[0], box[3] - box[1], boxstyle="round,pad=0.02,rounding_size=0.05",
                                     facecolor="#FFFFFF", alpha=0.85, edgecolor="none", zorder=6, gid=f"label-{gid}"))
         ax.text(box[0] + 0.05, box[3] - 0.03, first, ha="left", va="top", fontsize=LEGEND_PT, fontweight="bold", color=colors[gid], zorder=7)
+        if second is None:
+            continue
         y = box[1] + 0.1
         x = box[0] + 0.05
         x += ordinal_dots(ax, x, y, g.belonging.value) + 0.08
@@ -956,7 +965,12 @@ def draw_g3(ax, ctx: Context, geometry: G3Geometry, *, colors: dict[str, str], n
 
 def belonging_sections(ctx: Context, *, ring: bool) -> list[tuple]:
     """The legend sections of G3 after the node colours: the belonging scale (with the missing codes that occur), the
-    confirmed tie and -- if any contact has ring segments -- the several-groups marker."""
+    confirmed tie and -- if any contact has ring segments -- the several-groups marker. Without a recorded belonging
+    (network_v0) there is no scale."""
+    ties = (None, [("line", "bestätigte Verbindung", {"color": TIE, "linewidth": 1.0})]
+                  + ([("ring", "Mitglied mehrerer Gruppen", [GROUP_COLORS[0], GROUP_COLORS[1]])] if ring else []))
+    if not ctx.scheme.belonging:
+        return [ties]
     scale = [("scale", "Zugehörigkeit: 1 sehr stark – 5 überhaupt nicht", "2")]
     missing = sorted({g.belonging.missing for g in ctx.case.groups if not g.belonging.value}, key=list(MISSING_SHORT).index)
     if missing:  # only the short codes that occur, with an empty scale
@@ -971,7 +985,7 @@ def belonging_sections(ctx: Context, *, ring: bool) -> list[tuple]:
 
 def g3(ctx: Context):
     geometry = g3_geometry(ctx)
-    sections = [relation_section(ctx.case)] + belonging_sections(ctx, ring=bool(geometry.marked))
+    sections = [ctx.scheme.relation_section(ctx.case)] + belonging_sections(ctx, ring=bool(geometry.marked))
     p = page(ctx, "G3", main_w=G3_W, main_h=G3_H, legend="bottom", sections=sections)
     draw_g3(p.main, ctx, geometry, colors=group_colors(ctx))
     return p.figure
