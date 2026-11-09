@@ -1,6 +1,7 @@
 # ADR-0024 – `network_v0`: Gruppenregel „nur Zugehörigkeit“, Zwischenwerte im Codebuch; Fall 002
 
-**Datum:** 2026-11-07 · **Status:** in Kraft
+**Datum:** 2026-11-07 · **Status:** in Kraft; für Fall 002 sind Entscheidung 1 und 4 durch
+[`ADR-0025`](ADR-0025_2026-11-08_netzwerk-v0-cliquenregel-als-studiendesign-fall-002.md) ersetzt (Cliquenregel, Paket 1.1)
 
 Aktuelle Regeln: [`network-module.md`](../architecture/network-module.md) §3, §3.1, §4 (Regel 7), §7.1.
 Fall: [`pilot-case-002.md`](../methodology/pilot-case-002.md). Vorgänger: [`ADR-0023`](ADR-0023_2026-11-07_netzwerk-v0-standardgrafiken-und-fall-001-2.md).

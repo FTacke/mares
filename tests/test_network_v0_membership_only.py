@@ -66,6 +66,13 @@ def test_membership_only_keeps_groups_but_derives_no_tie(tmp_path):
     assert build_network(data).positive_ties  # the clique rule stays the default
 
 
+def test_overlapping_groups_do_not_merge(tmp_path):
+    data = _package(tmp_path)  # C01 = A01, A02, A03; C02 = A03, A04; A03 is in both
+    pairs = {tuple(sorted(tie.pair)) for tie in build_network(data).positive_ties}
+    assert ("A03", "A04") in pairs and ("A01", "A03") in pairs  # the shared member knows both groups
+    assert ("A01", "A04") not in pairs and ("A02", "A04") not in pairs  # across groups: unknown, not merged
+
+
 def test_the_validator_follows_the_curations_group_rule(tmp_path):
     data = _package(tmp_path)
     report = validate(data, curation=_curation(tmp_path, "membership_only"))

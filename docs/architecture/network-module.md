@@ -142,9 +142,13 @@ Regeln:
 
 1. Eine **bestätigte Gruppe** ist eine Clique: alle bestätigten Mitglieder innerhalb derselben Umrandung kennen sich.
    Die Cliquenregel rekonstruiert die Paarliste aus der Dokumentationsform; sie ist zulässig, weil die erhobenen
-   Beziehungen die Gruppe tragen. Daraus entstehen Beziehungen `yes` mit Basis `clique_rule`.
+   Beziehungen die Gruppe tragen. Daraus entstehen Beziehungen `yes` mit Basis `clique_rule`. Im Studiendesign von v0 ist das
+   der Normalfall: Wer als Teil einer Gruppe definiert ist, kennt alle anderen Mitglieder
+   ([`ADR-0025`](../decisions/ADR-0025_2026-11-08_netzwerk-v0-cliquenregel-als-studiendesign-fall-002.md)).
 2. Identische Paare aus mehreren Gruppen sind **eine** Beziehung; die Gruppen bleiben als Herkunft erhalten. Eine in andere
-   Gruppen eingebettete Gruppe fügt keine eigenen Beziehungen hinzu.
+   Gruppen eingebettete Gruppe fügt keine eigenen Beziehungen hinzu. **Überschneidende Gruppen verschmelzen nicht:** Ein
+   gemeinsames Mitglied kennt alle Mitglieder jeder seiner Gruppen; Mitglieder verschiedener Gruppen ohne gemeinsame Gruppe
+   bleiben unbekannt.
 3. Gruppen mit `needs_review` und Mitgliedschaften mit `candidate` erzeugen **keine** Beziehung.
 4. **Ein Paar ohne Beleg ist unbekannt, nie `no`.** Fehlende Paare werden nur dann `no` (Basis `coverage_complete`), wenn die
    Kuratierung `pair_coverage: complete` mit Begründung festhält; sonst kann nur eine ausdrückliche Angabe `no` sein.
@@ -159,7 +163,8 @@ Regeln:
    Die Erhebung dokumentiert Gruppen, aber keine Beziehungen zwischen den Mitgliedern. Bestätigte Gruppen und
    Mehrfachmitgliedschaften bleiben erhalten, die Cliquenregel entfällt: Es entsteht **keine** Beziehung, alle Paare bleiben
    unbekannt. Die Mitgliedschaften tragen dann `derivable_edge = no`, Klärungen die Regel `membership_only`; der Validator prüft
-   beides gegen die Kuratierung. Ohne Angabe gilt die Cliquenregel wie bisher.
+   beides gegen die Kuratierung. Ohne Angabe gilt die Cliquenregel wie bisher. Die Regel ist eine Ausnahme für Erhebungen, die
+   ausdrücklich keine Bekanntschaft innerhalb von Gruppen festhalten; derzeit benutzt sie kein Fall.
 
 Das Modell kann zusätzlich explizite Ja/Nein/Unbekannt-Angaben speichern (`build_network(dataset, explicit_ties=…)`).
 
