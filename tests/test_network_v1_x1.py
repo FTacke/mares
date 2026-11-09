@@ -148,7 +148,7 @@ def test_extents_follow_the_contacts_and_germany_stays_the_largest_panel(case, t
     assert panels["europe"].lon[1] > 30.52  # an eastern contact widens Europe
 
 
-def test_a_panel_without_contacts_shows_its_default_extent(tmp_path):
+def test_a_region_without_contacts_gets_no_panel(tmp_path):
     folder = copy_002(tmp_path / "tree")
     rows = [r for r in read_rows(folder, "contacts.csv") if r["residence_country_iso3"] not in ("ESP", "FRA")]
     write_rows(folder, "contacts.csv", rows)
@@ -158,8 +158,8 @@ def test_a_panel_without_contacts_shows_its_default_extent(tmp_path):
         write_rows(folder, table, [r for r in read_rows(folder, table) if all(r[k] in ids for k in keys)],
                    header=list(read_rows(folder, table)[0]))
     layout = x1_layout(context(folder), gazetteer(tmp_path), countries())
-    europe = next(p for p in layout.panels if p.region.key == "europe")
-    assert (europe.lon, europe.lat, europe.count) == ((-10.5, 19.5), (35.0, 59.0), 0)
+    assert [p.region.key for p in layout.panels] == ["americas", "germany"]  # no empty Europa panel
+    assert all(p.count for p in layout.panels)
 
 
 def _geometry(case, tmp_path):

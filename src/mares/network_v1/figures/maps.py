@@ -74,9 +74,9 @@ class Region:
     frame: tuple[tuple[float, float], tuple[float, float]] | None = None
 
 
-# Panels from left to right: Amerika, further regions (only when the data need them), Europa, Deutschland. Amerika, Europa
-# and Deutschland are always shown. Amerika by default from Mexico to the south; it reaches north only for contacts in the
-# USA or Canada. Europa by default from Portugal to a little east of Germany.
+# Panels from left to right: Amerika, further regions, Europa, Deutschland -- each only when it has contacts (ADR-0027).
+# The default extents (Amerika from Mexico to the south, Europa from Portugal to a little east of Germany) apply only to a
+# panel without places, i.e. to Germany when no contact can be drawn.
 REGIONS = (
     Region("americas", "Amerika", (-118.0, -34.0), (-56.0, 33.0), margin=7.0, min_span=(30.0, 30.0)),
     Region("africa", "Afrika", (-20.0, 52.0), (-36.0, 38.0), margin=6.0, min_span=(30.0, 30.0)),
@@ -87,7 +87,6 @@ REGIONS = (
     Region("germany", "Deutschland", (5.5, 15.5), (47.0, 55.3), margin=1.2, min_span=(9.0, 7.5),
            frame=((5.5, 15.5), (47.0, 55.3))),
 )
-ALWAYS = ("germany", "europe", "americas")
 # the direct neighbours of Germany: with Scheme.x1_neighbours_with_germany their places join the Germany panel
 NEIGHBOURS = ("DNK", "POL", "CZE", "AUT", "CHE", "FRA", "LUX", "BEL", "NLD")
 ASPECT_RANGE = (0.8, 1.5)  # width : height of a panel (degrees, latitude-corrected); a narrower extent is widened
@@ -641,12 +640,11 @@ def x1_layout(ctx: Context, gazetteer: dict, countries: dict[str, dict]) -> X1La
     places = sorted(found.values(), key=lambda p: (-len(p.members), p.places[0][0]))
     for p in places:
         p.places = [(p.places[0][0], len(p.members))]
-    used = {p.region for p in places}
+    used = {p.region for p in places} or {"germany"}  # only panels with contacts (ADR-0027); nothing drawable: Germany alone
     together = ctx.scheme.x1_neighbours_with_germany
-    always = ("germany", "americas") if together else ALWAYS  # with neighbours on the Germany map: Europa only when needed
     panels = []
     for region in REGIONS:
-        if region.key in always or region.key in used:
+        if region.key in used:
             if together and region.key == "germany":
                 region = _germany_with_neighbours(region, [p for p in places if p.region == "germany"], countries)
             lon, lat = _extent(region, [p.anchor for p in places if p.region == region.key])
