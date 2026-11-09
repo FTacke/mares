@@ -55,7 +55,7 @@ residence_country; residence_country_iso3; comment`
 | `contact_id` | `A01`, `A02`, … fortlaufend, ohne Obergrenze; eine ID = genau ein Kontakt des Falls |
 | `label` | Pseudonym oder Rolle; keine Nachnamen, keine Kontaktdaten (E-Mail- oder Telefonmuster sind ein Fehler); erscheint nie in Grafiken |
 | `closeness` | 1–4, Zwischenwerte als `1,5`/`2,5`/`3,5` (Komma oder Punkt) **oder** wie auf dem Bogen als Spanne `1–2`/`2–3`/`3–4`. Ausdrücklich erfragt, **nie aus der Kartenposition**. Der Rohtext bleibt erhalten, gerechnet wird mit dem Zahlenwert. Eine 5 ist ein Fehler mit Hinweis auf die v0-Skala |
-| `relation_type` | genau ein Code 1–6 (nur die Hauptbeziehung) |
+| `relation_type` | ein Code 1–6 (der Bogen fragt nur die Hauptbeziehung). Sind auf dem Bogen ausdrücklich mehrere Codes eingetragen, bleiben sie erhalten (Warnung `relation_type_several`; Darstellung als geteilter Knoten, in G1 ein eigener Sektor direkt nach dem ersten Typ; [`ADR-0026`](../decisions/ADR-0026_2026-11-09_netzwerk-v1-mehrere-beziehungstypen-und-student-pilot-ls-gh-jz.md)) |
 | `contact_frequency` | ein Code 1–5, 1 = am häufigsten |
 | `functions` (Bogen: „Bedeutung“) | mehrere Codes 1–5; **0 „Nichts davon“ ist exklusiv**; bei 5 „Sonstiges“ wird eine Erläuterung in `comment` erwartet (Hinweis) |
 | Geburtsland, Wohnort, Wohnland | Originalangabe als Text, daneben ISO-3166-alpha-3-Code; der Wohnortbereich wird abgeleitet (§3) |
@@ -349,7 +349,8 @@ Authentische studentische Peer-Pilotfälle (methodische Piloten mit Studierenden
 (z. B. `001_mt`); Kürzel der erhebenden Person und Formularcode stehen im `survey`-Block. Der Validator lehnt Abweichungen ab (Ordner und
 `corpus` passen nicht, anderer `case_type`, `empirical_analysis_eligible: true`); `case.is_empirical` schließt jeden Fall mit `corpus` aus.
 Die Fälle werden wie alle anderen geprüft und gerendert, die Kennzeichnung oben rechts kommt aus `display_code` (z. B.
-`FALL · STUDENT_PILOT MT`), nie eine Testrahmung. Fallübergreifende Auswertungen des Korpus sind nicht gebaut.
+`FALL · STUDENT_PILOT MT`), nie eine Testrahmung. Fallübergreifende Auswertungen des Korpus sind nicht gebaut. Stand 2026-11-09: vier
+Fälle (`001_mt`, `002_ls`, `003_gh`, `004_jz`); der Einwilligungsstatus steht je Fall in `survey.consent`.
 
 **Weg vom Pilot zum regulären Fall.** Ein echter v1-Pilot entsteht unter `pilots/<NNN_kurzname>/` mit `case_type: pilot`,
 `provenance: survey`, vollständigem `survey`-Block (Design `network_v1`, Instrument-Version, Erhebungsdatum, Datenherkunft),

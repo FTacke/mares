@@ -91,9 +91,18 @@ def node_size(diameter_pt: float = NODE_PT) -> float:
     return diameter_pt ** 2  # scatter sizes are areas in points^2
 
 
-def relation_fill(case: Case, contact_id: str) -> str | None:
+def relation_fill(case: Case, contact_id: str) -> str | tuple[str, ...] | None:
+    """One colour; for several recorded relation types (an exception, ADR-0026) a tuple: a split node."""
     cell = case.contact(contact_id).relation_type
-    return RELATION_COLORS.get(cell.value) if cell.recorded else None
+    if not cell.recorded:
+        return None
+    colors = tuple(RELATION_COLORS[c] for c in cell.values if c in RELATION_COLORS)
+    if len(colors) > 1:
+        return colors
+    return colors[0] if colors else None
+
+
+SPLIT_LABEL = "mehrere Beziehungstypen"  # the swatch is the split node itself
 
 
 # ------------------------------------------------------------------------------------------------ wording ---
@@ -119,8 +128,12 @@ def relation_entries(case: Case) -> list[tuple]:
     colour, so a type looks the same in every case and every figure; a type that no contact has is left out. Contacts
     without a valid relation type are never put into a type: they get the entry 'keine Angabe' (white, dotted rim)."""
     fills = [relation_fill(case, cid) for cid in case.contact_ids]
+    split = [f for f in fills if isinstance(f, tuple)]
+    present = {c for f in fills if f is not None for c in (f if isinstance(f, tuple) else (f,))}
     entries: list[tuple] = [("dot", label, RELATION_COLORS[code]) for code, label in codes.RELATION_TYPE.items()
-                            if RELATION_COLORS[code] in fills]
+                            if RELATION_COLORS[code] in present]
+    if split:
+        entries.append(("split", SPLIT_LABEL, split[0]))
     if None in fills:
         entries.append(("dot", MISSING_LABEL, None))
     return entries
@@ -157,12 +170,21 @@ class Scheme:
         return relation_section(case)
 
     def sector_order(self, case: Case) -> tuple[str, ...]:
-        """G1: the angular sectors in their fixed order ('' = no answer)."""
-        return tuple(codes.RELATION_TYPE) + ("",)
+        """G1: the angular sectors in their fixed order ('' = no answer); a combination of several types (ADR-0026) follows
+        the sector of its first type."""
+        combos = sorted({k for k in (self.sector_key(case, cid) for cid in case.contact_ids) if "+" in k},
+                        key=lambda k: [int(c) for c in k.split("+")])
+        order: list[str] = []
+        for code in codes.RELATION_TYPE:
+            order.append(code)
+            order.extend(k for k in combos if k.split("+")[0] == code)
+        return tuple(order) + ("",)
 
     def sector_key(self, case: Case, contact_id: str) -> str:
         cell = case.contact(contact_id).relation_type
-        return cell.value if cell.recorded and cell.value in codes.RELATION_TYPE else ""
+        if not cell.recorded:
+            return ""
+        return "+".join(c for c in cell.values if c in codes.RELATION_TYPE)
 
     # closeness
     def closeness(self, contact) -> float | None:

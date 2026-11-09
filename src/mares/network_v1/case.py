@@ -239,7 +239,7 @@ def read_case(folder: Path) -> Case:
             id=row["contact_id"],
             label=row["label"],
             closeness=codes.read_closeness(row["closeness"]),
-            relation_type=codes.read_single(row["relation_type"], codes.RELATION_TYPE),
+            relation_type=codes.read_multi(row["relation_type"], codes.RELATION_TYPE),  # the main type; several only if recorded so
             contact_frequency=codes.read_single(row["contact_frequency"], codes.CONTACT_FREQUENCY),
             functions=codes.read_multi(row["functions"], codes.FUNCTIONS, exclusive=codes.FUNCTION_NONE),
             birth_country=row["birth_country"],

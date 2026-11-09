@@ -23,7 +23,7 @@ def test_the_unchanged_copy_has_no_errors(case):
     ("contacts.csv", "A03", "closeness", "5", "invalid_closeness"),
     ("contacts.csv", "A03", "closeness", "4,5", "invalid_closeness"),
     ("contacts.csv", "A03", "relation_type", "7", "invalid_relation_type"),
-    ("contacts.csv", "A03", "relation_type", "1, 3", "invalid_relation_type"),
+    ("contacts.csv", "A03", "relation_type", "1, 1", "invalid_relation_type"),
     ("contacts.csv", "A03", "functions", "0, 1", "invalid_functions"),
     ("contacts.csv", "A03", "contact_frequency", "6", "invalid_contact_frequency"),
     ("contacts.csv", "A03", "residence_country_iso3", "XYZ", "country_code"),
@@ -36,6 +36,22 @@ def test_invalid_values_are_errors(case, table, key, column, value, code):
     edit(case, table, key, column, value)
     result = check(case)
     assert code in codes_of(result, "error"), result.findings
+
+
+def test_several_relation_types_are_kept_with_a_warning(case):
+    # the sheet asks for the main relation only; two recorded codes are kept as recorded (ADR-0026), never reduced to one
+    from mares.network_v1.case import read_case
+    from mares.network_v1.figures.base import RELATION_COLORS, SPLIT_LABEL, Scheme, relation_entries, relation_fill
+    edit(case, "contacts.csv", "A03", "relation_type", "4, 5")
+    result = check(case)
+    assert not result.errors
+    assert "relation_type_several" in codes_of(result, "warning")
+    data = read_case(case)
+    assert data.contact("A03").relation_type.values == ("4", "5")
+    assert relation_fill(data, "A03") == (RELATION_COLORS["4"], RELATION_COLORS["5"])
+    assert any(e[0] == "split" and e[1] == SPLIT_LABEL for e in relation_entries(data))
+    order = Scheme().sector_order(data)
+    assert order.index("4") < order.index("4+5") < order.index("5")
 
 
 def test_duplicate_and_malformed_contact_ids(case):

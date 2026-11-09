@@ -175,6 +175,10 @@ def _contacts(case: Case, out: list[Finding]) -> None:
         for iso, label in ((c.birth_country_iso3, "Geburtsland"), (c.residence_country_iso3, "Wohnland")):
             if iso and iso not in ISO3 and iso not in codes.MARKERS:
                 out.append(Finding(ERROR, "country_code", f"{c.id}: {label} {iso!r} ist kein ISO-3166-alpha-3-Code", c.ref))
+        if c.relation_type.recorded and len(c.relation_type.values) > 1:
+            out.append(Finding(WARNING, "relation_type_several", f"{c.id}: {len(c.relation_type.values)} Beziehungstypen "
+                               f"({', '.join(c.relation_type.values)}); der Bogen sieht nur die Hauptbeziehung vor – "
+                               "übernommen wie eingetragen, dargestellt als geteilter Knoten", c.ref))
         if codes.FUNCTION_OTHER in (c.functions.values if c.functions.recorded else ()) and not c.comment:
             out.append(Finding(NOTE, "comment_expected", f"{c.id}: Funktion 5 „Sonstiges“ ohne Erläuterung", c.ref))
         if c.birth_country and not c.birth_country_iso3:
