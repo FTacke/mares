@@ -203,7 +203,7 @@ def run_pipeline(
         if level >= 3:
             from mares.network_v1.run import load_geo  # the map sources of X1 (place directory, basemap); imported late: v1 uses this module
 
-            geo = load_geo(roots, package.root)
+            geo = load_geo(roots, package.root, [(c.text.get("residence_city"), c.text.get("residence_country")) for c in dataset.contacts])
             code = case_code or "v0_" + re.sub(r"[^A-Za-z0-9]", "_", dataset.case.source_label)
             context = standard.figure_context(dataset, network, case_code=code, local_places=params.local_places, geo=geo, case_type=case_type)
             target = roots.resolve(graphics, writable=True) if graphics is not None else folder.path("figures")

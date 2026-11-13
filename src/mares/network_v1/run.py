@@ -22,7 +22,7 @@ import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Iterable
 
 from mares.core import ids
 from mares.core.hashing import sha256_file
@@ -35,6 +35,7 @@ from .case import Case, is_empirical, read_case
 from .figures import FIGURES, expected_files, render
 from .figures.base import Context, Geo
 from .figures.maps import BASEMAP, BASEMAP_SOURCE, GAZETTEER, X1Error, read_basemap, read_gazetteer
+from .gazetteer import GEONAMES_CACHE, complete_gazetteer
 from .places import AREA_LABELS, PRIMARY_LABELS
 from .validate import FAILED, Validation, validate
 
@@ -97,11 +98,20 @@ def _csv(header: list[str], rows: list[list[object]]) -> str:
     return buffer.getvalue()
 
 
-def load_geo(roots: Roots, root: str) -> Geo:
+def load_geo(roots: Roots, root: str, residences: Iterable[tuple[str | None, str | None]] = ()) -> Geo:
     """The map sources of X1. A missing file is an explicit state (X1 is skipped with the reason, never drawn from
-    elsewhere); a malformed place directory or basemap stops the run."""
+    elsewhere); a malformed place directory or basemap stops the run. Before reading, the recorded ``residences``
+    (place, ISO3) missing from the place directory are added from local GeoNames data (ADR-0028)."""
     gazetteer_ref, basemap_ref = StorageRef(root, GAZETTEER), StorageRef("WORKSPACE", BASEMAP)
     gazetteer_path, basemap_path = roots.resolve(gazetteer_ref), roots.resolve(basemap_ref)
+    completion = None
+    residences = list(residences)
+    if residences and basemap_path.is_file() and gazetteer_path.is_file():
+        try:
+            completion = complete_gazetteer(roots.resolve(gazetteer_ref, writable=True), residences, read_basemap(basemap_path),
+                                            roots.resolve(StorageRef("WORKSPACE", GEONAMES_CACHE), writable=True))
+        except (X1Error, ValueError, KeyError) as error:
+            raise PipelineError(f"map sources of X1 unusable: {error}") from error
     missing = [f"{label} fehlt ({ref.root}:{ref.rel})" for label, ref, path in
                (("Ortsverzeichnis", gazetteer_ref, gazetteer_path), ("Basiskarte", basemap_ref, basemap_path)) if not path.is_file()]
     if missing:
@@ -110,9 +120,12 @@ def load_geo(roots: Roots, root: str) -> Geo:
         gazetteer, countries = read_gazetteer(gazetteer_path), read_basemap(basemap_path)
     except (X1Error, ValueError, KeyError) as error:
         raise PipelineError(f"map sources of X1 unusable: {error}") from error
-    return Geo(gazetteer, countries, sources={
+    sources = {
         "gazetteer": {"ref": gazetteer_ref.to_dict(), "sha256": sha256_file(gazetteer_path)},
-        "basemap": {"ref": basemap_ref.to_dict(), "sha256": sha256_file(basemap_path), "source": BASEMAP_SOURCE}})
+        "basemap": {"ref": basemap_ref.to_dict(), "sha256": sha256_file(basemap_path), "source": BASEMAP_SOURCE}}
+    if completion is not None:
+        sources["gazetteer"]["completion"] = completion.to_dict()
+    return Geo(gazetteer, countries, sources=sources)
 
 
 def derived_tables(case: Case, validation: Validation) -> dict[str, str]:
@@ -158,7 +171,8 @@ def process_case(
     folder = roots.resolve(case_ref)
     if not (folder / "data").is_dir():
         raise PipelineError(f"{case_ref.root}:{case_ref.rel} has no data/ folder")
-    geo = load_geo(roots, case_ref.root)  # sources first: a malformed one leaves no empty run folder
+    residences = [(c.residence_place, c.residence_country_iso3) for c in read_case(folder).contacts]
+    geo = load_geo(roots, case_ref.root, residences)  # sources first: a malformed one leaves no empty run folder
     started = clock()
     run_id = ids.new_run_id(started)
     run_ref = StorageRef("WORKSPACE", f"runs/{run_id}")
